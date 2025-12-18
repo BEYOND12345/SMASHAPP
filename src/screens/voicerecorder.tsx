@@ -320,11 +320,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-brand mt-0.5">•</span>
-                <span>Mention how long the work will take</span>
+                <span><strong>Include rough time</strong> like "2 hours" or "1 day"</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-brand mt-0.5">•</span>
-                <span>Include any travel or special requirements</span>
+                <span>Mention any travel or special requirements</span>
               </li>
             </ul>
           </div>

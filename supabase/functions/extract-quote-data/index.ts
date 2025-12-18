@@ -71,9 +71,10 @@ ASSUMPTIONS LEDGER:
 MISSING FIELDS DETECTION:
 - Flag missing fields, but be LENIENT - missing details are normal
 - severity: "warning" (most cases) - field is missing but quote can still be created
-- severity: "required" (RARE) - only for truly critical fields that make the quote impossible
-- Examples of WARNING (not blocking): customer contact, exact quantities, exact durations, travel details
-- Examples of REQUIRED (blocking): NO labour hours at all, NO work description at all
+- severity: "required" (EXTREMELY RARE) - only for truly critical fields that make the quote completely impossible
+- Examples of WARNING (not blocking): customer contact, labour hours, exact quantities, exact durations, travel details, materials pricing
+- Examples of REQUIRED (blocking): NO work description at all (empty job title and summary)
+- CRITICAL: Missing labour hours should ALWAYS be "warning" not "required" - user can fill them in during review
 - When in doubt, use "warning" not "required"
 
 SCOPE OF WORK - CRITICAL REQUIREMENTS:

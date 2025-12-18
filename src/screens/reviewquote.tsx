@@ -263,6 +263,18 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
   }
 
   function handleLabourEdit(index: number, field: 'hours' | 'days' | 'people', value: string) {
+    // Allow empty string (clearing the field)
+    if (value === '') {
+      const key = `labour_${index}_${field}`;
+      const newOverrides = { ...corrections.labour_overrides };
+      delete newOverrides[key];
+      setCorrections(prev => ({
+        ...prev,
+        labour_overrides: newOverrides,
+      }));
+      return;
+    }
+
     const numValue = parseFloat(value);
     if (isNaN(numValue) || numValue < 0) return;
 
@@ -383,7 +395,26 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
       a => !(corrections.confirmed_assumptions || []).includes(a.field)
     ).length;
 
-    return requiredMissingCount + unconfirmedAssumptions;
+    // Calculate dynamic required missing count based on corrections
+    const dynamicRequiredMissing = missingFields.filter(mf => {
+      if (mf.severity !== 'required') return false;
+
+      // Check if this missing field has been corrected
+      // Example: "time.labour_entries[0].hours" should be resolved if labour_0_hours exists
+      const labourMatch = mf.field.match(/time\.labour_entries\[(\d+)\]\.(hours|days|people)/);
+      if (labourMatch) {
+        const idx = parseInt(labourMatch[1], 10);
+        const field = labourMatch[2] as 'hours' | 'days' | 'people';
+        const key = `labour_${idx}_${field}`;
+        const hasCorrection = corrections.labour_overrides?.[key] !== undefined;
+        return !hasCorrection; // Still missing if no correction
+      }
+
+      // Add similar checks for other field types if needed
+      return true;
+    }).length;
+
+    return dynamicRequiredMissing + unconfirmedAssumptions;
   }
 
   async function handleSaveForLater() {
@@ -441,12 +472,27 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
         return;
       }
 
-      // Check if required fields are still missing
-      const requiredMissing = missingFields.filter(mf => mf.severity === 'required');
-      if (requiredMissing.length > 0) {
+      // Check if required fields are still missing after applying corrections
+      const stillMissingRequired = missingFields.filter(mf => {
+        if (mf.severity !== 'required') return false;
+
+        // Check if labour hours have been provided by user
+        const labourMatch = mf.field.match(/time\.labour_entries\[(\d+)\]\.(hours|days|people)/);
+        if (labourMatch) {
+          const idx = parseInt(labourMatch[1], 10);
+          const field = labourMatch[2] as 'hours' | 'days' | 'people';
+          const key = `labour_${idx}_${field}`;
+          const hasCorrection = corrections.labour_overrides?.[key] !== undefined;
+          return !hasCorrection; // Still missing if no correction provided
+        }
+
+        return true; // For other required fields, still blocking
+      });
+
+      if (stillMissingRequired.length > 0) {
         console.log('[REVIEW_FLOW] Blocked by required fields', {
           intake_id: intakeId,
-          required: requiredMissing.map(f => f.field)
+          required: stillMissingRequired.map(f => f.field)
         });
         setError('Please fill in all required fields before confirming');
         setSaving(false);
@@ -461,11 +507,69 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
       // CRITICAL: Do NOT re-run extraction. Just mark as user-confirmed and create quote.
       console.log('[REVIEW_FLOW] Marking intake as user-confirmed (no extraction re-run)');
 
+      // CRITICAL: Apply user corrections to extraction_json before persisting
+      const correctedExtractionJson = JSON.parse(JSON.stringify(extractionData)); // Deep clone
+
+      // Apply labour corrections
+      if (corrections.labour_overrides && correctedExtractionJson.time?.labour_entries) {
+        Object.entries(corrections.labour_overrides).forEach(([key, value]) => {
+          const match = key.match(/^labour_(\d+)_(hours|days|people)$/);
+          if (match) {
+            const idx = parseInt(match[1], 10);
+            const field = match[2] as 'hours' | 'days' | 'people';
+            if (correctedExtractionJson.time.labour_entries[idx]) {
+              const entry = correctedExtractionJson.time.labour_entries[idx];
+              // Set value and boost confidence to 1.0 (user-corrected)
+              if (typeof entry[field] === 'object' || entry[field] === null || entry[field] === undefined) {
+                entry[field] = { value, confidence: 1.0 };
+              } else {
+                entry[field] = { value, confidence: 1.0 };
+              }
+              console.log('[REVIEW_FLOW] Applied labour correction to extraction_json', {
+                index: idx,
+                field,
+                value,
+              });
+            }
+          }
+        });
+      }
+
+      // Apply materials corrections
+      if (corrections.materials_overrides && correctedExtractionJson.materials?.items) {
+        Object.entries(corrections.materials_overrides).forEach(([key, value]) => {
+          const match = key.match(/^material_(\d+)_quantity$/);
+          if (match) {
+            const idx = parseInt(match[1], 10);
+            if (correctedExtractionJson.materials.items[idx]) {
+              const item = correctedExtractionJson.materials.items[idx];
+              if (typeof item.quantity === 'object') {
+                item.quantity = { value, confidence: 1.0 };
+              } else {
+                item.quantity = { value, confidence: 1.0 };
+              }
+            }
+          }
+        });
+      }
+
+      // Apply travel corrections
+      if (corrections.travel_overrides && correctedExtractionJson.fees?.travel) {
+        if (corrections.travel_overrides.travel_hours !== undefined) {
+          const travel = correctedExtractionJson.fees.travel;
+          if (typeof travel.hours === 'object') {
+            travel.hours = { value: corrections.travel_overrides.travel_hours, confidence: 1.0 };
+          } else {
+            travel.hours = { value: corrections.travel_overrides.travel_hours, confidence: 1.0 };
+          }
+        }
+      }
+
       // Update extraction_json with user confirmation flag
       const updatedExtractionJson = {
-        ...extractionData,
+        ...correctedExtractionJson,
         quality: {
-          ...(extractionData.quality || {}),
+          ...(correctedExtractionJson.quality || {}),
           user_confirmed: true,
           user_confirmed_at: new Date().toISOString(),
           requires_user_confirmation: false
@@ -767,7 +871,7 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
           <Card className="p-6">
             <h3 className="font-semibold text-gray-900 mb-4">Labour Estimates</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Review and adjust labour estimates if needed.
+              Review and adjust labour estimates. Fill in missing values if needed.
             </p>
             <div className="space-y-4">
               {extractionData.time.labour_entries.map((entry, idx) => {
@@ -786,79 +890,104 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
                 const daysColors = getConfidenceColorClasses(daysConfidence);
                 const peopleColors = getConfidenceColorClasses(peopleConfidence);
 
-                const isFirstLowConfidence = idx === 0 && (hoursConfidence < 0.7 || daysConfidence < 0.7 || peopleConfidence < 0.7);
+                // Check if any field is missing and needs to be highlighted
+                const hoursMissing = hoursValue === null || hoursValue === undefined;
+                const daysMissing = daysValue === null || daysValue === undefined;
+                const isFirstEntry = idx === 0;
+                const shouldHighlight = hoursMissing || daysMissing || hoursConfidence < 0.7 || daysConfidence < 0.7;
 
                 return (
-                  <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div key={idx} className={`p-4 rounded-lg border ${shouldHighlight ? 'bg-amber-50 border-amber-300' : 'bg-gray-50 border-gray-200'}`}>
                     <p className="font-medium text-gray-900 mb-3">{entry.description}</p>
+                    {shouldHighlight && (
+                      <p className="text-sm text-amber-700 mb-3 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        Please provide labour time estimates
+                      </p>
+                    )}
                     <div className="grid grid-cols-3 gap-3">
-                      {hoursValue !== null && hoursValue !== undefined && (
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
+                          {hoursMissing ? (
+                            <span className="w-2 h-2 rounded-full bg-red-500" title="Required - please provide hours" />
+                          ) : (
                             <span
                               className={`w-2 h-2 rounded-full ${hoursColors.dot}`}
                               title={getConfidenceTooltip(hoursConfidence, getConfidenceSource(entry.hours))}
                             />
-                            Hours
+                          )}
+                          Hours {hoursMissing && <span className="text-red-600 font-medium">*</span>}
+                          {!hoursMissing && (
                             <span className={`${hoursColors.text} font-medium`}>
                               {(hoursConfidence * 100).toFixed(0)}%
                             </span>
-                          </label>
-                          <Input
-                            ref={isFirstLowConfidence && hoursConfidence < 0.7 ? firstLowConfidenceRef : undefined}
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            value={correctedHours ?? hoursValue}
-                            onChange={(e) => handleLabourEdit(idx, 'hours', e.target.value)}
-                            className={hoursConfidence < 0.7 ? `border-2 ${hoursColors.border}` : ''}
-                          />
-                        </div>
-                      )}
-                      {daysValue !== null && daysValue !== undefined && (
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
+                          )}
+                        </label>
+                        <Input
+                          ref={isFirstEntry && hoursMissing ? firstLowConfidenceRef : undefined}
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={correctedHours !== undefined ? correctedHours : (hoursValue !== null && hoursValue !== undefined ? hoursValue : '')}
+                          onChange={(e) => handleLabourEdit(idx, 'hours', e.target.value)}
+                          placeholder="e.g., 4"
+                          className={hoursMissing ? 'border-2 border-red-300 focus:border-red-500' : (hoursConfidence < 0.7 ? `border-2 ${hoursColors.border}` : '')}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
+                          {daysMissing ? (
+                            <span className="w-2 h-2 rounded-full bg-gray-400" title="Optional" />
+                          ) : (
                             <span
                               className={`w-2 h-2 rounded-full ${daysColors.dot}`}
                               title={getConfidenceTooltip(daysConfidence, getConfidenceSource(entry.days))}
                             />
-                            Days
+                          )}
+                          Days
+                          {!daysMissing && (
                             <span className={`${daysColors.text} font-medium`}>
                               {(daysConfidence * 100).toFixed(0)}%
                             </span>
-                          </label>
-                          <Input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            value={correctedDays ?? daysValue}
-                            onChange={(e) => handleLabourEdit(idx, 'days', e.target.value)}
-                            className={daysConfidence < 0.7 ? `border-2 ${daysColors.border}` : ''}
-                          />
-                        </div>
-                      )}
-                      {peopleValue !== null && peopleValue !== undefined && (
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
+                          )}
+                        </label>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={correctedDays !== undefined ? correctedDays : (daysValue !== null && daysValue !== undefined ? daysValue : '')}
+                          onChange={(e) => handleLabourEdit(idx, 'days', e.target.value)}
+                          placeholder="Optional"
+                          className={!daysMissing && daysConfidence < 0.7 ? `border-2 ${daysColors.border}` : ''}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
+                          {peopleValue === null || peopleValue === undefined ? (
+                            <span className="w-2 h-2 rounded-full bg-gray-400" title="Optional - defaults to 1" />
+                          ) : (
                             <span
                               className={`w-2 h-2 rounded-full ${peopleColors.dot}`}
                               title={getConfidenceTooltip(peopleConfidence, getConfidenceSource(entry.people))}
                             />
-                            People
+                          )}
+                          People
+                          {peopleValue !== null && peopleValue !== undefined && (
                             <span className={`${peopleColors.text} font-medium`}>
                               {(peopleConfidence * 100).toFixed(0)}%
                             </span>
-                          </label>
-                          <Input
-                            type="number"
-                            step="1"
-                            min="1"
-                            value={correctedPeople ?? peopleValue}
-                            onChange={(e) => handleLabourEdit(idx, 'people', e.target.value)}
-                            className={peopleConfidence < 0.7 ? `border-2 ${peopleColors.border}` : ''}
-                          />
-                        </div>
-                      )}
+                          )}
+                        </label>
+                        <Input
+                          type="number"
+                          step="1"
+                          min="1"
+                          value={correctedPeople !== undefined ? correctedPeople : (peopleValue !== null && peopleValue !== undefined ? peopleValue : '')}
+                          onChange={(e) => handleLabourEdit(idx, 'people', e.target.value)}
+                          placeholder="Default: 1"
+                          className={peopleValue !== null && peopleValue !== undefined && peopleConfidence < 0.7 ? `border-2 ${peopleColors.border}` : ''}
+                        />
+                      </div>
                     </div>
                     {entry.note && (
                       <p className="text-xs text-gray-600 mt-2">{entry.note}</p>
