@@ -133,8 +133,16 @@ Deno.serve(async (req: Request) => {
       size_kb: Math.round(audioSizeBytes / 1024),
     });
 
-    // Convert Blob to File for OpenAI API
-    const audioFile = new File([audioData], "audio.webm", { type: audioData.type });
+    // Convert Blob to File for OpenAI API with correct extension
+    const fileName = intake.audio_storage_path.split('/').pop() || 'audio.webm';
+    const audioFile = new File([audioData], fileName, { type: audioData.type });
+
+    console.log("[TRANSCRIPT] Audio file details", {
+      intake_id,
+      file_name: fileName,
+      content_type: audioData.type,
+      size_bytes: audioSizeBytes,
+    });
 
     // Call OpenAI Transcription API via proxy
     console.log("[TRANSCRIPT] Calling OpenAI Whisper API", { intake_id });

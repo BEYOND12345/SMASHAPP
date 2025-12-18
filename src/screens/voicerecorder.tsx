@@ -22,6 +22,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const timerRef = useRef<NodeJS.Timeout>();
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const recordedMimeTypeRef = useRef<string>('audio/webm');
 
   useEffect(() => {
     if (state === 'recording') {
@@ -65,7 +66,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+        }
+      });
 
       audioContextRef.current = new AudioContext();
       const source = audioContextRef.current.createMediaStreamSource(stream);
@@ -73,10 +81,31 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       analyserRef.current.fftSize = 256;
       source.connect(analyserRef.current);
 
-      const options = { mimeType: 'audio/webm' };
+      // Try different formats with fallback for best compatibility
+      let mimeType = 'audio/webm;codecs=opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/webm';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'audio/mp4';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/ogg;codecs=opus';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+              mimeType = ''; // Use default
+            }
+          }
+        }
+      }
+
+      console.log('[VOICE_RECORDER] Using audio format:', mimeType || 'default');
+
+      const options: MediaRecorderOptions = mimeType
+        ? { mimeType, audioBitsPerSecond: 128000 }
+        : { audioBitsPerSecond: 128000 };
+
       const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      recordedMimeTypeRef.current = mimeType || 'audio/webm';
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -110,11 +139,25 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     try {
       setState('uploading');
 
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const mimeType = recordedMimeTypeRef.current;
+      const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+
+      // Determine file extension from mime type
+      let fileExtension = 'webm';
+      if (mimeType.includes('mp4')) {
+        fileExtension = 'm4a';
+      } else if (mimeType.includes('ogg')) {
+        fileExtension = 'ogg';
+      } else if (mimeType.includes('webm')) {
+        fileExtension = 'webm';
+      }
+
       console.log('[VOICE_CAPTURE] Audio recording complete', {
         size_bytes: audioBlob.size,
         size_kb: Math.round(audioBlob.size / 1024),
         duration_seconds: recordingTime,
+        mime_type: mimeType,
+        file_extension: fileExtension,
       });
 
       if (audioBlob.size === 0) {
@@ -137,7 +180,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
       const profile = profileData as any;
       const intakeId = crypto.randomUUID();
-      const storagePath = `${profile.org_id}/${user.id}/voice_intakes/${intakeId}/audio.webm`;
+      const storagePath = `${profile.org_id}/${user.id}/voice_intakes/${intakeId}/audio.${fileExtension}`;
 
       console.log('[VOICE_CAPTURE] Uploading audio to storage', {
         intake_id: intakeId,
@@ -147,7 +190,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       const { error: uploadError } = await supabase.storage
         .from('voice-intakes')
         .upload(storagePath, audioBlob, {
-          contentType: 'audio/webm',
+          contentType: mimeType,
           upsert: false,
         });
 
