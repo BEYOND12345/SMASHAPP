@@ -6,11 +6,12 @@ import { supabase } from '../lib/supabase';
 interface VoiceRecorderProps {
   onCancel: () => void;
   onSuccess: (intakeId: string) => void;
+  customerId?: string;
 }
 
 type RecordingState = 'idle' | 'recording' | 'uploading' | 'transcribing' | 'success' | 'error';
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSuccess }) => {
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSuccess, customerId }) => {
   const [state, setState] = useState<RecordingState>('idle');
   const [error, setError] = useState<string>('');
   const [bars, setBars] = useState<number[]>(new Array(16).fill(10));
@@ -231,7 +232,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         throw uploadError;
       }
 
-      console.log('[VOICE_CAPTURE] Creating voice intake record', { intake_id: intakeId });
+      console.log('[VOICE_CAPTURE] Creating voice intake record', {
+        intake_id: intakeId,
+        customer_id: customerId || null,
+      });
 
       const { error: intakeError } = await supabase
         .from('voice_intakes')
@@ -239,6 +243,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           id: intakeId,
           org_id: profile.org_id,
           user_id: user.id,
+          customer_id: customerId || null,
           source: 'web',
           audio_storage_path: storagePath,
           status: 'captured',

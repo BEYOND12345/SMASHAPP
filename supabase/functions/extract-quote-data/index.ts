@@ -247,6 +247,24 @@ Deno.serve(async (req: Request) => {
       throw new Error("Voice intake not found");
     }
 
+    // Check if customer is pre-selected
+    let existingCustomer: any = null;
+    if (intake.customer_id) {
+      console.log("[CUSTOMER] Using pre-selected customer:", intake.customer_id);
+      const { data: customerData, error: customerError } = await supabase
+        .from("customers")
+        .select("id, name, email, phone, billing_street")
+        .eq("id", intake.customer_id)
+        .maybeSingle();
+
+      if (!customerError && customerData) {
+        existingCustomer = customerData;
+        console.log("[CUSTOMER] Found existing customer:", existingCustomer.name);
+      } else {
+        console.warn("[CUSTOMER] Failed to load pre-selected customer, will extract from transcript");
+      }
+    }
+
     let extractedData: any;
 
     // PHASE A2: If corrections exist, merge deterministically (no new AI inference)
@@ -416,6 +434,14 @@ Deno.serve(async (req: Request) => {
 
       let extractionMessage = `Raw Transcript:\n${intake.transcript_text}\n\nRepaired Transcript:\n${repairedTranscript}\n\nPricing Profile:\n${JSON.stringify(profileData, null, 2)}`;
 
+      if (existingCustomer) {
+        extractionMessage += `\n\nIMPORTANT: Customer is already selected. DO NOT extract customer information. Use these details:\n${JSON.stringify({
+          name: existingCustomer.name,
+          email: existingCustomer.email || null,
+          phone: existingCustomer.phone || null,
+        }, null, 2)}\n\nFocus ONLY on extracting job details, materials, and time estimates.`;
+      }
+
       if (catalogItems && catalogItems.length > 0) {
         extractionMessage += `\n\nMaterial Catalog (match materials to these if possible):\n${JSON.stringify(catalogItems, null, 2)}`;
       }
@@ -447,6 +473,24 @@ Deno.serve(async (req: Request) => {
 
       const extractionResult = await extractionResponse.json();
       extractedData = JSON.parse(extractionResult.choices[0].message.content);
+
+      // Override customer data if we have an existing customer
+      if (existingCustomer) {
+        console.log("[CUSTOMER] Overriding extracted customer data with existing customer");
+        extractedData.customer = {
+          name: existingCustomer.name,
+          email: existingCustomer.email || null,
+          phone: existingCustomer.phone || null,
+        };
+        // Add to assumptions that customer was pre-selected
+        if (!extractedData.assumptions) extractedData.assumptions = [];
+        extractedData.assumptions.push({
+          field: "customer",
+          assumption: `Customer pre-selected: ${existingCustomer.name}`,
+          confidence: 1.0,
+          source: "user_selection"
+        });
+      }
     }
 
     // STEP 3: Determine Status Based on Quality Checks

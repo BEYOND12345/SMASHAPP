@@ -48,7 +48,7 @@ const MOCK_ESTIMATES: Estimate[] = [
 ];
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string }>({
+  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string }>({
     currentScreen: 'Login',
     selectedEstimateId: null,
     estimates: [],
@@ -59,7 +59,8 @@ const App: React.FC = () => {
     editReturnScreen: 'EstimatePreview',
     loading: true,
     voiceQuoteId: undefined,
-    voiceIntakeId: undefined
+    voiceIntakeId: undefined,
+    voiceCustomerId: undefined
   });
 
   // Load quotes from database
@@ -214,7 +215,7 @@ const App: React.FC = () => {
         setState({
           currentScreen: 'Login',
           selectedEstimateId: null,
-          estimates: [], // Clear all estimates
+          estimates: [],
           user: null,
           isAuthenticated: false,
           sendingType: 'estimate',
@@ -222,7 +223,8 @@ const App: React.FC = () => {
           editReturnScreen: 'EstimatePreview',
           loading: false,
           voiceQuoteId: undefined,
-          voiceIntakeId: undefined
+          voiceIntakeId: undefined,
+          voiceCustomerId: undefined
         });
       }
     });
@@ -289,7 +291,7 @@ const App: React.FC = () => {
     setState({
       currentScreen: 'Login',
       selectedEstimateId: null,
-      estimates: [], // Clear all estimates
+      estimates: [],
       user: null,
       isAuthenticated: false,
       sendingType: 'estimate',
@@ -297,15 +299,20 @@ const App: React.FC = () => {
       editReturnScreen: 'EstimatePreview',
       loading: false,
       voiceQuoteId: undefined,
-      voiceIntakeId: undefined
+      voiceIntakeId: undefined,
+      voiceCustomerId: undefined
     });
   };
 
   // Actions
   const handleNewEstimate = () => navigate('NewEstimate');
-  
-  const handleStartRecording = (clientName: string, _address: string) => {
-    navigate('VoiceRecorder');
+
+  const handleStartRecording = (clientName: string, _address: string, customerId?: string) => {
+    setState(prev => ({
+      ...prev,
+      voiceCustomerId: customerId,
+      currentScreen: 'VoiceRecorder'
+    }));
   };
 
   const handleRecordingFinished = (intakeId: string) => {
@@ -624,6 +631,7 @@ const App: React.FC = () => {
         return <VoiceRecorder
           onCancel={() => navigate('NewEstimate')}
           onSuccess={handleRecordingFinished}
+          customerId={state.voiceCustomerId}
         />;
 
       case 'EditTranscript':
