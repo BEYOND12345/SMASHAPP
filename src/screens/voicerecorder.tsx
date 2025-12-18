@@ -126,7 +126,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       mediaRecorder.start(1000);
       setState('recording');
     } catch (err) {
-      setError('Microphone access denied');
+      setError('Microphone access denied. Please allow microphone access in your browser settings.');
       setState('error');
     }
   };
@@ -135,6 +135,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     if (mediaRecorderRef.current && state === 'recording') {
       mediaRecorderRef.current.stop();
     }
+  };
+
+  const resetAndRetry = () => {
+    setError('');
+    setState('idle');
+    audioChunksRef.current = [];
   };
 
   const processRecording = async () => {
@@ -168,14 +174,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
       if (audioBlob.size === 0) {
         console.error('[VOICE_CAPTURE] No audio recorded');
-        throw new Error('No audio recorded');
+        throw new Error('No audio detected. Please check your microphone and try again.');
       }
 
       if (actualDurationSeconds < 2) {
         console.error('[VOICE_CAPTURE] Recording too short', {
           actual_duration: actualDurationSeconds,
         });
-        throw new Error('Recording too short. Please record for at least 3 seconds.');
+        throw new Error('Could not hear you. Please record for at least 3 seconds and speak clearly.');
       }
 
       const bytesPerSecond = audioBlob.size / Math.max(actualDurationSeconds, 1);
@@ -270,7 +276,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           intake_id: intakeId,
           error: errorData.error,
         });
-        throw new Error(errorData.error || 'Transcription failed');
+        throw new Error(errorData.error || 'Could not transcribe audio. Please try recording again.');
       }
 
       const transcribeData = await transcribeResponse.json();
@@ -286,7 +292,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
     } catch (err) {
       console.error('Processing error:', err);
-      setError(err instanceof Error ? err.message : 'Processing failed');
+      const errorMessage = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      setError(errorMessage);
       setState('error');
     }
   };
@@ -441,11 +448,26 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         )}
 
         {state === 'error' && (
-          <div className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float bg-red-500">
+          <button
+            onClick={resetAndRetry}
+            className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float bg-red-500 hover:bg-red-600 transition-colors"
+            aria-label="Try again"
+          >
             <AlertCircle size={40} className="text-white" strokeWidth={2.5} />
-          </div>
+          </button>
         )}
       </div>
+
+      {state === 'error' && (
+        <div className="fixed bottom-32 left-0 right-0 flex justify-center px-6">
+          <button
+            onClick={resetAndRetry}
+            className="bg-brand hover:bg-brandDark text-white px-8 py-3 rounded-full font-semibold text-[15px] shadow-lg transition-all transform hover:scale-105"
+          >
+            Try Again
+          </button>
+        </div>
+      )}
     </Layout>
   );
 };

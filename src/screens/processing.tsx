@@ -28,7 +28,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       const token = session?.access_token;
 
       if (!token) {
-        throw new Error('Not authenticated');
+        throw new Error('Session expired. Please log in again.');
       }
 
       // Retry logic for extraction (handles cold starts and transient failures)
@@ -65,7 +65,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
 
           // For other errors, don't retry
           const errorData = await extractResponse.json().catch(() => ({}));
-          throw new Error(errorData.error || `Extraction failed (${extractResponse.status})`);
+          throw new Error(errorData.error || 'Could not analyze your recording. Please try again.');
         } catch (err) {
           lastError = err;
           if (attempt === 3) throw err;
@@ -78,7 +78,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       }
 
       if (!extractResponse || !extractResponse.ok) {
-        throw lastError || new Error('Extraction failed after retries');
+        throw lastError || new Error('Could not analyze your recording after multiple attempts. Please try again.');
       }
 
       const extractData = await extractResponse.json();
@@ -126,7 +126,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
           // For other errors, don't retry
           const errorData = await createResponse.json().catch(() => ({}));
           console.error('[Processing] Create-draft-quote failed:', errorData);
-          throw new Error(errorData.error || `Quote creation failed (${createResponse.status})`);
+          throw new Error(errorData.error || 'Could not create your quote. Please try again.');
         } catch (err) {
           lastCreateError = err;
           if (attempt === 3) throw err;
@@ -138,7 +138,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       }
 
       if (!createResponse || !createResponse.ok) {
-        throw lastCreateError || new Error('Quote creation failed after retries');
+        throw lastCreateError || new Error('Could not create your quote after multiple attempts. Please try again.');
       }
 
       const createData = await createResponse.json();
@@ -146,7 +146,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       console.log('[Processing] Create quote response:', createData);
 
       if (!createData.quote_id) {
-        throw new Error('No quote_id returned from server');
+        throw new Error('Quote creation incomplete. Please try again.');
       }
 
       setStep('success');
@@ -157,7 +157,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
 
     } catch (err) {
       console.error('Processing error:', err);
-      setError(err instanceof Error ? err.message : 'Processing failed');
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setStep('error');
     }
   };
