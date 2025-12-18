@@ -152,6 +152,8 @@ Deno.serve(async (req: Request) => {
     formData.append("file", audioFile);
     formData.append("model", "whisper-1");
     formData.append("response_format", "verbose_json");
+    formData.append("language", "en");
+    formData.append("prompt", "A contractor describing a job estimate including materials, labor, time required, and customer details.");
 
     const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
     const transcriptionResponse = await fetch(proxyUrl, {
@@ -204,7 +206,7 @@ Deno.serve(async (req: Request) => {
         audio_duration: audioDuration,
         transcript_preview: transcriptText,
       });
-      throw new Error(`Transcription failed - only captured "${transcriptText}" from ${audioDuration} seconds of audio. Please try recording again and speak clearly.`);
+      throw new Error(`Transcription failed - only captured \"${transcriptText}\" from ${audioDuration} seconds of audio. Please try recording again and speak clearly.`);
     }
 
     // GUARD: Warn if transcript seems short but might be valid (e.g., "No thanks, goodbye")

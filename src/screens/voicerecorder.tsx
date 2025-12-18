@@ -121,7 +121,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         await processRecording();
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(1000);
       setState('recording');
     } catch (err) {
       setError('Microphone access denied');
@@ -158,11 +158,30 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         duration_seconds: recordingTime,
         mime_type: mimeType,
         file_extension: fileExtension,
+        chunks_count: audioChunksRef.current.length,
       });
 
       if (audioBlob.size === 0) {
         console.error('[VOICE_CAPTURE] No audio recorded');
         throw new Error('No audio recorded');
+      }
+
+      if (recordingTime < 3) {
+        console.error('[VOICE_CAPTURE] Recording too short');
+        throw new Error('Recording too short. Please record for at least 3 seconds.');
+      }
+
+      const bytesPerSecond = audioBlob.size / recordingTime;
+      console.log('[VOICE_CAPTURE] Audio quality check', {
+        bytes_per_second: Math.round(bytesPerSecond),
+        expected_min: 4000,
+      });
+
+      if (bytesPerSecond < 1000) {
+        console.error('[VOICE_CAPTURE] Audio quality too low', {
+          bytes_per_second: bytesPerSecond,
+        });
+        throw new Error('Audio quality too low. Please check your microphone and try again.');
       }
 
       const { data: { user } } = await supabase.auth.getUser();
