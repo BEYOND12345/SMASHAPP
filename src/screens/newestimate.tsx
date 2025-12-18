@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Layout, Header } from '../components/layout';
 import { Button } from '../components/button';
-import { ChevronLeft, Search, User } from 'lucide-react';
+import { ChevronLeft, Search, User, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Customer {
@@ -75,6 +75,46 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
     }
   }
 
+  async function handleAddNewCustomer(name: string) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!userData?.organization_id) return;
+
+      const { data, error } = await supabase
+        .from('customers')
+        .insert({
+          name: name.trim(),
+          organization_id: userData.organization_id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const newCustomer: Customer = {
+        id: data.id,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        address: data.address
+      };
+
+      setCustomers([newCustomer, ...customers]);
+      setSelectedCustomer(newCustomer);
+      setSearchTerm('');
+    } catch (error) {
+      console.error('Error creating customer:', error);
+    }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedCustomer) {
@@ -130,7 +170,7 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
                   <div className="px-4 py-3 text-center text-tertiary text-[13px]">
                     Loading...
                   </div>
-                ) : filteredCustomers.length > 0 ? (
+                ) : (
                   <>
                     {filteredCustomers.map((customer, index) => (
                       <button
@@ -159,11 +199,28 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
                         </div>
                       </button>
                     ))}
+
+                    {searchTerm.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => handleAddNewCustomer(searchTerm)}
+                        className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${
+                          filteredCustomers.length > 0 ? 'border-t border-divider' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <Plus className="w-4 h-4 text-brand" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-brand text-[14px]">
+                              Add "{searchTerm}"
+                            </h4>
+                          </div>
+                        </div>
+                      </button>
+                    )}
                   </>
-                ) : (
-                  <div className="px-4 py-3 text-center text-tertiary text-[13px]">
-                    No customers found
-                  </div>
                 )}
               </div>
             )}
