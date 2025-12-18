@@ -27,7 +27,11 @@ export const Signup: React.FC<SignupProps> = ({ onSignup, onBack }) => {
     setError('');
 
     try {
-      await supabase.auth.signOut();
+      // Force complete logout and clear all sessions
+      await supabase.auth.signOut({ scope: 'global' });
+
+      // Wait a moment to ensure session is cleared
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,

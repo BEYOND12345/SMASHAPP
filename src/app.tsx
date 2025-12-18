@@ -67,6 +67,13 @@ const App: React.FC = () => {
     try {
       console.log('[App] Loading quotes from database for user:', userId);
 
+      // Verify we have an active session before loading
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn('[App] No active session, skipping quote load');
+        return;
+      }
+
       const { data: quotesData, error } = await supabase
         .from('quotes')
         .select(`
@@ -203,12 +210,20 @@ const App: React.FC = () => {
         }));
       } else {
         console.log('[App] Auth state change - user logged out');
-        setState(prev => ({
-          ...prev,
+        // Clear ALL state on logout
+        setState({
+          currentScreen: 'Login',
+          selectedEstimateId: null,
+          estimates: [], // Clear all estimates
           user: null,
           isAuthenticated: false,
-          currentScreen: 'Login'
-        }));
+          sendingType: 'estimate',
+          activeTab: 'estimates',
+          editReturnScreen: 'EstimatePreview',
+          loading: false,
+          voiceQuoteId: undefined,
+          voiceIntakeId: undefined
+        });
       }
     });
 
@@ -271,12 +286,19 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setState(prev => ({
-      ...prev,
+    setState({
+      currentScreen: 'Login',
+      selectedEstimateId: null,
+      estimates: [], // Clear all estimates
       user: null,
       isAuthenticated: false,
-      currentScreen: 'Login'
-    }));
+      sendingType: 'estimate',
+      activeTab: 'estimates',
+      editReturnScreen: 'EstimatePreview',
+      loading: false,
+      voiceQuoteId: undefined,
+      voiceIntakeId: undefined
+    });
   };
 
   // Actions

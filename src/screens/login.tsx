@@ -24,6 +24,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onSignupClick }) => {
     setError('');
 
     try {
+      // Ensure any old session is cleared first
+      await supabase.auth.signOut({ scope: 'global' });
+
+      // Wait a moment to ensure session is cleared
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
