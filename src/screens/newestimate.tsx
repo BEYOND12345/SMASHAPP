@@ -96,73 +96,60 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
       />
 
       <form onSubmit={handleSubmit} className="flex flex-col flex-1">
-        <div className="px-6 mt-8 flex flex-col gap-6 flex-1">
-          <div>
-            <label className="block text-[15px] font-semibold text-primary mb-2">
-              Customer (Optional)
-            </label>
-            <p className="text-[13px] text-tertiary mb-3">
-              Select an existing customer or leave blank for new
-            </p>
+        <div className="px-6 mt-8 flex flex-col flex-1">
+          <label className="block text-[15px] font-semibold text-primary mb-2">
+            Customer (Optional)
+          </label>
+          <p className="text-[13px] text-tertiary mb-3">
+            Select an existing customer or leave blank for new
+          </p>
 
-            {selectedCustomer ? (
-              <div className="bg-white border border-divider rounded-xl p-4 mb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                      <User className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-primary">{selectedCustomer.name}</h3>
-                      {selectedCustomer.phone && (
-                        <p className="text-sm text-secondary">{selectedCustomer.phone}</p>
-                      )}
-                      {selectedCustomer.email && (
-                        <p className="text-sm text-secondary">{selectedCustomer.email}</p>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCustomer(null)}
-                    className="text-[13px] text-brand font-medium"
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="relative mb-3">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tertiary" />
-                  <input
-                    type="text"
-                    placeholder="Search customers..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-white border border-divider rounded-xl text-[15px] text-primary placeholder-tertiary focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
-                  />
-                </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-3 w-5 h-5 text-tertiary pointer-events-none z-10" />
+            <input
+              type="text"
+              placeholder={selectedCustomer ? selectedCustomer.name : "Search customers..."}
+              value={selectedCustomer ? selectedCustomer.name : searchTerm}
+              onChange={(e) => {
+                if (selectedCustomer) {
+                  setSelectedCustomer(null);
+                }
+                setSearchTerm(e.target.value);
+              }}
+              onFocus={() => {
+                if (selectedCustomer) {
+                  setSelectedCustomer(null);
+                }
+              }}
+              className="w-full pl-10 pr-4 py-3 bg-white border border-divider rounded-xl text-[15px] text-primary placeholder-tertiary focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+            />
 
+            {!selectedCustomer && searchTerm && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-divider rounded-xl shadow-lg overflow-hidden z-20 max-h-64 overflow-y-auto">
                 {loading ? (
-                  <div className="text-center py-4 text-tertiary text-[14px]">
-                    Loading customers...
+                  <div className="px-4 py-3 text-center text-tertiary text-[13px]">
+                    Loading...
                   </div>
                 ) : filteredCustomers.length > 0 ? (
-                  <div className="space-y-2 mb-4">
-                    {filteredCustomers.map((customer) => (
+                  <>
+                    {filteredCustomers.map((customer, index) => (
                       <button
                         key={customer.id}
                         type="button"
-                        onClick={() => setSelectedCustomer(customer)}
-                        className="w-full text-left bg-white border border-divider rounded-xl p-3 hover:border-brand transition-colors"
+                        onClick={() => {
+                          setSelectedCustomer(customer);
+                          setSearchTerm('');
+                        }}
+                        className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${
+                          index > 0 ? 'border-t border-divider' : ''
+                        }`}
                       >
-                        <div className="flex items-start gap-3">
+                        <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
                             <User className="w-4 h-4 text-slate-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-primary text-[14px] mb-0.5">
+                            <h4 className="font-medium text-primary text-[14px]">
                               {customer.name}
                             </h4>
                             {customer.phone && (
@@ -172,17 +159,17 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
                         </div>
                       </button>
                     ))}
-                  </div>
-                ) : searchTerm ? (
-                  <div className="text-center py-4 text-tertiary text-[14px]">
+                  </>
+                ) : (
+                  <div className="px-4 py-3 text-center text-tertiary text-[13px]">
                     No customers found
                   </div>
-                ) : null}
-              </>
+                )}
+              </div>
             )}
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-4">
             <p className="text-[13px] text-blue-900 leading-relaxed">
               {selectedCustomer
                 ? "Voice AI will focus on the job details. Customer info is already saved."
