@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Estimate, JobStatus } from '../types';
 import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
-import { User } from 'lucide-react';
+import { User, Search } from 'lucide-react';
 import { calculateEstimateTotals, formatCurrency, getInitials } from '../lib/utils/calculations';
 
 interface EstimatesListProps {
@@ -38,11 +38,22 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
   onTabChange,
   onProfileClick
 }) => {
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Filter estimates based on active tab
-  const filteredEstimates = activeTab === 'estimates'
+  let filteredEstimates = activeTab === 'estimates'
     ? estimates.filter(est => est.status === JobStatus.DRAFT || est.status === JobStatus.SENT)
     : estimates.filter(est => est.status === JobStatus.APPROVED || est.status === JobStatus.PAID);
+
+  // Apply search filter
+  if (searchTerm.trim()) {
+    const search = searchTerm.toLowerCase();
+    filteredEstimates = filteredEstimates.filter(est =>
+      est.clientName.toLowerCase().includes(search) ||
+      est.jobTitle.toLowerCase().includes(search) ||
+      (est.clientAddress && est.clientAddress.toLowerCase().includes(search))
+    );
+  }
 
   return (
     <Layout activeTab={activeTab} onTabChange={onTabChange} className="bg-[#FAFAFA] relative pb-32">
@@ -56,11 +67,26 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
           )
         }
       />
-      
-      <div className="px-5 flex flex-col gap-3 mt-2">
+
+      <div className="px-5 mt-4">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search by name, job, or address..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
+          />
+        </div>
+      </div>
+
+      <div className="px-5 flex flex-col gap-3 mt-4">
         {filteredEstimates.length === 0 ? (
            <div className="flex flex-col items-center justify-center h-[60vh] text-secondary opacity-60">
-             <p className="font-medium tracking-tight">No {activeTab === 'estimates' ? 'estimates' : 'invoices'} yet</p>
+             <p className="font-medium tracking-tight">
+               {searchTerm.trim() ? 'No matches found' : `No ${activeTab === 'estimates' ? 'estimates' : 'invoices'} yet`}
+             </p>
            </div>
         ) : (
           filteredEstimates.map(est => (
