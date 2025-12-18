@@ -2,6 +2,21 @@ import jsPDF from 'jspdf';
 import { Estimate, UserProfile } from '../../types';
 import { calculateEstimateTotals, formatCurrency } from './calculations';
 
+async function loadImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function generateEstimatePDF(
   estimate: Estimate,
   userProfile?: UserProfile,
@@ -11,10 +26,38 @@ export async function generateEstimatePDF(
   const pageWidth = pdf.internal.pageSize.getWidth();
   let yPos = 20;
 
-  pdf.setFontSize(22);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('SMASH', 20, yPos);
-  yPos += 15;
+  // Try to load and add logo if available
+  if (userProfile?.logoUrl) {
+    try {
+      const logoData = await loadImageAsBase64(userProfile.logoUrl);
+      if (logoData) {
+        const logoSize = 16;
+        pdf.addImage(logoData, 'PNG', 20, yPos - 4, logoSize, logoSize);
+        pdf.setFontSize(22);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('SMASH', 20 + logoSize + 6, yPos);
+        yPos += 15;
+      } else {
+        // Fallback to text only
+        pdf.setFontSize(22);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('SMASH', 20, yPos);
+        yPos += 15;
+      }
+    } catch {
+      // Fallback to text only
+      pdf.setFontSize(22);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SMASH', 20, yPos);
+      yPos += 15;
+    }
+  } else {
+    // No logo, use text only
+    pdf.setFontSize(22);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SMASH', 20, yPos);
+    yPos += 15;
+  }
 
   if (userProfile) {
     pdf.setFontSize(14);
