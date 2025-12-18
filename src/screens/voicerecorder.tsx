@@ -23,6 +23,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const recordedMimeTypeRef = useRef<string>('audio/webm');
+  const recordingStartTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (state === 'recording') {
@@ -121,6 +122,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         await processRecording();
       };
 
+      recordingStartTimeRef.current = Date.now();
       mediaRecorder.start(1000);
       setState('recording');
     } catch (err) {
@@ -139,6 +141,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     try {
       setState('uploading');
 
+      const actualDurationSeconds = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+
       const mimeType = recordedMimeTypeRef.current;
       const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
 
@@ -155,7 +159,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       console.log('[VOICE_CAPTURE] Audio recording complete', {
         size_bytes: audioBlob.size,
         size_kb: Math.round(audioBlob.size / 1024),
-        duration_seconds: recordingTime,
+        duration_seconds_timer: recordingTime,
+        duration_seconds_actual: actualDurationSeconds,
         mime_type: mimeType,
         file_extension: fileExtension,
         chunks_count: audioChunksRef.current.length,
@@ -166,18 +171,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         throw new Error('No audio recorded');
       }
 
-      if (recordingTime < 3) {
-        console.error('[VOICE_CAPTURE] Recording too short');
+      if (actualDurationSeconds < 2) {
+        console.error('[VOICE_CAPTURE] Recording too short', {
+          actual_duration: actualDurationSeconds,
+        });
         throw new Error('Recording too short. Please record for at least 3 seconds.');
       }
 
-      const bytesPerSecond = audioBlob.size / recordingTime;
+      const bytesPerSecond = audioBlob.size / Math.max(actualDurationSeconds, 1);
       console.log('[VOICE_CAPTURE] Audio quality check', {
         bytes_per_second: Math.round(bytesPerSecond),
         expected_min: 4000,
       });
 
-      if (bytesPerSecond < 1000) {
+      if (bytesPerSecond < 500) {
         console.error('[VOICE_CAPTURE] Audio quality too low', {
           bytes_per_second: bytesPerSecond,
         });
