@@ -27,6 +27,8 @@ export const Signup: React.FC<SignupProps> = ({ onSignup, onBack }) => {
     setError('');
 
     try {
+      await supabase.auth.signOut();
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,

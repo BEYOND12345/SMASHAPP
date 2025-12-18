@@ -685,19 +685,19 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
               </div>
               <Input
                 label="Hourly Rate"
-                type="number"
-                step="0.01"
-                value={(profile.hourly_rate_cents / 100).toFixed(2)}
-                onChange={e => setProfile({ ...profile, hourly_rate_cents: Math.round(parseFloat(e.target.value) * 100) })}
-                placeholder="85.00"
+                type="text"
+                inputMode="decimal"
+                value={String(profile.hourly_rate_cents / 100)}
+                onChange={e => setProfile({ ...profile, hourly_rate_cents: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : 0 })}
+                placeholder="85"
               />
               <Input
                 label="Callout Fee"
-                type="number"
-                step="0.01"
-                value={(profile.callout_fee_cents / 100).toFixed(2)}
-                onChange={e => setProfile({ ...profile, callout_fee_cents: Math.round(parseFloat(e.target.value) * 100) })}
-                placeholder="0.00"
+                type="text"
+                inputMode="decimal"
+                value={profile.callout_fee_cents ? String(profile.callout_fee_cents / 100) : ''}
+                onChange={e => setProfile({ ...profile, callout_fee_cents: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : 0 })}
+                placeholder="0"
               />
               <Input
                 label="Travel Fee"

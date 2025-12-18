@@ -48,8 +48,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
   // Step 2: Pricing & Rates
   const [currency, setCurrency] = useState('AUD');
-  const [hourlyRate, setHourlyRate] = useState('85.00');
-  const [calloutFee, setCalloutFee] = useState('0.00');
+  const [hourlyRate, setHourlyRate] = useState('85');
+  const [calloutFee, setCalloutFee] = useState('');
   const [taxRate, setTaxRate] = useState('10');
   const [materialsMarkup, setMaterialsMarkup] = useState('0');
 
@@ -110,6 +110,40 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     if (step > 1) setStep(step - 1);
   };
 
+  const handleSkip = async () => {
+    try {
+      setSaving(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('users')
+        .select('org_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!userData?.org_id) return;
+
+      const { error: orgError } = await supabase
+        .from('organizations')
+        .update({
+          name: user.email || 'My Business',
+          trade_type: 'General',
+        })
+        .eq('id', userData.org_id);
+
+      if (orgError) throw orgError;
+
+      onComplete();
+    } catch (error) {
+      console.error('Failed to skip onboarding:', error);
+      onComplete();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleComplete = async () => {
     try {
       setSaving(true);
@@ -160,7 +194,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           .from('user_pricing_profiles')
           .update({
             hourly_rate_cents: Math.round(parseFloat(hourlyRate) * 100),
-            callout_fee_cents: Math.round(parseFloat(calloutFee) * 100),
+            callout_fee_cents: calloutFee ? Math.round(parseFloat(calloutFee) * 100) : 0,
             travel_rate_cents: null,
             travel_is_time: true,
             materials_markup_percent: parseFloat(materialsMarkup),
@@ -182,7 +216,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             org_id: userData.org_id,
             user_id: user.id,
             hourly_rate_cents: Math.round(parseFloat(hourlyRate) * 100),
-            callout_fee_cents: Math.round(parseFloat(calloutFee) * 100),
+            callout_fee_cents: calloutFee ? Math.round(parseFloat(calloutFee) * 100) : 0,
             travel_rate_cents: null,
             travel_is_time: true,
             materials_markup_percent: parseFloat(materialsMarkup),
@@ -215,6 +249,15 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
             <ChevronLeft size={24} />
           </button>
         ) : undefined}
+        right={
+          <button
+            onClick={handleSkip}
+            disabled={saving}
+            className="text-[14px] font-medium text-secondary hover:text-primary transition-colors disabled:opacity-50"
+          >
+            Skip
+          </button>
+        }
         transparent
       />
 
@@ -321,9 +364,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
             <Input
               label="Your Hourly Rate"
-              type="number"
-              step="0.01"
-              placeholder="85.00"
+              type="text"
+              inputMode="decimal"
+              placeholder="85"
               value={hourlyRate}
               onChange={e => setHourlyRate(e.target.value)}
               autoFocus
@@ -331,9 +374,9 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
             <Input
               label="Callout Fee (optional)"
-              type="number"
-              step="0.01"
-              placeholder="0.00"
+              type="text"
+              inputMode="decimal"
+              placeholder="0"
               value={calloutFee}
               onChange={e => setCalloutFee(e.target.value)}
             />
