@@ -186,6 +186,7 @@ Deno.serve(async (req: Request) => {
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
+      console.error("[AUTH] Missing authorization header");
       throw new Error("Missing authorization header");
     }
 
@@ -195,7 +196,36 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(jwt);
 
     if (userError || !user) {
+      console.error("[AUTH] Unauthorized request", { error: userError?.message });
       throw new Error("Unauthorized");
+    }
+
+    console.log("[AUTH] User authenticated", { user_id: user.id });
+
+    // RATE LIMITING: Check if user has exceeded rate limit
+    const { data: rateLimitResult, error: rateLimitError } = await supabase
+      .rpc("check_rate_limit", {
+        p_user_id: user.id,
+        p_endpoint: "extract-quote-data",
+        p_max_calls: 20,
+        p_window_minutes: 60,
+      });
+
+    if (rateLimitError) {
+      console.error("[SECURITY] Rate limit check failed", { error: rateLimitError.message });
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.warn("[SECURITY] RATE_LIMIT user_id=" + user.id + " endpoint=extract-quote-data");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Rate limit exceeded. Please try again later.",
+          rate_limit: rateLimitResult,
+        }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const { intake_id, user_corrections_json }: ExtractRequest = await req.json();

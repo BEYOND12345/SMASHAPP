@@ -42,6 +42,7 @@ Deno.serve(async (req: Request) => {
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
+      console.error("[AUTH] Missing authorization header");
       throw new Error("Missing authorization header");
     }
 
@@ -51,7 +52,36 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await supabase.auth.getUser(jwt);
 
     if (userError || !user) {
+      console.error("[AUTH] Unauthorized request", { error: userError?.message });
       throw new Error("Unauthorized");
+    }
+
+    console.log("[AUTH] User authenticated", { user_id: user.id });
+
+    // RATE LIMITING: Check if user has exceeded rate limit
+    const { data: rateLimitResult, error: rateLimitError } = await supabase
+      .rpc("check_rate_limit", {
+        p_user_id: user.id,
+        p_endpoint: "create-draft-quote",
+        p_max_calls: 10,
+        p_window_minutes: 60,
+      });
+
+    if (rateLimitError) {
+      console.error("[SECURITY] Rate limit check failed", { error: rateLimitError.message });
+    } else if (rateLimitResult && !rateLimitResult.allowed) {
+      console.warn("[SECURITY] RATE_LIMIT user_id=" + user.id + " endpoint=create-draft-quote");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Rate limit exceeded. Please try again later.",
+          rate_limit: rateLimitResult,
+        }),
+        {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const { intake_id }: CreateDraftRequest = await req.json();
@@ -340,12 +370,12 @@ Deno.serve(async (req: Request) => {
     });
 
     if (profileError) {
-      console.error("PRICING_PROFILE_RPC_ERROR", { user_id: user.id, error: profileError });
+      console.error("[PRICING_ERROR] PRICING_PROFILE_RPC_ERROR", { user_id: user.id, error: profileError });
       throw new Error(`[PRICING_ERROR] Failed to retrieve pricing profile: ${profileError.message}. Please complete setup in Settings.`);
     }
 
     if (!profileData) {
-      console.error("PRICING_PROFILE_NULL", { user_id: user.id });
+      console.error("[PRICING_ERROR] PRICING_PROFILE_NULL", { user_id: user.id });
       throw new Error("[PRICING_ERROR] No pricing profile found. Please complete setup in Settings.");
     }
 
@@ -353,7 +383,7 @@ Deno.serve(async (req: Request) => {
 
     // GUARD RAIL: Fail hard if hourly_rate_cents is missing or invalid
     if (!profile.hourly_rate_cents || profile.hourly_rate_cents <= 0) {
-      console.error("INVALID_HOURLY_RATE", {
+      console.error("[PRICING_ERROR] INVALID_HOURLY_RATE", {
         user_id: user.id,
         profile_id: profile.profile_id,
         hourly_rate_cents: profile.hourly_rate_cents
