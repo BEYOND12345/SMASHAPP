@@ -16,7 +16,6 @@ import { InvoicePreview } from './screens/invoicepreview';
 import { PublicQuoteView } from './screens/publicquoteview';
 import { PublicInvoiceView } from './screens/publicinvoiceview';
 import { Settings } from './screens/settings';
-import { ReviewQuote } from './screens/reviewquote';
 import { ReviewDraft } from './screens/reviewdraft';
 import { MaterialsCatalog } from './screens/materialscatalog';
 import { supabase } from './lib/supabase';
@@ -313,21 +312,6 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleNeedsReview = (intakeId: string) => {
-    setState(prev => ({
-      ...prev,
-      voiceIntakeId: intakeId,
-      currentScreen: 'ReviewQuote'
-    }));
-  };
-
-  const handleReviewConfirmed = () => {
-    // After user confirms corrections, go to Processing to create quote
-    setState(prev => ({
-      ...prev,
-      currentScreen: 'Processing'
-    }));
-  };
 
   const handleSelectEstimate = (id: string) => {
     setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }));
@@ -634,16 +618,6 @@ const App: React.FC = () => {
           <Processing
             intakeId={state.voiceIntakeId}
             onComplete={handleProcessingFinished}
-            onNeedsReview={handleNeedsReview}
-          />
-        ) : null;
-
-      case 'ReviewQuote':
-        return state.voiceIntakeId ? (
-          <ReviewQuote
-            intakeId={state.voiceIntakeId}
-            onBack={() => navigate('NewEstimate')}
-            onConfirmed={handleReviewConfirmed}
           />
         ) : null;
 

@@ -7,12 +7,11 @@ import { supabase } from '../lib/supabase';
 interface ProcessingProps {
   intakeId: string;
   onComplete: (quoteId: string, intakeId: string) => void;
-  onNeedsReview: (intakeId: string) => void;
 }
 
 type ProcessingStep = 'extracting' | 'creating' | 'success' | 'error';
 
-export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete, onNeedsReview }) => {
+export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) => {
   const [step, setStep] = useState<ProcessingStep>('extracting');
   const [error, setError] = useState<string>('');
 
@@ -85,16 +84,6 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete, on
       const extractData = await extractResponse.json();
 
       console.log('[Processing] Extract response:', extractData);
-
-      // Phase A2: Check if extraction needs user review
-      if (extractData.status === 'needs_user_review') {
-        console.log('Extraction needs user review, routing to ReviewQuote');
-        setTimeout(() => {
-          onNeedsReview(intakeId);
-        }, 500);
-        return;
-      }
-
       console.log('[Processing] Extraction successful, proceeding to create quote');
       setStep('creating');
 
