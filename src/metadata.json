@@ -1,0 +1,7 @@
+{
+  "name": "SMASH",
+  "description": "A minimalist, voice-to-quote app for tradespeople. Converts voice recordings into structured estimates and invoices.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
