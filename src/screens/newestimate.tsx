@@ -92,7 +92,7 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
         .from('customers')
         .insert({
           name: name.trim(),
-          organization_id: userData.organization_id
+          org_id: userData.organization_id
         })
         .select()
         .single();
