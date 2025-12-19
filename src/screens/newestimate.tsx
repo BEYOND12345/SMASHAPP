@@ -51,16 +51,16 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
 
       const { data: userData } = await supabase
         .from('users')
-        .select('organization_id')
+        .select('org_id')
         .eq('id', user.id)
         .single();
 
-      if (!userData?.organization_id) return;
+      if (!userData?.org_id) return;
 
       const { data, error } = await supabase
         .from('customers')
         .select('id, name, phone, email, company_name, notes')
-        .eq('org_id', userData.organization_id)
+        .eq('org_id', userData.org_id)
         .not('name', 'is', null)
         .neq('name', '')
         .order('created_at', { ascending: false })
@@ -83,17 +83,17 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
 
       const { data: userData } = await supabase
         .from('users')
-        .select('organization_id')
+        .select('org_id')
         .eq('id', user.id)
         .single();
 
-      if (!userData?.organization_id) return;
+      if (!userData?.org_id) return;
 
       const { data, error } = await supabase
         .from('customers')
         .insert({
           name: name.trim(),
-          org_id: userData.organization_id
+          org_id: userData.org_id
         })
         .select()
         .single();
