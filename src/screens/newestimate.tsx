@@ -9,7 +9,8 @@ interface Customer {
   name: string;
   phone?: string;
   email?: string;
-  address?: string;
+  company_name?: string;
+  notes?: string;
 }
 
 interface NewEstimateProps {
@@ -58,8 +59,8 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
 
       const { data, error } = await supabase
         .from('customers')
-        .select('id, name, phone, email, address')
-        .eq('organization_id', userData.organization_id)
+        .select('id, name, phone, email, company_name, notes')
+        .eq('org_id', userData.organization_id)
         .not('name', 'is', null)
         .neq('name', '')
         .order('created_at', { ascending: false })
@@ -104,7 +105,8 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
         name: data.name,
         phone: data.phone,
         email: data.email,
-        address: data.address
+        company_name: data.company_name,
+        notes: data.notes
       };
 
       setCustomers([newCustomer, ...customers]);
@@ -118,7 +120,7 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedCustomer) {
-      onStartRecording(selectedCustomer.name, selectedCustomer.address || '', selectedCustomer.id);
+      onStartRecording(selectedCustomer.name, selectedCustomer.notes || '', selectedCustomer.id);
     } else {
       onStartRecording('', '');
     }
