@@ -203,7 +203,6 @@ Deno.serve(async (req: Request) => {
 
     console.log("[AUTH] User authenticated", { user_id: user.id });
 
-    // RATE LIMITING: Check if user has exceeded rate limit
     const { data: rateLimitResult, error: rateLimitError } = await supabase
       .rpc("check_rate_limit", {
         p_user_id: user.id,
@@ -235,7 +234,6 @@ Deno.serve(async (req: Request) => {
       throw new Error("Missing intake_id");
     }
 
-    // Fetch intake record
     const { data: intake, error: intakeError } = await supabase
       .from("voice_intakes")
       .select("*")
@@ -247,7 +245,6 @@ Deno.serve(async (req: Request) => {
       throw new Error("Voice intake not found");
     }
 
-    // Check if customer is pre-selected
     let existingCustomer: any = null;
     if (intake.customer_id) {
       console.log("[CUSTOMER] Using pre-selected customer:", intake.customer_id);
@@ -267,12 +264,10 @@ Deno.serve(async (req: Request) => {
 
     let extractedData: any;
 
-    // PHASE A2: If corrections exist, merge deterministically (no new AI inference)
     if (user_corrections_json && intake.extraction_json) {
       console.log("Phase A2: Merging user corrections deterministically...");
-      extractedData = JSON.parse(JSON.stringify(intake.extraction_json)); // Deep clone
+      extractedData = JSON.parse(JSON.stringify(intake.extraction_json));
 
-      // Apply labour overrides
       if (user_corrections_json.labour_overrides && extractedData.time?.labour_entries) {
         Object.entries(user_corrections_json.labour_overrides).forEach(([key, value]: [string, any]) => {
           const match = key.match(/^labour_(\d+)_(hours|days|people)$/);
@@ -281,7 +276,6 @@ Deno.serve(async (req: Request) => {
             const idx = parseInt(idxStr, 10);
             if (extractedData.time.labour_entries[idx]) {
               const entry = extractedData.time.labour_entries[idx];
-              // Set value and boost confidence to 1.0 (user-corrected)
               if (typeof entry[field] === 'object') {
                 entry[field] = { value, confidence: 1.0 };
               } else {
@@ -292,7 +286,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Apply materials overrides
       if (user_corrections_json.materials_overrides && extractedData.materials?.items) {
         Object.entries(user_corrections_json.materials_overrides).forEach(([key, value]: [string, any]) => {
           const match = key.match(/^material_(\d+)_quantity$/);
@@ -310,7 +303,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Apply travel overrides
       if (user_corrections_json.travel_overrides && extractedData.fees?.travel) {
         if (user_corrections_json.travel_overrides.travel_hours !== undefined) {
           const travel = extractedData.fees.travel;
@@ -322,7 +314,6 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Boost confidence for confirmed assumptions
       if (user_corrections_json.confirmed_assumptions && extractedData.assumptions) {
         extractedData.assumptions = extractedData.assumptions.map((assumption: any) => {
           if (user_corrections_json.confirmed_assumptions.includes(assumption.field)) {
@@ -332,11 +323,9 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Recalculate overall confidence
       let totalConfidence = 0;
       let confidenceCount = 0;
 
-      // Labour confidence
       if (extractedData.time?.labour_entries) {
         extractedData.time.labour_entries.forEach((entry: any) => {
           ['hours', 'days', 'people'].forEach((field) => {
@@ -349,7 +338,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Materials confidence
       if (extractedData.materials?.items) {
         extractedData.materials.items.forEach((item: any) => {
           if (item.quantity) {
@@ -360,7 +348,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Assumption confidence
       if (extractedData.assumptions) {
         extractedData.assumptions.forEach((assumption: any) => {
           totalConfidence += assumption.confidence || 0;
@@ -374,12 +361,10 @@ Deno.serve(async (req: Request) => {
 
       console.log(`Recalculated confidence: ${overallConfidence.toFixed(2)}`);
     } else {
-      // PHASE A1: Standard extraction flow (no corrections)
       if (!intake.transcript_text) {
         throw new Error("No transcript available for extraction");
       }
 
-      // Get pricing profile
       const { data: profileData, error: profileError } = await supabase
         .rpc("get_effective_pricing_profile", { p_user_id: user.id });
 
@@ -387,18 +372,24 @@ Deno.serve(async (req: Request) => {
         throw new Error("No pricing profile found");
       }
 
-      // Get material catalog for the user's org
+      const { data: orgData } = await supabase
+        .from("organizations")
+        .select("country_code")
+        .eq("id", (profileData as any).org_id)
+        .maybeSingle();
+
+      const regionCode = orgData?.country_code || 'AU';
+
       const { data: catalogItems } = await supabase
         .from("material_catalog_items")
-        .select("id, name, category, unit, unit_price_cents, supplier_name")
-        .eq("org_id", (profileData as any).org_id)
+        .select("id, name, category, unit, unit_price_cents, typical_low_price_cents, typical_high_price_cents, supplier_name, search_aliases")
+        .or(`org_id.eq.${(profileData as any).org_id},and(org_id.is.null,region_code.eq.${regionCode})`)
         .eq("is_active", true)
         .order("category", { ascending: true })
         .order("name", { ascending: true });
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
-      // STEP 1: Speech Repair - Clean up messy transcript
       console.log("Step 1: Repairing transcript...");
       const repairResponse = await fetch(proxyUrl, {
         method: "POST",
@@ -429,7 +420,6 @@ Deno.serve(async (req: Request) => {
 
       console.log("Repaired transcript:", repairedTranscript);
 
-      // STEP 2: Structured Extraction with Confidence Scoring
       console.log("Step 2: Extracting structured data with confidence scores...");
 
       let extractionMessage = `Raw Transcript:\n${intake.transcript_text}\n\nRepaired Transcript:\n${repairedTranscript}\n\nPricing Profile:\n${JSON.stringify(profileData, null, 2)}`;
@@ -474,7 +464,6 @@ Deno.serve(async (req: Request) => {
       const extractionResult = await extractionResponse.json();
       extractedData = JSON.parse(extractionResult.choices[0].message.content);
 
-      // Override customer data if we have an existing customer
       if (existingCustomer) {
         console.log("[CUSTOMER] Overriding extracted customer data with existing customer");
         extractedData.customer = {
@@ -482,7 +471,6 @@ Deno.serve(async (req: Request) => {
           email: existingCustomer.email || null,
           phone: existingCustomer.phone || null,
         };
-        // Add to assumptions that customer was pre-selected
         if (!extractedData.assumptions) extractedData.assumptions = [];
         extractedData.assumptions.push({
           field: "customer",
@@ -493,15 +481,12 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // STEP 3: Determine Status Based on Quality Checks
     console.log("Step 3: Determining status based on quality checks...");
 
     const missingFields = extractedData.missing_fields || [];
     const assumptions = extractedData.assumptions || [];
     const quality = extractedData.quality || {};
 
-    // CRITICAL: Validate and enforce overall_confidence is always a valid number
-    // This prevents NULL confidence from ever being written to the database
     let oc: any = quality.overall_confidence;
 
     const bad =
@@ -520,26 +505,20 @@ Deno.serve(async (req: Request) => {
       oc = 0.5;
     }
 
-    // Coerce to number and clamp to valid range [0.0, 1.0]
     oc = Number(oc);
     if (Number.isNaN(oc)) oc = 0.5;
     if (oc < 0) oc = 0.0;
     if (oc > 1) oc = 1.0;
 
-    // Write back to extractedData so it's stored correctly
     if (!extractedData.quality) extractedData.quality = {};
     extractedData.quality.overall_confidence = oc;
 
-    // Check for required missing fields
     const hasRequiredMissing = missingFields.some((mf: any) => mf.severity === "required");
 
-    // Check for critical fields below confidence threshold
     const hasCriticalLowConfidence = quality.critical_fields_below_threshold?.length > 0;
 
-    // Use validated confidence
     const overallConfidence = oc;
 
-    // Check if any labour hours have confidence < 0.6
     let hasLowConfidenceLabour = false;
     if (extractedData.time?.labour_entries) {
       for (const entry of extractedData.time.labour_entries) {
@@ -552,12 +531,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Determine final status
     let finalStatus = "extracted";
     let requiresReview = false;
 
-    // CRITICAL: If user has provided corrections, honor their confirmation and skip confidence checks
-    // This breaks the infinite review loop for complete but low-confidence transcripts
     const userHasConfirmed = user_corrections_json !== undefined && user_corrections_json !== null;
 
     if (userHasConfirmed) {
@@ -565,9 +541,8 @@ Deno.serve(async (req: Request) => {
       finalStatus = "extracted";
       requiresReview = false;
 
-      // Set quality flag to indicate user confirmation was required
       if (!extractedData.quality) extractedData.quality = {};
-      extractedData.quality.requires_user_confirmation = false; // Now confirmed
+      extractedData.quality.requires_user_confirmation = false;
       extractedData.quality.user_confirmed = true;
       extractedData.quality.user_confirmed_at = new Date().toISOString();
     } else if (hasRequiredMissing) {
@@ -600,7 +575,6 @@ Deno.serve(async (req: Request) => {
       extractedData.quality.requires_user_confirmation = false;
     }
 
-    // Update intake with extraction results
     const { error: updateError } = await supabase
       .from("voice_intakes")
       .update({
