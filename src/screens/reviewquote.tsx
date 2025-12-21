@@ -117,6 +117,11 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
 
   const [auditPreviewExpanded, setAuditPreviewExpanded] = useState(false);
 
+  const [catalogBrowserOpen, setCatalogBrowserOpen] = useState(false);
+  const [selectedMaterialIndex, setSelectedMaterialIndex] = useState<number | null>(null);
+  const [catalogItems, setCatalogItems] = useState<any[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+
   const firstLowConfidenceRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -334,6 +339,61 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
       ...prev,
       confirmed_assumptions: assumptions.map(a => a.field),
     }));
+  }
+
+  async function openCatalogBrowser(materialIndex: number) {
+    setSelectedMaterialIndex(materialIndex);
+    setCatalogBrowserOpen(true);
+    setLoadingCatalog(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data: profile } = await supabase
+        .rpc('get_effective_pricing_profile', { p_user_id: session.user.id });
+
+      if (!profile) return;
+
+      const { data: items } = await supabase
+        .from('material_catalog_items')
+        .select('*')
+        .or(`org_id.eq.${profile.org_id},and(org_id.is.null,region_code.eq.AU)`)
+        .eq('is_active', true)
+        .order('category')
+        .order('name');
+
+      setCatalogItems(items || []);
+    } catch (err) {
+      console.error('Failed to load catalog:', err);
+    } finally {
+      setLoadingCatalog(false);
+    }
+  }
+
+  function selectCatalogItem(catalogItem: any) {
+    if (selectedMaterialIndex === null || !extractionData?.materials?.items) return;
+
+    const updatedExtraction = JSON.parse(JSON.stringify(extractionData));
+    const material = updatedExtraction.materials.items[selectedMaterialIndex];
+
+    // Calculate midpoint price
+    let unitPrice = catalogItem.unit_price_cents;
+    if (!unitPrice && catalogItem.typical_low_price_cents && catalogItem.typical_high_price_cents) {
+      unitPrice = Math.round((catalogItem.typical_low_price_cents + catalogItem.typical_high_price_cents) / 2);
+    }
+
+    // Update material with catalog item
+    material.catalog_item_id = catalogItem.id;
+    material.catalog_match_confidence = 1.0;
+    material.unit = { value: catalogItem.unit, confidence: 1.0 };
+    material.unit_price_cents = unitPrice;
+    material.needs_pricing = false;
+    material.notes = 'From catalog - user selected';
+
+    setExtractionData(updatedExtraction);
+    setCatalogBrowserOpen(false);
+    setSelectedMaterialIndex(null);
   }
 
   function getConfidenceColor(confidence: number): string {
@@ -1015,9 +1075,39 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
 
                 const quantityColors = getConfidenceColorClasses(quantityConfidence);
 
+                // Determine price source indicator
+                const hasCatalogLink = !!item.catalog_item_id;
+                const hasPrice = item.unit_price_cents && item.unit_price_cents > 0;
+                const isEstimated = !hasCatalogLink && hasPrice && item.notes?.includes('Estimated');
+                const needsPricing = !hasPrice;
+
+                let priceSourceBadge = null;
+                if (hasCatalogLink) {
+                  priceSourceBadge = (
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                      Price guide
+                    </span>
+                  );
+                } else if (isEstimated) {
+                  priceSourceBadge = (
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      Estimated
+                    </span>
+                  );
+                } else if (needsPricing) {
+                  priceSourceBadge = (
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                      Needs price
+                    </span>
+                  );
+                }
+
                 return (
                   <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="font-medium text-gray-900 mb-3">{item.description}</p>
+                    <div className="flex items-start justify-between mb-3">
+                      <p className="font-medium text-gray-900">{item.description}</p>
+                      {priceSourceBadge}
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-gray-600 mb-1 flex items-center gap-2">
@@ -1049,6 +1139,13 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
                         />
                       </div>
                     </div>
+                    <Button
+                      onClick={() => openCatalogBrowser(idx)}
+                      variant="outline"
+                      className="w-full mt-3 text-sm"
+                    >
+                      Change Material
+                    </Button>
                   </div>
                 );
               })}
@@ -1204,6 +1301,75 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
           </div>
         </div>
       </div>
+
+      {/* Catalog Browser Modal */}
+      {catalogBrowserOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Select Material from Catalog</h3>
+              <button
+                onClick={() => {
+                  setCatalogBrowserOpen(false);
+                  setSelectedMaterialIndex(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingCatalog ? (
+                <div className="flex items-center justify-center py-8">
+                  <p className="text-gray-600">Loading catalog...</p>
+                </div>
+              ) : catalogItems.length === 0 ? (
+                <div className="flex items-center justify-center py-8">
+                  <p className="text-gray-600">No catalog items available</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {catalogItems.map((item: any) => {
+                    const midpoint = item.unit_price_cents ||
+                      (item.typical_low_price_cents && item.typical_high_price_cents
+                        ? Math.round((item.typical_low_price_cents + item.typical_high_price_cents) / 2)
+                        : null);
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => selectCatalogItem(item)}
+                        className="w-full text-left p-3 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900">{item.name}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                                {item.category_group}
+                              </span>
+                              <span className="text-xs text-gray-600">{item.unit}</span>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            {midpoint ? (
+                              <p className="font-semibold text-gray-900">
+                                ${(midpoint / 100).toFixed(2)}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-gray-500">No price</p>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

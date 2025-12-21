@@ -84,15 +84,25 @@ SCOPE OF WORK - CRITICAL REQUIREMENTS:
 11. Each scope item should be a single, clear task that a customer can understand
 12. Use professional trade terminology but keep it accessible
 
-MATERIALS CATALOG MATCHING:
+MATERIALS CATALOG MATCHING (TIER 1 - EXACT MATCH):
 13. If a Material Catalog is provided, try to match mentioned materials to catalog items
 14. Match based on description similarity and search_aliases (e.g., "black paint" matches items with "paint" in aliases, "screws" matches "Screws - Decking")
-15. If matched, include catalog_item_id and set catalog_match_confidence (0.0-1.0)
+15. If matched with confidence >= 0.75, include catalog_item_id and set catalog_match_confidence (0.0-1.0)
 16. PRICING FROM CATALOG:
     - If unit_price_cents exists: use that value
     - If unit_price_cents is null but typical_low_price_cents and typical_high_price_cents exist: calculate midpoint (typical_low + typical_high) / 2
     - Always set needs_pricing: false when a price is available from catalog
-17. If no good match or catalog empty, leave catalog_item_id as null and set needs_pricing: true
+
+TIER 2 FALLBACK PRICING (NO CONFIDENT MATCH):
+17. If no confident match (confidence < 0.75) AND Category Price Guide is provided:
+    - Infer the most likely category_group and unit from the material description
+    - Look up the conservative_midpoint_cents for that category_group and unit in the Price Guide
+    - Set unit_price_cents to the conservative_midpoint_cents value
+    - DO NOT set catalog_item_id (leave as null)
+    - Set needs_pricing: false
+    - Set notes: "Estimated - [category_group] typical pricing"
+    - Set catalog_match_confidence: null
+18. If no confident match AND no price guide data available, set needs_pricing: true and unit_price_cents: null
 
 Return ONLY valid JSON matching this exact schema:
 {
@@ -385,11 +395,39 @@ Deno.serve(async (req: Request) => {
 
       const { data: catalogItems } = await supabase
         .from("material_catalog_items")
-        .select("id, name, category, unit, unit_price_cents, typical_low_price_cents, typical_high_price_cents, supplier_name, search_aliases")
+        .select("id, name, category, category_group, unit, unit_price_cents, typical_low_price_cents, typical_high_price_cents, supplier_name, search_aliases")
         .or(`org_id.eq.${(profileData as any).org_id},and(org_id.is.null,region_code.eq.${regionCode})`)
         .eq("is_active", true)
         .order("category", { ascending: true })
         .order("name", { ascending: true });
+
+      // Calculate category-level pricing guide for fallback estimation
+      const priceGuide: any = {};
+      if (catalogItems && catalogItems.length > 0) {
+        catalogItems.forEach((item: any) => {
+          if (item.typical_low_price_cents && item.typical_high_price_cents) {
+            const key = `${item.category_group}|${item.unit}`;
+            if (!priceGuide[key]) {
+              priceGuide[key] = [];
+            }
+            // Use conservative (low) estimate for fallback
+            priceGuide[key].push(item.typical_low_price_cents);
+          }
+        });
+
+        // Calculate conservative midpoint (median of low prices) for each category+unit combo
+        Object.keys(priceGuide).forEach(key => {
+          const prices = priceGuide[key].sort((a: number, b: number) => a - b);
+          const median = prices[Math.floor(prices.length / 2)];
+          const [category_group, unit] = key.split('|');
+          priceGuide[key] = {
+            category_group,
+            unit,
+            conservative_midpoint_cents: median,
+            sample_count: prices.length
+          };
+        });
+      }
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
@@ -437,6 +475,10 @@ Deno.serve(async (req: Request) => {
 
       if (catalogItems && catalogItems.length > 0) {
         extractionMessage += `\n\nMaterial Catalog (match materials to these if possible):\n${JSON.stringify(catalogItems, null, 2)}`;
+      }
+
+      if (Object.keys(priceGuide).length > 0) {
+        extractionMessage += `\n\nCategory Price Guide (use for fallback estimation when no confident catalog match):\n${JSON.stringify(Object.values(priceGuide), null, 2)}`;
       }
 
       const extractionResponse = await fetch(proxyUrl, {
