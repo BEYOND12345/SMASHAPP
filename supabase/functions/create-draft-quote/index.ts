@@ -553,6 +553,32 @@ Deno.serve(async (req: Request) => {
         const catalogItemId = material.catalog_item_id || null;
         const matchConfidence = material.catalog_match_confidence || null;
 
+        // If catalog item exists but no unit price, fetch from catalog
+        if (catalogItemId && (!material.unit_price_cents || material.unit_price_cents === 0)) {
+          console.log("[QUOTE_CREATE] Fetching catalog price for item", { catalogItemId });
+          const { data: catalogItem } = await supabase
+            .from("material_catalog_items")
+            .select("unit_price_cents, typical_low_price_cents, typical_high_price_cents")
+            .eq("id", catalogItemId)
+            .maybeSingle();
+
+          if (catalogItem) {
+            if (catalogItem.unit_price_cents) {
+              material.unit_price_cents = catalogItem.unit_price_cents;
+            } else if (catalogItem.typical_low_price_cents && catalogItem.typical_high_price_cents) {
+              // Calculate midpoint
+              material.unit_price_cents = Math.round(
+                (catalogItem.typical_low_price_cents + catalogItem.typical_high_price_cents) / 2
+              );
+              console.log("[QUOTE_CREATE] Using catalog price midpoint", {
+                low: catalogItem.typical_low_price_cents,
+                high: catalogItem.typical_high_price_cents,
+                midpoint: material.unit_price_cents
+              });
+            }
+          }
+        }
+
         if (material.unit_price_cents && material.unit_price_cents > 0) {
           // Apply markup to unit price
           const basePrice = material.unit_price_cents;
