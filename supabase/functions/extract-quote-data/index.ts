@@ -86,9 +86,12 @@ SCOPE OF WORK - CRITICAL REQUIREMENTS:
 
 MATERIALS CATALOG MATCHING:
 13. If a Material Catalog is provided, try to match mentioned materials to catalog items
-14. Match based on description similarity (e.g., "white paint" matches "White top coat")
+14. Match based on description similarity and search_aliases (e.g., "black paint" matches items with "paint" in aliases, "screws" matches "Screws - Decking")
 15. If matched, include catalog_item_id and set catalog_match_confidence (0.0-1.0)
-16. Use catalog unit_price_cents when matched with high confidence (>0.8)
+16. PRICING FROM CATALOG:
+    - If unit_price_cents exists: use that value
+    - If unit_price_cents is null but typical_low_price_cents and typical_high_price_cents exist: calculate midpoint (typical_low + typical_high) / 2
+    - Always set needs_pricing: false when a price is available from catalog
 17. If no good match or catalog empty, leave catalog_item_id as null and set needs_pricing: true
 
 Return ONLY valid JSON matching this exact schema:
