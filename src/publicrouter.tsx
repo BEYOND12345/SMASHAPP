@@ -208,11 +208,99 @@ export const PublicRouter: React.FC = () => {
     );
   }
 
+  const handleApproveQuote = async () => {
+    if (!estimate) return;
+
+    try {
+      const path = window.location.pathname;
+      const quoteMatch = path.match(/^\/quote\/([a-f0-9-]+)$/i);
+      if (!quoteMatch) {
+        alert('Invalid quote URL');
+        return;
+      }
+
+      const approvalToken = quoteMatch[1];
+
+      // Get the quote ID from the approval token
+      const { data: quoteData, error: quoteError } = await supabase
+        .rpc('get_public_quote', { p_token: approvalToken });
+
+      if (quoteError || !quoteData || quoteData.length === 0) {
+        console.error('[PublicRouter] Failed to get quote for approval:', quoteError);
+        alert('Failed to load quote details. Please try again.');
+        return;
+      }
+
+      const quoteId = quoteData[0].id;
+
+      // Get line items to build the snapshot
+      const { data: lineItems, error: lineItemsError } = await supabase
+        .rpc('get_public_quote_line_items', { p_token: approvalToken });
+
+      if (lineItemsError) {
+        console.error('[PublicRouter] Failed to get line items:', lineItemsError);
+        alert('Failed to load quote details. Please try again.');
+        return;
+      }
+
+      // Build the acceptance snapshot
+      const acceptedSnapshot = {
+        quote_id: quoteId,
+        title: quoteData[0].title,
+        customer_name: quoteData[0].customer_name,
+        line_items: lineItems || [],
+        totals: {
+          labour_subtotal_cents: quoteData[0].labour_subtotal_cents,
+          materials_subtotal_cents: quoteData[0].materials_subtotal_cents,
+          subtotal_cents: quoteData[0].subtotal_cents,
+          tax_total_cents: quoteData[0].tax_total_cents,
+          grand_total_cents: quoteData[0].grand_total_cents,
+        },
+        accepted_at: new Date().toISOString()
+      };
+
+      // Update quote to accepted status
+      const { error: updateError } = await supabase
+        .from('quotes')
+        .update({
+          status: 'accepted',
+          accepted_at: new Date().toISOString(),
+          accepted_by_name: quoteData[0].customer_name || 'Customer',
+          accepted_by_email: quoteData[0].customer_email,
+          accepted_quote_snapshot: acceptedSnapshot
+        })
+        .eq('id', quoteId);
+
+      if (updateError) {
+        console.error('[PublicRouter] Failed to approve quote:', updateError);
+        alert('Failed to approve quote. Please try again.');
+        return;
+      }
+
+      // Create invoice from accepted quote
+      const { data: invoiceId, error: invoiceError } = await supabase
+        .rpc('create_invoice_from_accepted_quote', { p_quote_id: quoteId });
+
+      if (invoiceError) {
+        console.error('[PublicRouter] Failed to create invoice:', invoiceError);
+        alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${invoiceError.message}\n\nThe invoice can be created later from the job card.`);
+        return;
+      }
+
+      console.log('[PublicRouter] Quote approved and invoice created:', invoiceId);
+      alert('Quote approved successfully! An invoice has been created and the business owner will be in touch shortly.');
+
+    } catch (err) {
+      console.error('[PublicRouter] Exception during approval:', err);
+      alert('An unexpected error occurred. Please try again.');
+    }
+  };
+
   return (
     <PublicQuoteView
       estimate={estimate}
       businessName={businessInfo.name}
-      onApprove={() => alert('Quote approval would happen here')}
+      onApprove={handleApproveQuote}
     />
   );
 };
