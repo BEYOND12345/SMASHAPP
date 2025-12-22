@@ -109,7 +109,8 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             .from('quotes')
             .select(`
               *,
-              quote_line_items (*)
+              quote_line_items (*),
+              customer:customers (*)
             `)
             .eq('id', estimateId)
             .maybeSingle();
@@ -142,9 +143,11 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             const estimateObj: Estimate = {
               id: quoteData.id,
               jobTitle: quoteData.title || '',
-              clientName: '',
-              clientAddress: '',
-              timeline: '',
+              clientName: quoteData.customer?.name || '',
+              clientAddress: quoteData.customer?.billing_street || '',
+              clientEmail: quoteData.customer?.email || '',
+              clientPhone: quoteData.customer?.phone || '',
+              timeline: '2-3 days',
               scopeOfWork: quoteData.scope_of_work || [],
               materials,
               labour: {
@@ -152,7 +155,8 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
                 rate: (labourItem?.unit_price_cents || 0) / 100,
               },
               status: quoteData.status,
-              createdAt: quoteData.created_at,
+              date: new Date(quoteData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+              gstRate: quoteData.default_tax_rate || 0.10,
             };
 
             setEstimate(estimateObj);
@@ -175,15 +179,27 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
         if (user) {
           const { data: profileData } = await supabase
             .from('users')
-            .select('business_name, trade_type, logo_url')
+            .select('*, org:organizations(*)')
             .eq('id', user.id)
             .maybeSingle();
 
           if (profileData) {
             setUserProfile({
+              id: profileData.id,
+              email: user.email || '',
               businessName: profileData.business_name,
               tradeType: profileData.trade_type,
+              phone: profileData.phone || '',
               logoUrl: profileData.logo_url,
+              businessAddress: profileData.org?.address || '',
+              abn: profileData.org?.abn || '',
+              website: profileData.org?.website || '',
+              bankName: profileData.org?.bank_name || '',
+              accountName: profileData.org?.account_name || '',
+              bsbRouting: profileData.org?.bsb_routing || '',
+              accountNumber: profileData.org?.account_number || '',
+              paymentTerms: profileData.org?.payment_terms || '',
+              paymentInstructions: profileData.org?.payment_instructions || '',
             });
           }
         }

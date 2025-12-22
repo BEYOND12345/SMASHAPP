@@ -23,6 +23,7 @@ export interface Estimate {
   jobTitle: string;
   clientName: string;
   clientAddress?: string;
+  clientEmail?: string;
   clientPhone?: string;
   status: JobStatus;
   date: string;

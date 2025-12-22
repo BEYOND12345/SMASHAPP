@@ -102,6 +102,7 @@ const App: React.FC = () => {
         jobTitle: quoteData.title || 'Untitled Job',
         clientName: quoteData.customer?.name || 'No Customer',
         clientAddress: quoteData.customer?.billing_street || '',
+        clientEmail: quoteData.customer?.email || '',
         clientPhone: quoteData.customer?.phone || '',
         timeline: '2-3 days',
         scopeOfWork: Array.isArray(quoteData.scope_of_work) && quoteData.scope_of_work.length > 0
@@ -789,6 +790,8 @@ const App: React.FC = () => {
                   jobTitle: quoteData.title || '',
                   clientName: quoteData.customer?.name || '',
                   clientAddress: quoteData.customer?.billing_street || '',
+                  clientEmail: quoteData.customer?.email || '',
+                  clientPhone: quoteData.customer?.phone || '',
                   timeline: '2-3 days',
                   scopeOfWork: Array.isArray(quoteData.scope_of_work) && quoteData.scope_of_work.length > 0
                     ? quoteData.scope_of_work
