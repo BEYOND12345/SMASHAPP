@@ -22,6 +22,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
   const [loading, setLoading] = useState(true);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const title = type === 'invoice' ? 'Send Invoice' : 'Send Estimate';
   const noun = type === 'invoice' ? 'invoice' : 'estimate';
@@ -30,11 +31,14 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
     const fetchData = async () => {
       if (!estimateId) {
         console.error('[SendEstimate] No estimateId provided');
+        setError('No estimate ID provided');
         setLoading(false);
         return;
       }
 
       try {
+        console.log(`[SendEstimate] Fetching ${type} data for estimateId:`, estimateId);
+
         if (type === 'invoice') {
           const { data: quoteData, error: quoteError } = await supabase
             .from('quotes')
@@ -44,6 +48,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
           if (quoteError || !quoteData) {
             console.error('[SendEstimate] Failed to fetch quote for invoice:', quoteError);
+            setError('Failed to load invoice data. Please try again.');
             setLoading(false);
             return;
           }
@@ -59,11 +64,17 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
           if (invoiceError) {
             console.error('[SendEstimate] Failed to fetch invoice:', invoiceError);
+            setError('Failed to load invoice data. Please try again.');
             setLoading(false);
             return;
           }
 
           if (invoiceData) {
+            console.log('[SendEstimate] Invoice data loaded:', {
+              id: invoiceData.id,
+              has_approval_token: !!invoiceData.approval_token,
+              is_public: invoiceData.is_public
+            });
             const materials = invoiceData.invoice_line_items
               .filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
               .map((item: any) => ({
@@ -96,8 +107,15 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
             if (invoiceData.approval_token) {
               const url = `${window.location.origin}/invoice/${invoiceData.approval_token}`;
+              console.log('[SendEstimate] Invoice share URL generated:', url);
               setShareUrl(url);
+            } else {
+              console.error('[SendEstimate] Invoice missing approval_token');
+              setError('Invoice is not ready for sharing. Please try again.');
             }
+          } else {
+            console.error('[SendEstimate] No invoice data found');
+            setError('Invoice not found.');
           }
         } else {
           const { data: quoteData, error: quoteError } = await supabase
@@ -111,11 +129,17 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
           if (quoteError) {
             console.error('[SendEstimate] Failed to fetch quote:', quoteError);
+            setError('Failed to load estimate data. Please try again.');
             setLoading(false);
             return;
           }
 
           if (quoteData) {
+            console.log('[SendEstimate] Quote data loaded:', {
+              id: quoteData.id,
+              has_approval_token: !!quoteData.approval_token,
+              is_public: quoteData.is_public
+            });
             const materials = quoteData.quote_line_items
               .filter((item: any) => item.item_type === 'materials')
               .map((item: any) => ({
@@ -148,8 +172,15 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
             if (quoteData.approval_token) {
               const url = `${window.location.origin}/quote/${quoteData.approval_token}`;
+              console.log('[SendEstimate] Quote share URL generated:', url);
               setShareUrl(url);
+            } else {
+              console.error('[SendEstimate] Quote missing approval_token');
+              setError('Estimate is not ready for sharing. Please try again.');
             }
+          } else {
+            console.error('[SendEstimate] No quote data found');
+            setError('Estimate not found.');
           }
         }
 
@@ -272,6 +303,12 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
       />
 
       <div className="px-6 mt-6 flex flex-col gap-6">
+        {error && (
+          <Card className="p-4 bg-red-50 border border-red-200">
+            <p className="text-sm text-red-800 font-medium">{error}</p>
+          </Card>
+        )}
+
         <Card className="flex flex-col gap-6 p-6">
 
           <div className="text-center mb-2">
