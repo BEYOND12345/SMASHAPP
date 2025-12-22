@@ -35,74 +35,141 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
       }
 
       try {
-        const { data: quoteData, error: quoteError } = await supabase
-          .from('quotes')
-          .select(`
-            *,
-            quote_line_items (*)
-          `)
-          .eq('id', estimateId)
-          .maybeSingle();
+        if (type === 'invoice') {
+          const { data: quoteData, error: quoteError } = await supabase
+            .from('quotes')
+            .select('id, source_invoice_id:invoiced')
+            .eq('id', estimateId)
+            .maybeSingle();
 
-        if (quoteError) {
-          console.error('[SendEstimate] Failed to fetch quote:', quoteError);
-          setLoading(false);
-          return;
-        }
-
-        if (quoteData) {
-          const materials = quoteData.quote_line_items
-            .filter((item: any) => item.item_type === 'material')
-            .map((item: any) => ({
-              id: item.id,
-              name: item.description,
-              quantity: item.quantity,
-              unit: item.unit_of_measure || 'unit',
-              rate: item.unit_price,
-            }));
-
-          const labourItem = quoteData.quote_line_items.find((item: any) => item.item_type === 'labour');
-
-          const estimateObj: Estimate = {
-            id: quoteData.id,
-            jobTitle: quoteData.job_title,
-            clientName: quoteData.client_name || '',
-            clientAddress: quoteData.client_address || '',
-            timeline: quoteData.timeline || '',
-            scopeOfWork: quoteData.scope_of_work || [],
-            materials,
-            labour: {
-              hours: labourItem?.quantity || 0,
-              rate: labourItem?.unit_price || 0,
-            },
-            status: quoteData.status,
-            createdAt: quoteData.created_at,
-          };
-
-          setEstimate(estimateObj);
-
-          if (quoteData.approval_token) {
-            const url = `${window.location.origin}/quote/${quoteData.approval_token}`;
-            setShareUrl(url);
+          if (quoteError || !quoteData) {
+            console.error('[SendEstimate] Failed to fetch quote for invoice:', quoteError);
+            setLoading(false);
+            return;
           }
 
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { data: profileData } = await supabase
-              .from('users')
-              .select('business_name, trade_type, logo_url')
-              .eq('id', user.id)
-              .maybeSingle();
+          const { data: invoiceData, error: invoiceError } = await supabase
+            .from('invoices')
+            .select(`
+              *,
+              invoice_line_items (*)
+            `)
+            .eq('source_quote_id', estimateId)
+            .maybeSingle();
 
-            if (profileData) {
-              setUserProfile({
-                businessName: profileData.business_name,
-                tradeType: profileData.trade_type,
-                logoUrl: profileData.logo_url,
-              });
+          if (invoiceError) {
+            console.error('[SendEstimate] Failed to fetch invoice:', invoiceError);
+            setLoading(false);
+            return;
+          }
+
+          if (invoiceData) {
+            const materials = invoiceData.invoice_line_items
+              .filter((item: any) => item.item_type === 'material')
+              .map((item: any) => ({
+                id: item.id,
+                name: item.description,
+                quantity: item.quantity,
+                unit: 'unit',
+                rate: item.unit_price_cents / 100,
+              }));
+
+            const labourItem = invoiceData.invoice_line_items.find((item: any) => item.item_type === 'labour');
+
+            const estimateObj: Estimate = {
+              id: invoiceData.id,
+              jobTitle: invoiceData.title || '',
+              clientName: '',
+              clientAddress: '',
+              timeline: '',
+              scopeOfWork: invoiceData.description ? [invoiceData.description] : [],
+              materials,
+              labour: {
+                hours: labourItem?.quantity || 0,
+                rate: (labourItem?.unit_price_cents || 0) / 100,
+              },
+              status: invoiceData.status,
+              createdAt: invoiceData.created_at,
+            };
+
+            setEstimate(estimateObj);
+
+            if (invoiceData.approval_token) {
+              const url = `${window.location.origin}/invoice/${invoiceData.approval_token}`;
+              setShareUrl(url);
+            }
+          }
+        } else {
+          const { data: quoteData, error: quoteError } = await supabase
+            .from('quotes')
+            .select(`
+              *,
+              quote_line_items (*)
+            `)
+            .eq('id', estimateId)
+            .maybeSingle();
+
+          if (quoteError) {
+            console.error('[SendEstimate] Failed to fetch quote:', quoteError);
+            setLoading(false);
+            return;
+          }
+
+          if (quoteData) {
+            const materials = quoteData.quote_line_items
+              .filter((item: any) => item.item_type === 'material')
+              .map((item: any) => ({
+                id: item.id,
+                name: item.description,
+                quantity: item.quantity,
+                unit: item.unit_of_measure || 'unit',
+                rate: item.unit_price_cents / 100,
+              }));
+
+            const labourItem = quoteData.quote_line_items.find((item: any) => item.item_type === 'labour');
+
+            const estimateObj: Estimate = {
+              id: quoteData.id,
+              jobTitle: quoteData.title || '',
+              clientName: '',
+              clientAddress: '',
+              timeline: '',
+              scopeOfWork: quoteData.scope_of_work || [],
+              materials,
+              labour: {
+                hours: labourItem?.quantity || 0,
+                rate: (labourItem?.unit_price_cents || 0) / 100,
+              },
+              status: quoteData.status,
+              createdAt: quoteData.created_at,
+            };
+
+            setEstimate(estimateObj);
+
+            if (quoteData.approval_token) {
+              const url = `${window.location.origin}/quote/${quoteData.approval_token}`;
+              setShareUrl(url);
             }
           }
         }
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profileData } = await supabase
+            .from('users')
+            .select('business_name, trade_type, logo_url')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (profileData) {
+            setUserProfile({
+              businessName: profileData.business_name,
+              tradeType: profileData.trade_type,
+              logoUrl: profileData.logo_url,
+            });
+          }
+        }
+
         setLoading(false);
       } catch (err) {
         console.error('[SendEstimate] Error fetching data:', err);
@@ -111,7 +178,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
     };
 
     fetchData();
-  }, [estimateId]);
+  }, [estimateId, type]);
 
   const handleShare = async () => {
     if (navigator.share) {
