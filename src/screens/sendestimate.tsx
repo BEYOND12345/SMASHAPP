@@ -201,15 +201,15 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               businessName: profileData.business_name,
               tradeType: profileData.trade_type,
               phone: profileData.phone || '',
-              logoUrl: profileData.logo_url,
-              businessAddress: profileData.org?.address || '',
+              logoUrl: profileData.org?.logo_url,
+              businessAddress: profileData.org?.business_address || '',
               abn: profileData.org?.abn || '',
               website: profileData.org?.website || '',
               bankName: profileData.org?.bank_name || '',
               accountName: profileData.org?.account_name || '',
               bsbRouting: profileData.org?.bsb_routing || '',
               accountNumber: profileData.org?.account_number || '',
-              paymentTerms: profileData.org?.payment_terms || '',
+              paymentTerms: profileData.org?.default_payment_terms || '',
               paymentInstructions: profileData.org?.payment_instructions || '',
             });
           }
