@@ -458,19 +458,28 @@ const App: React.FC = () => {
             const errorMsg = invoiceError.message || 'Unknown error';
             alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${errorMsg}\n\nThe invoice can be created later from the job card.`);
 
+            // Reload estimates from database to ensure sync
+            if (state.user?.id) {
+              await loadQuotesFromDatabase(state.user.id);
+            }
+
             // Update local state and stay on job card
             setState(prev => ({
               ...prev,
-              estimates: prev.estimates.map(e => e.id === estimateId ? { ...e, status: newStatus } : e),
               currentScreen: 'JobCard'
             }));
             return;
           } else {
             console.log('[App] Invoice created successfully:', invoiceId);
+
+            // Reload estimates from database to ensure sync
+            if (state.user?.id) {
+              await loadQuotesFromDatabase(state.user.id);
+            }
+
             // Success - update state and navigate to invoice
             setState(prev => ({
               ...prev,
-              estimates: prev.estimates.map(e => e.id === estimateId ? { ...e, status: newStatus } : e),
               currentScreen: 'InvoicePreview'
             }));
             return;
@@ -479,9 +488,14 @@ const App: React.FC = () => {
           console.error('[App] Exception creating invoice:', invoiceErr);
           const errorMsg = invoiceErr instanceof Error ? invoiceErr.message : 'Unknown error';
           alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${errorMsg}\n\nThe invoice can be created later from the job card.`);
+
+          // Reload estimates from database to ensure sync
+          if (state.user?.id) {
+            await loadQuotesFromDatabase(state.user.id);
+          }
+
           setState(prev => ({
             ...prev,
-            estimates: prev.estimates.map(e => e.id === estimateId ? { ...e, status: newStatus } : e),
             currentScreen: 'JobCard'
           }));
           return;
@@ -493,10 +507,14 @@ const App: React.FC = () => {
       return;
     }
 
+    // Reload estimates from database to ensure sync
+    if (state.user?.id) {
+      await loadQuotesFromDatabase(state.user.id);
+    }
+
     // Update local state (for non-approved status changes)
     setState(prev => ({
       ...prev,
-      estimates: prev.estimates.map(e => e.id === estimateId ? { ...e, status: newStatus } : e),
       currentScreen: newStatus === JobStatus.APPROVED ? 'JobCard' : prev.currentScreen
     }));
   };
@@ -778,11 +796,15 @@ const App: React.FC = () => {
                 alert('Failed to mark as sent. Please try again.');
                 return;
               }
+
+              // Reload estimates from database to ensure sync
+              if (state.user?.id) {
+                await loadQuotesFromDatabase(state.user.id);
+              }
             }
 
             setState(prev => ({
               ...prev,
-              estimates: prev.estimates.map(e => e.id === prev.selectedEstimateId ? { ...e, status: newStatus } : e),
               currentScreen: 'JobCard'
             }));
           }}
