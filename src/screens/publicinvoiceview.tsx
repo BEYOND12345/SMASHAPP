@@ -42,9 +42,12 @@ export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
   const isPaid = estimate.status === 'Paid';
 
   const handleDownloadPdf = async () => {
+    console.log('[PublicInvoiceView.handleDownloadPdf] === ENTRY POINT 3: Public Invoice PDF Button ===');
+    console.log('[PublicInvoiceView.handleDownloadPdf] Browser:', navigator.userAgent);
+    console.log('[PublicInvoiceView.handleDownloadPdf] Platform:', navigator.platform);
+
     try {
       setDownloadingPdf(true);
-      console.log('[PublicInvoiceView] Starting PDF generation...');
 
       const userProfile = businessInfo ? {
         businessName,
@@ -63,29 +66,54 @@ export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
         paymentInstructions: businessInfo.paymentInstructions,
       } : undefined;
 
-      console.log('[PublicInvoiceView] Generating PDF with profile:', !!userProfile);
+      console.log('[PublicInvoiceView.handleDownloadPdf] Calling generateEstimatePDF with:', {
+        hasEstimate: !!estimate,
+        hasUserProfile: !!userProfile,
+        invoiceNumber,
+        estimateKeys: Object.keys(estimate)
+      });
+
       const pdfBlob = await generateEstimatePDF(estimate, userProfile, 'invoice');
-      console.log('[PublicInvoiceView] PDF generated successfully, size:', pdfBlob.size);
+
+      console.log('[PublicInvoiceView.handleDownloadPdf] PDF returned from generator:', {
+        type: typeof pdfBlob,
+        constructor: pdfBlob.constructor.name,
+        blobType: pdfBlob.type,
+        size: pdfBlob.size,
+        isBlob: pdfBlob instanceof Blob
+      });
 
       const url = URL.createObjectURL(pdfBlob);
-      console.log('[PublicInvoiceView] Opening PDF in new window...');
+      console.log('[PublicInvoiceView.handleDownloadPdf] Created object URL:', url);
+      console.log('[PublicInvoiceView.handleDownloadPdf] Attempting window.open...');
 
       const newWindow = window.open(url, '_blank');
 
       if (!newWindow) {
-        console.log('[PublicInvoiceView] Popup blocked, trying download fallback...');
+        console.log('[PublicInvoiceView.handleDownloadPdf] Popup blocked, using download fallback');
         const link = document.createElement('a');
         link.href = url;
         link.download = `invoice-${invoiceNumber}.pdf`;
         document.body.appendChild(link);
+        console.log('[PublicInvoiceView.handleDownloadPdf] Triggering download...');
         link.click();
         document.body.removeChild(link);
+        console.log('[PublicInvoiceView.handleDownloadPdf] Download triggered');
+      } else {
+        console.log('[PublicInvoiceView.handleDownloadPdf] PDF opened in new window');
       }
 
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        console.log('[PublicInvoiceView.handleDownloadPdf] Object URL revoked');
+      }, 1000);
     } catch (error) {
-      console.error('[PublicInvoiceView] Failed to generate PDF:', error);
-      console.error('[PublicInvoiceView] Error details:', error instanceof Error ? error.message : String(error));
+      console.error('[PublicInvoiceView.handleDownloadPdf] === ERROR CAUGHT ===');
+      console.error('[PublicInvoiceView.handleDownloadPdf] Error type:', typeof error);
+      console.error('[PublicInvoiceView.handleDownloadPdf] Error name:', error instanceof Error ? error.name : 'N/A');
+      console.error('[PublicInvoiceView.handleDownloadPdf] Error message:', error instanceof Error ? error.message : String(error));
+      console.error('[PublicInvoiceView.handleDownloadPdf] Error stack:', error instanceof Error ? error.stack : 'N/A');
+      console.error('[PublicInvoiceView.handleDownloadPdf] Full error:', error);
       alert(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setDownloadingPdf(false);

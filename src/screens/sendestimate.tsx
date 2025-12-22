@@ -267,55 +267,79 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
   };
 
   const handleSharePDF = async () => {
+    console.log('[SendEstimate.handleSharePDF] === ENTRY POINT 1: Share PDF Button ===');
+    console.log('[SendEstimate.handleSharePDF] Browser:', navigator.userAgent);
+    console.log('[SendEstimate.handleSharePDF] Platform:', navigator.platform);
+    console.log('[SendEstimate.handleSharePDF] navigator.share exists:', !!navigator.share);
+    console.log('[SendEstimate.handleSharePDF] navigator.canShare exists:', !!navigator.canShare);
+
     if (!estimate) {
-      console.error('[SendEstimate] No estimate data available');
+      console.error('[SendEstimate.handleSharePDF] BLOCKED: No estimate data available');
       alert('No estimate data available. Please try again.');
       return;
     }
 
     try {
       setIsSending(true);
-      console.log('[SendEstimate] Starting PDF generation with data:', {
+      console.log('[SendEstimate.handleSharePDF] Calling generateEstimatePDF with:', {
         hasEstimate: !!estimate,
         hasUserProfile: !!userProfile,
         type,
         estimateId: estimate.id,
         clientName: estimate.clientName,
         materialsCount: estimate.materials?.length,
-        labourHours: estimate.labour?.hours
+        labourHours: estimate.labour?.hours,
+        estimateKeys: Object.keys(estimate)
       });
 
       const pdfBlob = await generateEstimatePDF(estimate, userProfile || undefined, type);
-      console.log('[SendEstimate] PDF generated successfully, size:', pdfBlob.size);
+
+      console.log('[SendEstimate.handleSharePDF] PDF returned from generator:', {
+        type: typeof pdfBlob,
+        constructor: pdfBlob.constructor.name,
+        blobType: pdfBlob.type,
+        size: pdfBlob.size,
+        isBlob: pdfBlob instanceof Blob
+      });
 
       const fileName = `${type === 'invoice' ? 'invoice' : 'estimate'}-${estimate.jobTitle.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      console.log('[SendEstimate.handleSharePDF] Generated filename:', fileName);
 
-      if (navigator.share && navigator.canShare?.({ files: [new File([pdfBlob], fileName)] })) {
+      const canShareFiles = navigator.share && navigator.canShare?.({ files: [new File([pdfBlob], fileName)] });
+      console.log('[SendEstimate.handleSharePDF] Can share files:', canShareFiles);
+
+      if (canShareFiles) {
+        console.log('[SendEstimate.handleSharePDF] Using navigator.share with file');
         const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
         await navigator.share({
           files: [file],
           title: `${type === 'invoice' ? 'Invoice' : 'Estimate'} - ${estimate.jobTitle}`,
         });
+        console.log('[SendEstimate.handleSharePDF] Share completed successfully');
         await onSent();
       } else {
+        console.log('[SendEstimate.handleSharePDF] Using download fallback');
         const url = URL.createObjectURL(pdfBlob);
+        console.log('[SendEstimate.handleSharePDF] Created object URL:', url);
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
         document.body.appendChild(a);
+        console.log('[SendEstimate.handleSharePDF] Triggering download...');
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        console.log('[SendEstimate.handleSharePDF] Download complete');
         await onSent();
       }
       setIsSending(false);
     } catch (err) {
-      console.error('[SendEstimate] Error sharing PDF:', err);
-      console.error('[SendEstimate] Error details:', {
-        message: (err as Error).message,
-        stack: (err as Error).stack,
-        name: (err as Error).name
-      });
+      console.error('[SendEstimate.handleSharePDF] === ERROR CAUGHT ===');
+      console.error('[SendEstimate.handleSharePDF] Error type:', typeof err);
+      console.error('[SendEstimate.handleSharePDF] Error name:', (err as Error).name);
+      console.error('[SendEstimate.handleSharePDF] Error message:', (err as Error).message);
+      console.error('[SendEstimate.handleSharePDF] Error stack:', (err as Error).stack);
+      console.error('[SendEstimate.handleSharePDF] Full error:', err);
       setIsSending(false);
       if ((err as Error).name !== 'AbortError') {
         alert(`Failed to generate or share PDF: ${(err as Error).message}\n\nPlease check the console for details.`);

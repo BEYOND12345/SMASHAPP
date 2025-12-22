@@ -44,7 +44,11 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
     if (isPublic) {
       return (
         <>
-          <Button variant="outline" className="flex-1" onClick={() => {}}>PDF</Button>
+          <Button variant="outline" className="flex-1" onClick={() => {
+            console.log('[EstimatePreview] === ENTRY POINT 2: Public PDF Button (NOT IMPLEMENTED) ===');
+            console.log('[EstimatePreview] This button does nothing (empty handler)');
+            alert('PDF download not implemented for public quote view');
+          }}>PDF</Button>
           <Button variant="primary" className="flex-1" onClick={onApprove}>Approve Quote</Button>
         </>
       );

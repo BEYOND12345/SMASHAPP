@@ -3,8 +3,15 @@ import { Estimate, UserProfile } from '../../types';
 import { calculateEstimateTotals, formatCurrency } from './calculations';
 
 const safe = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  return String(value);
+  if (value === null || value === undefined) {
+    console.log('[PDFGenerator] safe() coerced null/undefined to empty string');
+    return '';
+  }
+  const strValue = String(value);
+  if (strValue !== value) {
+    console.log('[PDFGenerator] safe() coerced non-string:', typeof value, '→', strValue);
+  }
+  return strValue;
 };
 
 async function loadImageAsBase64(url: string): Promise<string | null> {
@@ -34,6 +41,15 @@ export async function generateEstimatePDF(
       hasUserProfile: !!userProfile,
       materialsCount: estimate.materials?.length || 0,
       scopeOfWorkCount: estimate.scopeOfWork?.length || 0
+    });
+    console.log('[PDFGenerator] Estimate data keys:', Object.keys(estimate));
+    console.log('[PDFGenerator] Data model validation:', {
+      jobTitle: typeof estimate.jobTitle,
+      clientName: typeof estimate.clientName,
+      timeline: typeof estimate.timeline,
+      materials: Array.isArray(estimate.materials),
+      labour: typeof estimate.labour,
+      scopeOfWork: Array.isArray(estimate.scopeOfWork)
     });
 
     const pdf = new jsPDF();
@@ -336,11 +352,21 @@ export async function generateEstimatePDF(
     }
   }
 
-    console.log('[PDFGenerator] PDF generation complete');
-    return pdf.output('blob');
+    console.log('[PDFGenerator] PDF generation complete, outputting blob...');
+    const blob = pdf.output('blob');
+    console.log('[PDFGenerator] Blob output successful:', {
+      type: typeof blob,
+      constructor: blob.constructor.name,
+      blobType: blob.type,
+      size: blob.size
+    });
+    return blob;
   } catch (err) {
     console.error('[PDFGenerator] PDF generation failed:', err);
+    console.error('[PDFGenerator] Error name:', (err as Error).name);
+    console.error('[PDFGenerator] Error message:', (err as Error).message);
     console.error('[PDFGenerator] Error stack:', (err as Error).stack);
+    console.error('[PDFGenerator] Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
     throw new Error(`PDF generation failed: ${(err as Error).message}`);
   }
 }
