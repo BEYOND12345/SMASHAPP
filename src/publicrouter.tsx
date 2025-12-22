@@ -8,7 +8,21 @@ export const PublicRouter: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
-  const [businessInfo, setBusinessInfo] = useState<{ name: string; phone?: string } | null>(null);
+  const [businessInfo, setBusinessInfo] = useState<{
+    name: string;
+    phone?: string;
+    businessAddress?: string;
+    email?: string;
+    abn?: string;
+    website?: string;
+    logoUrl?: string;
+    bankName?: string;
+    accountName?: string;
+    bsbRouting?: string;
+    accountNumber?: string;
+    paymentTerms?: string;
+    paymentInstructions?: string;
+  } | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState<string>('');
   const [viewType, setViewType] = useState<'quote' | 'invoice'>('quote');
 
@@ -164,6 +178,17 @@ export const PublicRouter: React.FC = () => {
       setBusinessInfo({
         name: invoiceData.business_name,
         phone: invoiceData.business_phone,
+        businessAddress: invoiceData.business_address,
+        email: invoiceData.business_email,
+        abn: invoiceData.business_abn,
+        website: invoiceData.business_website,
+        logoUrl: invoiceData.business_logo_url,
+        bankName: invoiceData.bank_name,
+        accountName: invoiceData.account_name,
+        bsbRouting: invoiceData.bsb_routing,
+        accountNumber: invoiceData.account_number,
+        paymentTerms: invoiceData.payment_terms,
+        paymentInstructions: invoiceData.payment_instructions,
       });
       setInvoiceNumber(invoiceData.invoice_number);
       setLoading(false);
@@ -203,6 +228,19 @@ export const PublicRouter: React.FC = () => {
         businessName={businessInfo.name}
         businessPhone={businessInfo.phone}
         invoiceNumber={invoiceNumber}
+        businessInfo={{
+          businessAddress: businessInfo.businessAddress,
+          email: businessInfo.email,
+          abn: businessInfo.abn,
+          website: businessInfo.website,
+          logoUrl: businessInfo.logoUrl,
+          bankName: businessInfo.bankName,
+          accountName: businessInfo.accountName,
+          bsbRouting: businessInfo.bsbRouting,
+          accountNumber: businessInfo.accountNumber,
+          paymentTerms: businessInfo.paymentTerms,
+          paymentInstructions: businessInfo.paymentInstructions,
+        }}
         onPaymentClick={() => alert('Payment gateway would open here')}
       />
     );

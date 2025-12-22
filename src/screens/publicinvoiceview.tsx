@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Layout } from '../components/layout';
 import { Card } from '../components/card';
 import { Button } from '../components/button';
 import { Estimate } from '../types';
-import { Calendar, FileCheck, Building2, CreditCard } from 'lucide-react';
+import { Calendar, FileCheck, Building2, CreditCard, Download } from 'lucide-react';
 import { calculateEstimateTotals, formatCurrency } from '../lib/utils/calculations';
+import { generateEstimatePDF } from '../lib/utils/pdfGenerator';
 
 interface PublicInvoiceViewProps {
   estimate: Estimate;
@@ -12,6 +13,19 @@ interface PublicInvoiceViewProps {
   businessName: string;
   businessPhone?: string;
   invoiceNumber: string;
+  businessInfo?: {
+    businessAddress?: string;
+    email?: string;
+    abn?: string;
+    website?: string;
+    logoUrl?: string;
+    bankName?: string;
+    accountName?: string;
+    bsbRouting?: string;
+    accountNumber?: string;
+    paymentTerms?: string;
+    paymentInstructions?: string;
+  };
 }
 
 export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
@@ -19,11 +33,51 @@ export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
   onPaymentClick,
   businessName,
   businessPhone,
-  invoiceNumber
+  invoiceNumber,
+  businessInfo
 }) => {
   const { materialsTotal, labourTotal, subtotal, gst, total } = calculateEstimateTotals(estimate);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const isPaid = estimate.status === 'Paid';
+
+  const handleDownloadPdf = async () => {
+    try {
+      setDownloadingPdf(true);
+
+      const userProfile = businessInfo ? {
+        businessName,
+        phone: businessPhone,
+        tradeType: '',
+        businessAddress: businessInfo.businessAddress,
+        email: businessInfo.email,
+        abn: businessInfo.abn,
+        website: businessInfo.website,
+        logoUrl: businessInfo.logoUrl,
+        bankName: businessInfo.bankName,
+        accountName: businessInfo.accountName,
+        bsbRouting: businessInfo.bsbRouting,
+        accountNumber: businessInfo.accountNumber,
+        paymentTerms: businessInfo.paymentTerms,
+        paymentInstructions: businessInfo.paymentInstructions,
+      } : undefined;
+
+      const pdfBlob = await generateEstimatePDF(estimate, userProfile, 'invoice');
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   return (
     <Layout showNav={false} className="bg-surface pb-40">
@@ -187,14 +241,22 @@ export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
         )}
       </div>
 
-      {!isPaid && (
-        <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-border flex gap-3 justify-center max-w-[390px] mx-auto z-40">
-          <Button variant="primary" fullWidth onClick={onPaymentClick}>
+      <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-border flex gap-3 justify-center max-w-[390px] mx-auto z-40">
+        <Button
+          variant="secondary"
+          onClick={handleDownloadPdf}
+          disabled={downloadingPdf}
+        >
+          <Download size={18} className="mr-2" />
+          {downloadingPdf ? 'Generating...' : 'PDF'}
+        </Button>
+        {!isPaid && (
+          <Button variant="primary" className="flex-1" onClick={onPaymentClick}>
             <CreditCard size={18} className="mr-2" />
             Pay Invoice
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </Layout>
   );
 };
