@@ -50,11 +50,10 @@ export const PublicRouter: React.FC = () => {
 
       const quoteData = data[0];
 
-      const { data: lineItems, error: lineItemsError } = await supabase
-        .from('quote_line_items')
-        .select('*')
-        .eq('quote_id', quoteData.id)
-        .order('position');
+      const { data: lineItems, error: lineItemsError } = await supabase.rpc(
+        'get_public_quote_line_items',
+        { p_token: token }
+      );
 
       if (lineItemsError) {
         console.error('[PublicRouter] Error loading line items:', lineItemsError);

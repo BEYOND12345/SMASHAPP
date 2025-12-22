@@ -40,19 +40,6 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
         console.log(`[SendEstimate] Fetching ${type} data for estimateId:`, estimateId);
 
         if (type === 'invoice') {
-          const { data: quoteData, error: quoteError } = await supabase
-            .from('quotes')
-            .select('id, source_invoice_id:invoiced')
-            .eq('id', estimateId)
-            .maybeSingle();
-
-          if (quoteError || !quoteData) {
-            console.error('[SendEstimate] Failed to fetch quote for invoice:', quoteError);
-            setError('Failed to load invoice data. Please try again.');
-            setLoading(false);
-            return;
-          }
-
           const { data: invoiceData, error: invoiceError } = await supabase
             .from('invoices')
             .select(`
