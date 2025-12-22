@@ -2,6 +2,11 @@ import jsPDF from 'jspdf';
 import { Estimate, UserProfile } from '../../types';
 import { calculateEstimateTotals, formatCurrency } from './calculations';
 
+const safe = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  return String(value);
+};
+
 async function loadImageAsBase64(url: string): Promise<string | null> {
   try {
     const response = await fetch(url);
@@ -58,7 +63,7 @@ export async function generateEstimatePDF(
     if (userProfile) {
       pdf.setFontSize(16);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(userProfile.businessName, 20, yPos);
+      pdf.text(safe(userProfile.businessName), 20, yPos);
       yPos += 6;
 
       pdf.setFontSize(9);
@@ -66,32 +71,32 @@ export async function generateEstimatePDF(
       pdf.setTextColor(80, 80, 80);
 
       if (userProfile.tradeType) {
-        pdf.text(userProfile.tradeType, 20, yPos);
+        pdf.text(safe(userProfile.tradeType), 20, yPos);
         yPos += 4;
       }
 
       if (userProfile.businessAddress) {
-        pdf.text(userProfile.businessAddress, 20, yPos);
+        pdf.text(safe(userProfile.businessAddress), 20, yPos);
         yPos += 4;
       }
 
       if (userProfile.phone) {
-        pdf.text(`Phone: ${userProfile.phone}`, 20, yPos);
+        pdf.text(`Phone: ${safe(userProfile.phone)}`, 20, yPos);
         yPos += 4;
       }
 
       if (userProfile.email) {
-        pdf.text(`Email: ${userProfile.email}`, 20, yPos);
+        pdf.text(`Email: ${safe(userProfile.email)}`, 20, yPos);
         yPos += 4;
       }
 
       if (userProfile.abn) {
-        pdf.text(`ABN: ${userProfile.abn}`, 20, yPos);
+        pdf.text(`ABN: ${safe(userProfile.abn)}`, 20, yPos);
         yPos += 4;
       }
 
       if (userProfile.website) {
-        pdf.text(`Website: ${userProfile.website}`, 20, yPos);
+        pdf.text(`Website: ${safe(userProfile.website)}`, 20, yPos);
         yPos += 4;
       }
 
@@ -112,7 +117,7 @@ export async function generateEstimatePDF(
   // JOB TITLE
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(estimate.jobTitle, 20, yPos);
+  pdf.text(safe(estimate.jobTitle), 20, yPos);
   yPos += 8;
 
   // CUSTOMER DETAILS SECTION
@@ -127,22 +132,22 @@ export async function generateEstimatePDF(
   pdf.setTextColor(0, 0, 0);
 
   if (estimate.clientName) {
-    pdf.text(estimate.clientName, 20, yPos);
+    pdf.text(safe(estimate.clientName), 20, yPos);
     yPos += 5;
   }
 
   if (estimate.clientAddress) {
-    pdf.text(estimate.clientAddress, 20, yPos);
+    pdf.text(safe(estimate.clientAddress), 20, yPos);
     yPos += 5;
   }
 
   if (estimate.clientEmail) {
-    pdf.text(estimate.clientEmail, 20, yPos);
+    pdf.text(safe(estimate.clientEmail), 20, yPos);
     yPos += 5;
   }
 
   if (estimate.clientPhone) {
-    pdf.text(estimate.clientPhone, 20, yPos);
+    pdf.text(safe(estimate.clientPhone), 20, yPos);
     yPos += 5;
   }
 
@@ -155,7 +160,7 @@ export async function generateEstimatePDF(
   yPos += 5;
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
-  pdf.text(estimate.timeline, 20, yPos);
+  pdf.text(safe(estimate.timeline), 20, yPos);
   yPos += 12;
 
   pdf.setFontSize(12);
@@ -195,12 +200,12 @@ export async function generateEstimatePDF(
       yPos = 20;
     }
     const amount = formatCurrency(item.quantity * item.rate);
-    pdf.text(item.name, 25, yPos);
-    pdf.text(amount, pageWidth - 20, yPos, { align: 'right' });
+    pdf.text(safe(item.name), 25, yPos);
+    pdf.text(safe(amount), pageWidth - 20, yPos, { align: 'right' });
     yPos += 5;
     pdf.setFontSize(9);
     pdf.setTextColor(100, 100, 100);
-    pdf.text(`${item.quantity} ${item.unit} × ${formatCurrency(item.rate)}`, 25, yPos);
+    pdf.text(`${safe(item.quantity)} ${safe(item.unit)} × ${safe(formatCurrency(item.rate))}`, 25, yPos);
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(10);
     yPos += 6;
@@ -276,7 +281,7 @@ export async function generateEstimatePDF(
       pdf.setFont('helvetica', 'bold');
       pdf.text('Bank Name:', 20, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(userProfile.bankName, 55, yPos);
+      pdf.text(safe(userProfile.bankName), 55, yPos);
       yPos += 5;
     }
 
@@ -284,7 +289,7 @@ export async function generateEstimatePDF(
       pdf.setFont('helvetica', 'bold');
       pdf.text('Account Name:', 20, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(userProfile.accountName, 55, yPos);
+      pdf.text(safe(userProfile.accountName), 55, yPos);
       yPos += 5;
     }
 
@@ -292,7 +297,7 @@ export async function generateEstimatePDF(
       pdf.setFont('helvetica', 'bold');
       pdf.text('BSB:', 20, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(userProfile.bsbRouting, 55, yPos);
+      pdf.text(safe(userProfile.bsbRouting), 55, yPos);
       yPos += 5;
     }
 
@@ -300,7 +305,7 @@ export async function generateEstimatePDF(
       pdf.setFont('helvetica', 'bold');
       pdf.text('Account Number:', 20, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(userProfile.accountNumber, 55, yPos);
+      pdf.text(safe(userProfile.accountNumber), 55, yPos);
       yPos += 5;
     }
 

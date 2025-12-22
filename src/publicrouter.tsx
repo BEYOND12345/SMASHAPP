@@ -283,7 +283,9 @@ export const PublicRouter: React.FC = () => {
 
       if (invoiceError) {
         console.error('[PublicRouter] Failed to create invoice:', invoiceError);
-        alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${invoiceError.message}\n\nThe invoice can be created later from the job card.`);
+        console.error('[PublicRouter] Full error object:', JSON.stringify(invoiceError, null, 2));
+        const errorMsg = invoiceError.message || invoiceError.hint || invoiceError.details || 'Unknown error';
+        alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${errorMsg}\n\nThe invoice can be created later from the job card.`);
         return;
       }
 
