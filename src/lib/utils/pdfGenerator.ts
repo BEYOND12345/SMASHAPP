@@ -24,80 +24,126 @@ export async function generateEstimatePDF(
 ): Promise<Blob> {
   const pdf = new jsPDF();
   const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
   let yPos = 20;
 
-  // Try to load and add logo if available
+  // HEADER SECTION - Logo and Business Info
   if (userProfile?.logoUrl) {
     try {
       const logoData = await loadImageAsBase64(userProfile.logoUrl);
       if (logoData) {
-        const logoSize = 16;
-        pdf.addImage(logoData, 'PNG', 20, yPos - 4, logoSize, logoSize);
-        pdf.setFontSize(22);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('SMASH', 20 + logoSize + 6, yPos);
-        yPos += 15;
-      } else {
-        // Fallback to text only
-        pdf.setFontSize(22);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('SMASH', 20, yPos);
-        yPos += 15;
+        const logoSize = 18;
+        pdf.addImage(logoData, 'PNG', 20, yPos, logoSize, logoSize);
+        yPos += logoSize + 2;
       }
     } catch {
-      // Fallback to text only
-      pdf.setFontSize(22);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('SMASH', 20, yPos);
-      yPos += 15;
+      // Logo failed to load
     }
-  } else {
-    // No logo, use text only
-    pdf.setFontSize(22);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('SMASH', 20, yPos);
-    yPos += 15;
   }
 
+  // Business Name
   if (userProfile) {
-    pdf.setFontSize(14);
+    pdf.setFontSize(16);
     pdf.setFont('helvetica', 'bold');
     pdf.text(userProfile.businessName, 20, yPos);
     yPos += 6;
 
-    pdf.setFontSize(10);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(userProfile.tradeType, 20, yPos);
-    yPos += 12;
+    pdf.setTextColor(80, 80, 80);
+
+    if (userProfile.tradeType) {
+      pdf.text(userProfile.tradeType, 20, yPos);
+      yPos += 4;
+    }
+
+    if (userProfile.businessAddress) {
+      pdf.text(userProfile.businessAddress, 20, yPos);
+      yPos += 4;
+    }
+
+    if (userProfile.phone) {
+      pdf.text(`Phone: ${userProfile.phone}`, 20, yPos);
+      yPos += 4;
+    }
+
+    if (userProfile.email) {
+      pdf.text(`Email: ${userProfile.email}`, 20, yPos);
+      yPos += 4;
+    }
+
+    if (userProfile.abn) {
+      pdf.text(`ABN: ${userProfile.abn}`, 20, yPos);
+      yPos += 4;
+    }
+
+    if (userProfile.website) {
+      pdf.text(`Website: ${userProfile.website}`, 20, yPos);
+      yPos += 4;
+    }
+
+    pdf.setTextColor(0, 0, 0);
+    yPos += 8;
   }
 
-  pdf.setDrawColor(230, 230, 230);
+  pdf.setDrawColor(200, 200, 200);
   pdf.line(20, yPos, pageWidth - 20, yPos);
-  yPos += 15;
+  yPos += 12;
 
-  pdf.setFontSize(18);
+  // DOCUMENT TYPE HEADER
+  pdf.setFontSize(20);
   pdf.setFont('helvetica', 'bold');
   pdf.text(type === 'invoice' ? 'INVOICE' : 'ESTIMATE', 20, yPos);
-  yPos += 10;
+  yPos += 12;
 
-  pdf.setFontSize(12);
+  // JOB TITLE
+  pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.text(estimate.jobTitle, 20, yPos);
-  yPos += 7;
+  yPos += 8;
+
+  // CUSTOMER DETAILS SECTION
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(60, 60, 60);
+  pdf.text('CUSTOMER DETAILS', 20, yPos);
+  yPos += 5;
 
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(estimate.clientName, 20, yPos);
-  yPos += 5;
+  pdf.setTextColor(0, 0, 0);
+
+  if (estimate.clientName) {
+    pdf.text(estimate.clientName, 20, yPos);
+    yPos += 5;
+  }
 
   if (estimate.clientAddress) {
     pdf.text(estimate.clientAddress, 20, yPos);
     yPos += 5;
   }
 
+  if (estimate.clientEmail) {
+    pdf.text(estimate.clientEmail, 20, yPos);
+    yPos += 5;
+  }
+
+  if (estimate.clientPhone) {
+    pdf.text(estimate.clientPhone, 20, yPos);
+    yPos += 5;
+  }
+
+  yPos += 5;
+
+  // TIMELINE
   pdf.setFont('helvetica', 'bold');
-  pdf.text(`Timeline: ${estimate.timeline}`, 20, yPos);
-  yPos += 15;
+  pdf.setTextColor(60, 60, 60);
+  pdf.text('TIMELINE', 20, yPos);
+  yPos += 5;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(0, 0, 0);
+  pdf.text(estimate.timeline, 20, yPos);
+  yPos += 12;
 
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
@@ -189,6 +235,88 @@ export async function generateEstimatePDF(
   pdf.setFontSize(16);
   pdf.text('TOTAL:', 25, yPos);
   pdf.text(formatCurrency(total), pageWidth - 20, yPos, { align: 'right' });
+  yPos += 20;
+
+  // PAYMENT DETAILS SECTION (if type is invoice or if bank details exist)
+  if (userProfile && (userProfile.bankName || userProfile.accountNumber || userProfile.bsbRouting)) {
+    // Check if we need a new page
+    if (yPos > pageHeight - 60) {
+      pdf.addPage();
+      yPos = 20;
+    }
+
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(20, yPos, pageWidth - 20, yPos);
+    yPos += 10;
+
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text('PAYMENT DETAILS', 20, yPos);
+    yPos += 8;
+
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(60, 60, 60);
+
+    if (userProfile.bankName) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Bank Name:', 20, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(userProfile.bankName, 55, yPos);
+      yPos += 5;
+    }
+
+    if (userProfile.accountName) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Account Name:', 20, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(userProfile.accountName, 55, yPos);
+      yPos += 5;
+    }
+
+    if (userProfile.bsbRouting) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('BSB:', 20, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(userProfile.bsbRouting, 55, yPos);
+      yPos += 5;
+    }
+
+    if (userProfile.accountNumber) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Account Number:', 20, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(userProfile.accountNumber, 55, yPos);
+      yPos += 5;
+    }
+
+    if (userProfile.paymentTerms) {
+      yPos += 3;
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Payment Terms:', 20, yPos);
+      yPos += 5;
+      pdf.setFont('helvetica', 'normal');
+      const terms = pdf.splitTextToSize(userProfile.paymentTerms, pageWidth - 40);
+      terms.forEach((line: string) => {
+        pdf.text(line, 20, yPos);
+        yPos += 4;
+      });
+    }
+
+    if (userProfile.paymentInstructions) {
+      yPos += 3;
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Payment Instructions:', 20, yPos);
+      yPos += 5;
+      pdf.setFont('helvetica', 'normal');
+      const instructions = pdf.splitTextToSize(userProfile.paymentInstructions, pageWidth - 40);
+      instructions.forEach((line: string) => {
+        pdf.text(line, 20, yPos);
+        yPos += 4;
+      });
+    }
+  }
 
   return pdf.output('blob');
 }
