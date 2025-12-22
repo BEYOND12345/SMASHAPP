@@ -17,6 +17,7 @@ interface EstimatePreviewProps {
   onStatusChange?: (status: JobStatus) => void;
   onViewInvoice?: () => void;
   onDelete?: () => void;
+  onConvertToInvoice?: () => void;
   type?: 'estimate' | 'invoice';
 }
 
@@ -31,6 +32,7 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
   onStatusChange,
   onViewInvoice,
   onDelete,
+  onConvertToInvoice,
   type = 'estimate'
 }) => {
   const { materialsTotal, labourTotal, subtotal, gst, total } = calculateEstimateTotals(estimate);
@@ -65,9 +67,14 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
         return (
           <>
             <Button variant="secondary" className="flex-1 font-semibold" onClick={onEdit}>Edit</Button>
-            <Button variant="primary" className="flex-[2] font-bold shadow-xl shadow-brand/10" onClick={onSend}>
+            <Button variant="primary" className="flex-1 font-bold shadow-xl shadow-brand/10" onClick={onSend}>
               Send Estimate
             </Button>
+            {onConvertToInvoice && (
+              <Button variant="accent" className="flex-1 font-bold shadow-xl shadow-accent/20" onClick={onConvertToInvoice}>
+                Send as Invoice
+              </Button>
+            )}
           </>
         );
       case JobStatus.SENT:

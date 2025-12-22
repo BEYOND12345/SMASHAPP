@@ -519,6 +519,91 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleConvertToInvoiceDirectly = async () => {
+    const estimateId = state.selectedEstimateId;
+    if (!estimateId) return;
+
+    try {
+      console.log('[App] Converting draft quote directly to invoice:', estimateId);
+
+      const { data: quoteData, error: fetchError } = await supabase
+        .from('quotes')
+        .select('customer_id, status')
+        .eq('id', estimateId)
+        .maybeSingle();
+
+      if (fetchError || !quoteData) {
+        console.error('[App] Failed to fetch quote:', fetchError);
+        alert(`Failed to load quote: ${fetchError?.message || 'Not found'}`);
+        return;
+      }
+
+      const { data: customerData } = await supabase
+        .from('customers')
+        .select('email, name')
+        .eq('id', quoteData.customer_id)
+        .maybeSingle();
+
+      if (quoteData.status === 'draft') {
+        const { error: sendError } = await supabase
+          .from('quotes')
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .eq('id', estimateId);
+
+        if (sendError) {
+          console.error('[App] Failed to mark as sent:', sendError);
+          alert(`Failed to prepare quote: ${sendError.message}`);
+          return;
+        }
+      }
+
+      const { error: acceptError } = await supabase
+        .from('quotes')
+        .update({
+          status: 'accepted',
+          accepted_by_email: customerData?.email || 'internal@approved.local',
+          accepted_by_name: customerData?.name || 'Internal Approval',
+        })
+        .eq('id', estimateId);
+
+      if (acceptError) {
+        console.error('[App] Failed to accept quote:', acceptError);
+        alert(`Failed to approve quote: ${acceptError.message}`);
+        return;
+      }
+
+      const { data: invoiceId, error: invoiceError } = await supabase
+        .rpc('create_invoice_from_accepted_quote', { p_quote_id: estimateId });
+
+      if (invoiceError) {
+        console.error('[App] Failed to create invoice:', invoiceError);
+        alert(`Quote approved but invoice creation failed:\n${invoiceError.message}\n\nYou can create the invoice later from the job card.`);
+
+        if (state.user?.id) {
+          await loadQuotesFromDatabase(state.user.id);
+        }
+        setState(prev => ({ ...prev, currentScreen: 'JobCard' }));
+        return;
+      }
+
+      console.log('[App] Invoice created successfully:', invoiceId);
+
+      if (state.user?.id) {
+        await loadQuotesFromDatabase(state.user.id);
+      }
+
+      setState(prev => ({
+        ...prev,
+        currentScreen: 'SendEstimate',
+        sendingType: 'invoice'
+      }));
+    } catch (err) {
+      console.error('[App] Exception in handleConvertToInvoiceDirectly:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to create invoice: ${errorMsg}`);
+    }
+  };
+
   const handleDeleteEstimate = async (estimateId: string) => {
     if (!confirm('Are you sure you want to delete this estimate? This cannot be undone.')) {
       return;
@@ -754,6 +839,7 @@ const App: React.FC = () => {
             onStatusChange={handleStatusChange}
             onViewInvoice={() => navigate('InvoicePreview')}
             onDelete={() => handleDeleteEstimate(selectedEstimate.id)}
+            onConvertToInvoice={handleConvertToInvoiceDirectly}
           />
         ) : null;
 
