@@ -22,73 +22,86 @@ export async function generateEstimatePDF(
   userProfile?: UserProfile,
   type: 'estimate' | 'invoice' = 'estimate'
 ): Promise<Blob> {
-  const pdf = new jsPDF();
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  let yPos = 20;
+  try {
+    console.log('[PDFGenerator] Starting PDF generation', {
+      type,
+      estimateId: estimate.id,
+      hasUserProfile: !!userProfile,
+      materialsCount: estimate.materials?.length || 0,
+      scopeOfWorkCount: estimate.scopeOfWork?.length || 0
+    });
 
-  // HEADER SECTION - Logo and Business Info
-  if (userProfile?.logoUrl) {
-    try {
-      const logoData = await loadImageAsBase64(userProfile.logoUrl);
-      if (logoData) {
-        const logoSize = 18;
-        pdf.addImage(logoData, 'PNG', 20, yPos, logoSize, logoSize);
-        yPos += logoSize + 2;
+    const pdf = new jsPDF();
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let yPos = 20;
+
+    // HEADER SECTION - Logo and Business Info
+    if (userProfile?.logoUrl) {
+      try {
+        console.log('[PDFGenerator] Loading logo from:', userProfile.logoUrl);
+        const logoData = await loadImageAsBase64(userProfile.logoUrl);
+        if (logoData) {
+          const logoSize = 18;
+          pdf.addImage(logoData, 'PNG', 20, yPos, logoSize, logoSize);
+          yPos += logoSize + 2;
+          console.log('[PDFGenerator] Logo loaded successfully');
+        } else {
+          console.warn('[PDFGenerator] Logo failed to load');
+        }
+      } catch (logoErr) {
+        console.error('[PDFGenerator] Logo error:', logoErr);
       }
-    } catch {
-      // Logo failed to load
-    }
-  }
-
-  // Business Name
-  if (userProfile) {
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(userProfile.businessName, 20, yPos);
-    yPos += 6;
-
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(80, 80, 80);
-
-    if (userProfile.tradeType) {
-      pdf.text(userProfile.tradeType, 20, yPos);
-      yPos += 4;
     }
 
-    if (userProfile.businessAddress) {
-      pdf.text(userProfile.businessAddress, 20, yPos);
-      yPos += 4;
+    // Business Name
+    if (userProfile) {
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(userProfile.businessName, 20, yPos);
+      yPos += 6;
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(80, 80, 80);
+
+      if (userProfile.tradeType) {
+        pdf.text(userProfile.tradeType, 20, yPos);
+        yPos += 4;
+      }
+
+      if (userProfile.businessAddress) {
+        pdf.text(userProfile.businessAddress, 20, yPos);
+        yPos += 4;
+      }
+
+      if (userProfile.phone) {
+        pdf.text(`Phone: ${userProfile.phone}`, 20, yPos);
+        yPos += 4;
+      }
+
+      if (userProfile.email) {
+        pdf.text(`Email: ${userProfile.email}`, 20, yPos);
+        yPos += 4;
+      }
+
+      if (userProfile.abn) {
+        pdf.text(`ABN: ${userProfile.abn}`, 20, yPos);
+        yPos += 4;
+      }
+
+      if (userProfile.website) {
+        pdf.text(`Website: ${userProfile.website}`, 20, yPos);
+        yPos += 4;
+      }
+
+      pdf.setTextColor(0, 0, 0);
+      yPos += 8;
     }
 
-    if (userProfile.phone) {
-      pdf.text(`Phone: ${userProfile.phone}`, 20, yPos);
-      yPos += 4;
-    }
-
-    if (userProfile.email) {
-      pdf.text(`Email: ${userProfile.email}`, 20, yPos);
-      yPos += 4;
-    }
-
-    if (userProfile.abn) {
-      pdf.text(`ABN: ${userProfile.abn}`, 20, yPos);
-      yPos += 4;
-    }
-
-    if (userProfile.website) {
-      pdf.text(`Website: ${userProfile.website}`, 20, yPos);
-      yPos += 4;
-    }
-
-    pdf.setTextColor(0, 0, 0);
-    yPos += 8;
-  }
-
-  pdf.setDrawColor(200, 200, 200);
-  pdf.line(20, yPos, pageWidth - 20, yPos);
-  yPos += 12;
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(20, yPos, pageWidth - 20, yPos);
+    yPos += 12;
 
   // DOCUMENT TYPE HEADER
   pdf.setFontSize(20);
@@ -318,5 +331,11 @@ export async function generateEstimatePDF(
     }
   }
 
-  return pdf.output('blob');
+    console.log('[PDFGenerator] PDF generation complete');
+    return pdf.output('blob');
+  } catch (err) {
+    console.error('[PDFGenerator] PDF generation failed:', err);
+    console.error('[PDFGenerator] Error stack:', (err as Error).stack);
+    throw new Error(`PDF generation failed: ${(err as Error).message}`);
+  }
 }

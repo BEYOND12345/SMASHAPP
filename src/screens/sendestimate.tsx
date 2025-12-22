@@ -269,12 +269,25 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
   const handleSharePDF = async () => {
     if (!estimate) {
       console.error('[SendEstimate] No estimate data available');
+      alert('No estimate data available. Please try again.');
       return;
     }
 
     try {
       setIsSending(true);
+      console.log('[SendEstimate] Starting PDF generation with data:', {
+        hasEstimate: !!estimate,
+        hasUserProfile: !!userProfile,
+        type,
+        estimateId: estimate.id,
+        clientName: estimate.clientName,
+        materialsCount: estimate.materials?.length,
+        labourHours: estimate.labour?.hours
+      });
+
       const pdfBlob = await generateEstimatePDF(estimate, userProfile || undefined, type);
+      console.log('[SendEstimate] PDF generated successfully, size:', pdfBlob.size);
+
       const fileName = `${type === 'invoice' ? 'invoice' : 'estimate'}-${estimate.jobTitle.replace(/\s+/g, '-').toLowerCase()}.pdf`;
 
       if (navigator.share && navigator.canShare?.({ files: [new File([pdfBlob], fileName)] })) {
@@ -298,9 +311,14 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
       setIsSending(false);
     } catch (err) {
       console.error('[SendEstimate] Error sharing PDF:', err);
+      console.error('[SendEstimate] Error details:', {
+        message: (err as Error).message,
+        stack: (err as Error).stack,
+        name: (err as Error).name
+      });
       setIsSending(false);
       if ((err as Error).name !== 'AbortError') {
-        alert('Failed to generate or share PDF. Please try again.');
+        alert(`Failed to generate or share PDF: ${(err as Error).message}\n\nPlease check the console for details.`);
       }
     }
   };
