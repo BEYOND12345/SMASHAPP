@@ -44,6 +44,7 @@ export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
   const handleDownloadPdf = async () => {
     try {
       setDownloadingPdf(true);
+      console.log('[PublicInvoiceView] Starting PDF generation...');
 
       const userProfile = businessInfo ? {
         businessName,
@@ -62,18 +63,30 @@ export const PublicInvoiceView: React.FC<PublicInvoiceViewProps> = ({
         paymentInstructions: businessInfo.paymentInstructions,
       } : undefined;
 
+      console.log('[PublicInvoiceView] Generating PDF with profile:', !!userProfile);
       const pdfBlob = await generateEstimatePDF(estimate, userProfile, 'invoice');
+      console.log('[PublicInvoiceView] PDF generated successfully, size:', pdfBlob.size);
+
       const url = URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `invoice-${invoiceNumber}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      console.log('[PublicInvoiceView] Opening PDF in new window...');
+
+      const newWindow = window.open(url, '_blank');
+
+      if (!newWindow) {
+        console.log('[PublicInvoiceView] Popup blocked, trying download fallback...');
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `invoice-${invoiceNumber}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      console.error('Failed to generate PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      console.error('[PublicInvoiceView] Failed to generate PDF:', error);
+      console.error('[PublicInvoiceView] Error details:', error instanceof Error ? error.message : String(error));
+      alert(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setDownloadingPdf(false);
     }
