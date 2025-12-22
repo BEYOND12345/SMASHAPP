@@ -65,7 +65,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
           if (invoiceData) {
             const materials = invoiceData.invoice_line_items
-              .filter((item: any) => item.item_type === 'material')
+              .filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
               .map((item: any) => ({
                 id: item.id,
                 name: item.description,
@@ -117,12 +117,12 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
           if (quoteData) {
             const materials = quoteData.quote_line_items
-              .filter((item: any) => item.item_type === 'material')
+              .filter((item: any) => item.item_type === 'materials')
               .map((item: any) => ({
                 id: item.id,
                 name: item.description,
                 quantity: item.quantity,
-                unit: item.unit_of_measure || 'unit',
+                unit: item.unit || 'unit',
                 rate: item.unit_price_cents / 100,
               }));
 

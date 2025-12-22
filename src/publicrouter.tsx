@@ -61,12 +61,12 @@ export const PublicRouter: React.FC = () => {
       }
 
       const materials = lineItems
-        ?.filter((item: any) => item.item_type === 'material')
+        ?.filter((item: any) => item.item_type === 'materials' || item.item_type === 'material')
         .map((item: any) => ({
           id: item.id,
           name: item.description,
           quantity: item.quantity,
-          unit: item.unit_of_measure || 'unit',
+          unit: item.unit || 'unit',
           rate: item.unit_price_cents / 100,
         })) || [];
 
@@ -133,7 +133,7 @@ export const PublicRouter: React.FC = () => {
       }
 
       const materials = lineItems
-        ?.filter((item: any) => item.item_type === 'material')
+        ?.filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
         .map((item: any) => ({
           id: item.id,
           name: item.description,
