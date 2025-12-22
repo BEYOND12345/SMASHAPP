@@ -44,7 +44,11 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             .from('invoices')
             .select(`
               *,
-              invoice_line_items (*)
+              invoice_line_items (*),
+              customer:customers (*),
+              source_quote:quotes (
+                scope_of_work
+              )
             `)
             .eq('source_quote_id', estimateId)
             .maybeSingle();
@@ -60,7 +64,8 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             console.log('[SendEstimate] Invoice data loaded:', {
               id: invoiceData.id,
               has_approval_token: !!invoiceData.approval_token,
-              is_public: invoiceData.is_public
+              is_public: invoiceData.is_public,
+              has_customer: !!invoiceData.customer
             });
             const materials = invoiceData.invoice_line_items
               .filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
@@ -74,13 +79,18 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
             const labourItem = invoiceData.invoice_line_items.find((item: any) => item.item_type === 'labour');
 
+            const dueDate = invoiceData.due_date ? new Date(invoiceData.due_date) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            const timeline = `Due: ${dueDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+
             const estimateObj: Estimate = {
               id: invoiceData.id,
-              jobTitle: invoiceData.title || '',
-              clientName: '',
-              clientAddress: '',
-              timeline: '',
-              scopeOfWork: invoiceData.description ? [invoiceData.description] : [],
+              jobTitle: invoiceData.title || `Invoice ${invoiceData.invoice_number}`,
+              clientName: invoiceData.customer?.name || '',
+              clientAddress: invoiceData.customer?.billing_street || '',
+              clientEmail: invoiceData.customer?.email || '',
+              clientPhone: invoiceData.customer?.phone || '',
+              timeline: timeline,
+              scopeOfWork: invoiceData.source_quote?.scope_of_work || (invoiceData.description ? [invoiceData.description] : []),
               materials,
               labour: {
                 hours: labourItem?.quantity || 0,
@@ -88,6 +98,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               },
               status: invoiceData.status,
               createdAt: invoiceData.created_at,
+              gstRate: invoiceData.default_tax_rate || 0.10,
             };
 
             setEstimate(estimateObj);
