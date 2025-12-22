@@ -529,7 +529,19 @@ const App: React.FC = () => {
 
       const { data: quoteData, error: fetchError } = await supabase
         .from('quotes')
-        .select('customer_id, status')
+        .select(`
+          id,
+          customer_id,
+          status,
+          title,
+          description,
+          subtotal_cents,
+          tax_cents,
+          total_cents,
+          currency,
+          default_tax_rate,
+          quote_line_items (*)
+        `)
         .eq('id', estimateId)
         .maybeSingle();
 
@@ -558,12 +570,29 @@ const App: React.FC = () => {
         }
       }
 
+      const snapshot = {
+        quote_id: quoteData.id,
+        title: quoteData.title,
+        description: quoteData.description,
+        subtotal_cents: quoteData.subtotal_cents,
+        tax_cents: quoteData.tax_cents,
+        total_cents: quoteData.total_cents,
+        currency: quoteData.currency,
+        default_tax_rate: quoteData.default_tax_rate,
+        line_items: quoteData.quote_line_items,
+        accepted_at: new Date().toISOString()
+      };
+
+      console.log('[App] Created acceptance snapshot:', { snapshot });
+
       const { error: acceptError } = await supabase
         .from('quotes')
         .update({
           status: 'accepted',
+          accepted_at: new Date().toISOString(),
           accepted_by_email: customerData?.email || 'internal@approved.local',
           accepted_by_name: customerData?.name || 'Internal Approval',
+          accepted_quote_snapshot: snapshot
         })
         .eq('id', estimateId);
 
@@ -572,6 +601,8 @@ const App: React.FC = () => {
         alert(`Failed to approve quote: ${acceptError.message}`);
         return;
       }
+
+      console.log('[App] Quote accepted with snapshot, creating invoice...');
 
       const { data: invoiceId, error: invoiceError } = await supabase
         .rpc('create_invoice_from_accepted_quote', { p_quote_id: estimateId });
