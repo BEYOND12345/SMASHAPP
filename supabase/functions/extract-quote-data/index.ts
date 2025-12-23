@@ -91,9 +91,9 @@ FIELD-LEVEL CONFIDENCE RULES:
 - Assumed/defaulted values: confidence 0.40-0.55
 
 EXTRACTION RULES:
-1. VAGUE DURATIONS: "a couple hours" → 2 hours (confidence 0.65), "few days" → 3 days (confidence 0.60)
-2. VAGUE QUANTITIES: "a couple" → 2 (confidence 0.65), "a few" → 3 (confidence 0.60), "some" → 5 (confidence 0.50)
-3. RANGES: "three or four days" → store min: 3, max: 4, use max for estimates
+1. VAGUE DURATIONS: "a couple hours" to 2 hours (confidence 0.65), "few days" to 3 days (confidence 0.60)
+2. VAGUE QUANTITIES: "a couple" to 2 (confidence 0.65), "a few" to 3 (confidence 0.60), "some" to 5 (confidence 0.50)
+3. RANGES: "three or four days" store min: 3, max: 4, use max for estimates
 4. UNIT NORMALIZATION: "metres"/"meters"/"m"/"lm" = "linear_m", "square metres"/"sqm"/"m2" = "square_m"
 5. WHEN UNSURE: Extract with lower confidence rather than mark as missing
 
@@ -115,89 +115,16 @@ SCOPE OF WORK:
 - Separate prep work, execution, and finishing
 - Be SPECIFIC about locations and quantities
 
-Return ONLY valid JSON matching this schema:
-{
-  "customer": {
-    "name": "string or null",
-    "email": "string or null",
-    "phone": "string or null"
-  },
-  "job": {
-    "title": "string",
-    "summary": "string",
-    "site_address": "string or null",
-    "estimated_days_min": "number or null",
-    "estimated_days_max": "number or null",
-    "job_date": "ISO date string or null",
-    "scope_of_work": ["string"]
-  },
-  "time": {
-    "labour_entries": [
-      {
-        "description": "string",
-        "hours": {"value": "number or null", "confidence": "number 0-1"},
-        "days": {"value": "number or null", "confidence": "number 0-1"},
-        "people": {"value": "number or null", "confidence": "number 0-1"},
-        "note": "string or null"
-      }
-    ]
-  },
-  "materials": {
-    "items": [
-      {
-        "description": "string",
-        "quantity": {"value": "number", "confidence": "number 0-1"},
-        "unit": {"value": "string", "confidence": "number 0-1"},
-        "unit_price_cents": "number or null",
-        "estimated_cost_cents": "number or null",
-        "needs_pricing": "boolean",
-        "source_store": "string or null",
-        "notes": "string or null",
-        "catalog_item_id": "uuid or null",
-        "catalog_match_confidence": "number 0-1 or null"
-      }
-    ]
-  },
-  "fees": {
-    "travel": {
-      "is_time": "boolean",
-      "hours": {"value": "number or null", "confidence": "number 0-1"},
-      "fee_cents": "number or null"
-    },
-    "materials_pickup": {
-      "enabled": "boolean",
-      "minutes": {"value": "number or null", "confidence": "number 0-1"},
-      "fee_cents": "number or null"
-    },
-    "callout_fee_cents": "number or null"
-  },
-  "pricing_defaults_used": {
-    "hourly_rate_cents": "number or null",
-    "materials_markup_percent": "number or null",
-    "tax_rate_percent": "number or null",
-    "currency": "string or null"
-  },
-  "assumptions": [
-    {
-      "field": "string",
-      "assumption": "string",
-      "confidence": "number 0-1",
-      "source": "string"
-    }
-  ],
-  "missing_fields": [
-    {
-      "field": "string",
-      "reason": "string",
-      "severity": "required or warning"
-    }
-  ],
-  "quality": {
-    "overall_confidence": "number 0-1",
-    "ambiguous_fields": ["string"],
-    "critical_fields_below_threshold": ["string"]
-  }
-}`;
+Return ONLY valid JSON with these fields:
+- customer: {name, email, phone} - all nullable strings
+- job: {title, summary, site_address, estimated_days_min, estimated_days_max, job_date, scope_of_work[]}
+- time.labour_entries[]: {description, hours{value,confidence}, days{value,confidence}, people{value,confidence}, note}
+- materials.items[]: {description, quantity{value,confidence}, unit{value,confidence}, unit_price_cents, estimated_cost_cents, needs_pricing, source_store, notes, catalog_item_id, catalog_match_confidence}
+- fees: {travel{is_time,hours{value,confidence},fee_cents}, materials_pickup{enabled,minutes{value,confidence},fee_cents}, callout_fee_cents}
+- pricing_defaults_used: {hourly_rate_cents, materials_markup_percent, tax_rate_percent, currency}
+- assumptions[]: {field, assumption, confidence, source}
+- missing_fields[]: {field, reason, severity}
+- quality: {overall_confidence, ambiguous_fields[], critical_fields_below_threshold[]}`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -420,7 +347,7 @@ Deno.serve(async (req: Request) => {
 
       // PHASE 1: Pre-filter catalog to 10-20 items max
       const filteredCatalog = filterCatalog(allCatalogItems || [], keywords, 20);
-      console.log(`[PHASE_1] Filtered catalog: ${allCatalogItems?.length || 0} → ${filteredCatalog.length} items`);
+      console.log(`[PHASE_1] Filtered catalog: ${allCatalogItems?.length || 0} to ${filteredCatalog.length} items`);
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
@@ -605,7 +532,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const totalDuration = Date.now() - startTime;
-    console.log(`[PHASE_1] ✓ Total extraction pipeline: ${totalDuration}ms`);
+    console.log(`[PHASE_1] Total extraction pipeline: ${totalDuration}ms`);
 
     return new Response(
       JSON.stringify({
