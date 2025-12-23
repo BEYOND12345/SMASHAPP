@@ -12,7 +12,6 @@ interface ExtractRequest {
   user_corrections_json?: any;
 }
 
-// PHASE 1 OPTIMIZATION: Helper functions for catalog pre-filtering
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
   'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
@@ -69,62 +68,28 @@ function filterCatalog(catalogItems: any[], keywords: string[], maxItems: number
     }));
 }
 
-// PHASE 1: SINGLE COMBINED EXTRACTION PROMPT
-const COMBINED_EXTRACTION_PROMPT = `You are an expert trade quoting assistant.
-
-Your task is to extract structured quote data from a spoken transcript.
-You must internally normalize messy speech, filler words, and casual phrasing,
-but you must NOT output the cleaned transcript.
-
-You must work ONLY with the provided catalog items.
-Do NOT invent materials or prices outside the catalog.
-If no suitable catalog item exists, mark it as "custom".
-
-Be conservative.
-If something is unclear, mark it as an assumption and lower confidence.
+const COMBINED_EXTRACTION_PROMPT = `You are an expert trade quoting assistant. Extract structured quote data from spoken transcript. Internally normalize messy speech but do NOT output cleaned transcript. Work ONLY with provided catalog items. If no suitable catalog item exists mark as custom. Be conservative. If something is unclear mark it as assumption and lower confidence.
 
 FIELD-LEVEL CONFIDENCE RULES:
-- Every extracted numeric value MUST include a confidence score (0.0 to 1.0)
-- Explicitly stated values: confidence 0.85-0.95
-- Implied values from context: confidence 0.70-0.85
-- Reasonable estimates from vague speech: confidence 0.55-0.70
-- Assumed/defaulted values: confidence 0.40-0.55
+Every extracted numeric value MUST include confidence score from 0.0 to 1.0. Explicitly stated values use 0.85-0.95. Implied values from context use 0.70-0.85. Reasonable estimates from vague speech use 0.55-0.70. Assumed or defaulted values use 0.40-0.55.
 
 EXTRACTION RULES:
-1. VAGUE DURATIONS: "a couple hours" to 2 hours (confidence 0.65), "few days" to 3 days (confidence 0.60)
-2. VAGUE QUANTITIES: "a couple" to 2 (confidence 0.65), "a few" to 3 (confidence 0.60), "some" to 5 (confidence 0.50)
-3. RANGES: "three or four days" store min: 3, max: 4, use max for estimates
-4. UNIT NORMALIZATION: "metres"/"meters"/"m"/"lm" = "linear_m", "square metres"/"sqm"/"m2" = "square_m"
+1. VAGUE DURATIONS: couple hours equals 2 hours confidence 0.65, few days equals 3 days confidence 0.60
+2. VAGUE QUANTITIES: couple equals 2 confidence 0.65, few equals 3 confidence 0.60, some equals 5 confidence 0.50
+3. RANGES: three or four days store min 3 max 4 use max for estimates
+4. UNIT NORMALIZATION: metres meters m lm all equal linear_m, square metres sqm m2 all equal square_m
 5. WHEN UNSURE: Extract with lower confidence rather than mark as missing
 
 MATERIALS CATALOG MATCHING:
-- If a Material Catalog is provided, try to match mentioned materials to catalog items
-- Match based on name and category similarity
-- If matched with confidence >= 0.75, include catalog_item_id and set catalog_match_confidence
-- PRICING FROM CATALOG:
-  - If typical_low_price_cents and typical_high_price_cents exist: use midpoint
-  - Otherwise set needs_pricing: true
+If Material Catalog provided try to match materials to catalog items. Match based on name and category similarity. If matched with confidence 0.75 or higher include catalog_item_id and set catalog_match_confidence. For pricing from catalog if typical_low_price_cents and typical_high_price_cents exist use midpoint otherwise set needs_pricing true.
 
 MISSING FIELDS:
-- Flag missing fields with severity: "warning" (most cases) or "required" (extremely rare)
-- Examples of WARNING: customer contact, labour hours, materials pricing
-- Examples of REQUIRED: NO work description at all
+Flag missing fields with severity warning for most cases or required for extremely rare cases. Examples of WARNING include customer contact labour hours materials pricing. Examples of REQUIRED include NO work description at all.
 
 SCOPE OF WORK:
-- Break down work into DISCRETE, MEASURABLE tasks
-- Separate prep work, execution, and finishing
-- Be SPECIFIC about locations and quantities
+Break down work into discrete measurable tasks. Separate prep work execution and finishing. Be specific about locations and quantities.
 
-Return ONLY valid JSON with these fields:
-- customer: {name, email, phone} - all nullable strings
-- job: {title, summary, site_address, estimated_days_min, estimated_days_max, job_date, scope_of_work[]}
-- time.labour_entries[]: {description, hours{value,confidence}, days{value,confidence}, people{value,confidence}, note}
-- materials.items[]: {description, quantity{value,confidence}, unit{value,confidence}, unit_price_cents, estimated_cost_cents, needs_pricing, source_store, notes, catalog_item_id, catalog_match_confidence}
-- fees: {travel{is_time,hours{value,confidence},fee_cents}, materials_pickup{enabled,minutes{value,confidence},fee_cents}, callout_fee_cents}
-- pricing_defaults_used: {hourly_rate_cents, materials_markup_percent, tax_rate_percent, currency}
-- assumptions[]: {field, assumption, confidence, source}
-- missing_fields[]: {field, reason, severity}
-- quality: {overall_confidence, ambiguous_fields[], critical_fields_below_threshold[]}`;
+Return ONLY valid JSON. Include customer with name email phone all nullable. Include job with title summary site_address estimated_days_min estimated_days_max job_date scope_of_work array. Include time.labour_entries array with description hours object days object people object note. Include materials.items array with description quantity object unit object unit_price_cents estimated_cost_cents needs_pricing source_store notes catalog_item_id catalog_match_confidence. Include fees with travel object materials_pickup object callout_fee_cents. Include pricing_defaults_used with hourly_rate_cents materials_markup_percent tax_rate_percent currency. Include assumptions array with field assumption confidence source. Include missing_fields array with field reason severity. Include quality with overall_confidence number ambiguous_fields array critical_fields_below_threshold array.`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -334,24 +299,20 @@ Deno.serve(async (req: Request) => {
 
       const regionCode = orgData?.country_code || 'AU';
 
-      // PHASE 1: Extract keywords from transcript
       const keywords = extractKeywords(intake.transcript_text);
       console.log("[PHASE_1] Extracted keywords:", keywords.slice(0, 10).join(', '));
 
-      // PHASE 1: Fetch ALL catalog items first
       const { data: allCatalogItems } = await supabase
         .from("material_catalog_items")
         .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
         .or(`org_id.eq.${(profileData as any).org_id},and(org_id.is.null,region_code.eq.${regionCode})`)
         .eq("is_active", true);
 
-      // PHASE 1: Pre-filter catalog to 10-20 items max
       const filteredCatalog = filterCatalog(allCatalogItems || [], keywords, 20);
       console.log(`[PHASE_1] Filtered catalog: ${allCatalogItems?.length || 0} to ${filteredCatalog.length} items`);
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
-      // PHASE 1: SINGLE GPT CALL (no repair step)
       console.log("[PHASE_1] Single extraction call (no repair step)");
 
       let extractionMessage = `Transcript:\n${intake.transcript_text}\n\nPricing Profile:\n${JSON.stringify(profileData, null, 2)}`;
