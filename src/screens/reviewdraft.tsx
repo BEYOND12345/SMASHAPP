@@ -50,13 +50,13 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [statusMessage, setStatusMessage] = useState(STATUS_MESSAGES[0]);
   const [error, setError] = useState('');
   const [firstRenderWithItemsLogged, setFirstRenderWithItemsLogged] = useState(false);
-  const [pollCount, setPollCount] = useState(0);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIndexRef = useRef(0);
   const traceIdRef = useRef<string>('');
   const mountTimeRef = useRef<number>(0);
+  const pollCountRef = useRef(0);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -82,8 +82,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const loadData = async () => {
     try {
-      setPollCount(prev => prev + 1);
-      const pollNum = pollCount + 1;
+      pollCountRef.current += 1;
+      const pollNum = pollCountRef.current;
 
       const quoteResult = await supabase
         .from('quotes')
