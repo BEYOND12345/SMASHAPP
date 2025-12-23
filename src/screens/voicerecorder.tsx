@@ -315,10 +315,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
+      if (!token) {
+        console.error('[BACKGROUND_PROCESSING] No access token available');
+      }
+
       (async () => {
         try {
           const transcribeStartTime = Date.now();
 
+          console.log(`[BACKGROUND_PROCESSING] Starting transcription for intake ${intakeId}`);
           const transcribeResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
             {
@@ -331,47 +336,72 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             }
           );
 
-          if (transcribeResponse.ok) {
-            console.log(`[PERF] trace_id=${traceId} step=transcription_complete intake_id=${intakeId} ms=${Date.now() - transcribeStartTime}`);
-
-            const extractStartTime = Date.now();
-
-            const extractResponse = await fetch(
-              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
-              }
-            );
-
-            if (extractResponse.ok) {
-              console.log(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${Date.now() - extractStartTime}`);
-
-              const createQuoteStartTime = Date.now();
-
-              const createResponse = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
-                }
-              );
-
-              if (createResponse.ok) {
-                console.log(`[PERF] trace_id=${traceId} step=quote_creation_complete intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - createQuoteStartTime}`);
-              }
-            }
+          if (!transcribeResponse.ok) {
+            const errorText = await transcribeResponse.text();
+            console.error('[BACKGROUND_PROCESSING] Transcription failed:', transcribeResponse.status, errorText);
+            return;
           }
+
+          const transcribeResult = await transcribeResponse.json();
+          console.log(`[PERF] trace_id=${traceId} step=transcription_complete intake_id=${intakeId} ms=${Date.now() - transcribeStartTime}`);
+          console.log('[BACKGROUND_PROCESSING] Transcription result:', transcribeResult);
+
+          const extractStartTime = Date.now();
+
+          console.log(`[BACKGROUND_PROCESSING] Starting extraction for intake ${intakeId}`);
+          const extractResponse = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+            }
+          );
+
+          if (!extractResponse.ok) {
+            const errorText = await extractResponse.text();
+            console.error('[BACKGROUND_PROCESSING] Extraction failed:', extractResponse.status, errorText);
+            return;
+          }
+
+          const extractResult = await extractResponse.json();
+          console.log(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${Date.now() - extractStartTime}`);
+          console.log('[BACKGROUND_PROCESSING] Extraction result:', extractResult);
+
+          const createQuoteStartTime = Date.now();
+
+          console.log(`[BACKGROUND_PROCESSING] Starting quote creation for intake ${intakeId}`);
+          const createResponse = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+            }
+          );
+
+          if (!createResponse.ok) {
+            const errorText = await createResponse.text();
+            console.error('[BACKGROUND_PROCESSING] Quote creation failed:', createResponse.status, errorText);
+            return;
+          }
+
+          const createResult = await createResponse.json();
+          console.log(`[PERF] trace_id=${traceId} step=quote_creation_complete intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - createQuoteStartTime}`);
+          console.log('[BACKGROUND_PROCESSING] Quote creation result:', createResult);
         } catch (err) {
-          console.error('[BACKGROUND_PROCESSING] Error:', err);
+          console.error('[BACKGROUND_PROCESSING] Exception:', err);
+          console.error('[BACKGROUND_PROCESSING] Error details:', {
+            name: err instanceof Error ? err.name : 'unknown',
+            message: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+          });
         }
       })();
 
