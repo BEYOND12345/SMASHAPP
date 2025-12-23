@@ -68,28 +68,57 @@ function filterCatalog(catalogItems: any[], keywords: string[], maxItems: number
     }));
 }
 
-const COMBINED_EXTRACTION_PROMPT = `You are an expert trade quoting assistant. Extract structured quote data from spoken transcript. Internally normalize messy speech but do NOT output cleaned transcript. Work ONLY with provided catalog items. If no suitable catalog item exists mark as custom. Be conservative. If something is unclear mark it as assumption and lower confidence.
+const PROMPT_LINES = [
+  "You are an expert trade quoting assistant.",
+  "Extract structured quote data from spoken transcript.",
+  "Internally normalize messy speech but do NOT output cleaned transcript.",
+  "Work ONLY with provided catalog items.",
+  "If no suitable catalog item exists mark as custom.",
+  "Be conservative. If something is unclear mark it as assumption and lower confidence.",
+  "",
+  "FIELD-LEVEL CONFIDENCE RULES:",
+  "Every extracted numeric value MUST include confidence score from 0.0 to 1.0.",
+  "Explicitly stated values use 0.85 to 0.95.",
+  "Implied values from context use 0.70 to 0.85.",
+  "Reasonable estimates from vague speech use 0.55 to 0.70.",
+  "Assumed or defaulted values use 0.40 to 0.55.",
+  "",
+  "EXTRACTION RULES:",
+  "1. VAGUE DURATIONS: couple hours equals 2 hours confidence 0.65, few days equals 3 days confidence 0.60",
+  "2. VAGUE QUANTITIES: couple equals 2 confidence 0.65, few equals 3 confidence 0.60, some equals 5 confidence 0.50",
+  "3. RANGES: three or four days store min 3 max 4 use max for estimates",
+  "4. UNIT NORMALIZATION: metres meters m lm all equal linear_m, square metres sqm m2 all equal square_m",
+  "5. WHEN UNSURE: Extract with lower confidence rather than mark as missing",
+  "",
+  "MATERIALS CATALOG MATCHING:",
+  "If Material Catalog provided try to match materials to catalog items.",
+  "Match based on name and category similarity.",
+  "If matched with confidence 0.75 or higher include catalog_item_id and set catalog_match_confidence.",
+  "For pricing from catalog if typical_low_price_cents and typical_high_price_cents exist use midpoint otherwise set needs_pricing true.",
+  "",
+  "MISSING FIELDS:",
+  "Flag missing fields with severity warning for most cases or required for extremely rare cases.",
+  "Examples of WARNING include customer contact labour hours materials pricing.",
+  "Examples of REQUIRED include NO work description at all.",
+  "",
+  "SCOPE OF WORK:",
+  "Break down work into discrete measurable tasks.",
+  "Separate prep work execution and finishing.",
+  "Be specific about locations and quantities.",
+  "",
+  "Return ONLY valid JSON.",
+  "Include customer with name email phone all nullable.",
+  "Include job with title summary site_address estimated_days_min estimated_days_max job_date scope_of_work array.",
+  "Include time labour_entries array with description hours object days object people object note.",
+  "Include materials items array with description quantity object unit object unit_price_cents estimated_cost_cents needs_pricing source_store notes catalog_item_id catalog_match_confidence.",
+  "Include fees with travel object materials_pickup object callout_fee_cents.",
+  "Include pricing_defaults_used with hourly_rate_cents materials_markup_percent tax_rate_percent currency.",
+  "Include assumptions array with field assumption confidence source.",
+  "Include missing_fields array with field reason severity.",
+  "Include quality with overall_confidence number ambiguous_fields array critical_fields_below_threshold array."
+];
 
-FIELD-LEVEL CONFIDENCE RULES:
-Every extracted numeric value MUST include confidence score from 0.0 to 1.0. Explicitly stated values use 0.85-0.95. Implied values from context use 0.70-0.85. Reasonable estimates from vague speech use 0.55-0.70. Assumed or defaulted values use 0.40-0.55.
-
-EXTRACTION RULES:
-1. VAGUE DURATIONS: couple hours equals 2 hours confidence 0.65, few days equals 3 days confidence 0.60
-2. VAGUE QUANTITIES: couple equals 2 confidence 0.65, few equals 3 confidence 0.60, some equals 5 confidence 0.50
-3. RANGES: three or four days store min 3 max 4 use max for estimates
-4. UNIT NORMALIZATION: metres meters m lm all equal linear_m, square metres sqm m2 all equal square_m
-5. WHEN UNSURE: Extract with lower confidence rather than mark as missing
-
-MATERIALS CATALOG MATCHING:
-If Material Catalog provided try to match materials to catalog items. Match based on name and category similarity. If matched with confidence 0.75 or higher include catalog_item_id and set catalog_match_confidence. For pricing from catalog if typical_low_price_cents and typical_high_price_cents exist use midpoint otherwise set needs_pricing true.
-
-MISSING FIELDS:
-Flag missing fields with severity warning for most cases or required for extremely rare cases. Examples of WARNING include customer contact labour hours materials pricing. Examples of REQUIRED include NO work description at all.
-
-SCOPE OF WORK:
-Break down work into discrete measurable tasks. Separate prep work execution and finishing. Be specific about locations and quantities.
-
-Return ONLY valid JSON. Include customer with name email phone all nullable. Include job with title summary site_address estimated_days_min estimated_days_max job_date scope_of_work array. Include time.labour_entries array with description hours object days object people object note. Include materials.items array with description quantity object unit object unit_price_cents estimated_cost_cents needs_pricing source_store notes catalog_item_id catalog_match_confidence. Include fees with travel object materials_pickup object callout_fee_cents. Include pricing_defaults_used with hourly_rate_cents materials_markup_percent tax_rate_percent currency. Include assumptions array with field assumption confidence source. Include missing_fields array with field reason severity. Include quality with overall_confidence number ambiguous_fields array critical_fields_below_threshold array.`;
+const COMBINED_EXTRACTION_PROMPT = PROMPT_LINES.join("\n");
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
