@@ -145,14 +145,11 @@ export async function generateEstimatePDF(
 
     // CUSTOMER DETAILS (if available)
     if (estimate.clientName || estimate.clientEmail || estimate.clientPhone || estimate.clientAddress) {
-      pdf.setFillColor(248, 249, 250);
-      pdf.rect(leftMargin, yPos, rightMargin - leftMargin, 7, 'F');
-
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(60, 60, 60);
-      pdf.text('CUSTOMER DETAILS', leftMargin + 3, yPos + 4.5);
-      yPos += 10;
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('BILLED TO', leftMargin, yPos);
+      yPos += 6;
 
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
@@ -160,57 +157,51 @@ export async function generateEstimatePDF(
 
       if (estimate.clientName) {
         pdf.setFont('helvetica', 'bold');
-        pdf.text(safe(estimate.clientName), leftMargin + 3, yPos);
+        pdf.text(safe(estimate.clientName), leftMargin, yPos);
         pdf.setFont('helvetica', 'normal');
         yPos += 5;
       }
 
       if (estimate.clientAddress) {
-        pdf.text(safe(estimate.clientAddress), leftMargin + 3, yPos);
+        pdf.text(safe(estimate.clientAddress), leftMargin, yPos);
         yPos += 5;
       }
 
       if (estimate.clientEmail) {
-        pdf.text(safe(estimate.clientEmail), leftMargin + 3, yPos);
+        pdf.text(safe(estimate.clientEmail), leftMargin, yPos);
         yPos += 5;
       }
 
       if (estimate.clientPhone) {
-        pdf.text(safe(estimate.clientPhone), leftMargin + 3, yPos);
+        pdf.text(safe(estimate.clientPhone), leftMargin, yPos);
         yPos += 5;
       }
 
-      yPos += 5;
+      yPos += 8;
     }
 
     // TIMELINE (for estimates) or DUE DATE (for invoices)
     if (estimate.timeline && type === 'estimate') {
-      pdf.setFillColor(248, 249, 250);
-      pdf.rect(leftMargin, yPos, rightMargin - leftMargin, 7, 'F');
-
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(60, 60, 60);
-      pdf.text('TIMELINE', leftMargin + 3, yPos + 4.5);
-      yPos += 10;
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('TIMELINE', leftMargin, yPos);
+      yPos += 6;
 
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(0, 0, 0);
-      pdf.text(safe(estimate.timeline), leftMargin + 3, yPos);
-      yPos += 10;
+      pdf.text(safe(estimate.timeline), leftMargin, yPos);
+      yPos += 12;
     }
 
     // SCOPE OF WORK
     if (estimate.scopeOfWork && estimate.scopeOfWork.length > 0) {
-      pdf.setFillColor(248, 249, 250);
-      pdf.rect(leftMargin, yPos, rightMargin - leftMargin, 7, 'F');
-
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(60, 60, 60);
-      pdf.text('SCOPE OF WORK', leftMargin + 3, yPos + 4.5);
-      yPos += 10;
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('SCOPE OF WORK', leftMargin, yPos);
+      yPos += 6;
 
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
@@ -223,33 +214,27 @@ export async function generateEstimatePDF(
             pdf.addPage();
             yPos = 20;
           }
-          pdf.setFillColor(59, 130, 246);
-          pdf.circle(leftMargin + 5, yPos - 1.5, 1.5, 'F');
-          pdf.text(line, leftMargin + 10, yPos);
+          pdf.setDrawColor(0, 0, 0);
+          pdf.circle(leftMargin + 2, yPos - 1.5, 0.8, 'F');
+          pdf.text(line, leftMargin + 6, yPos);
           yPos += 5.5;
         });
       });
-      yPos += 8;
+      yPos += 10;
     }
 
-    // BREAKDOWN
-    pdf.setFillColor(248, 249, 250);
-    pdf.rect(leftMargin, yPos, rightMargin - leftMargin, 7, 'F');
-
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text('BREAKDOWN', leftMargin + 3, yPos + 4.5);
+    // BREAKDOWN - Add a clean separator line
+    pdf.setDrawColor(220, 220, 220);
+    pdf.line(leftMargin, yPos, rightMargin, yPos);
     yPos += 10;
 
     // MATERIALS SECTION
     if (estimate.materials && estimate.materials.length > 0) {
-      pdf.setFillColor(248, 249, 250);
-      pdf.rect(leftMargin + 3, yPos, rightMargin - leftMargin - 6, 6, 'F');
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(80, 80, 80);
-      pdf.text('Materials', leftMargin + 6, yPos + 4);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('DESCRIPTION', leftMargin, yPos);
+      pdf.text('AMOUNT', rightMargin, yPos, { align: 'right' });
       yPos += 8;
 
       pdf.setFontSize(10);
@@ -262,14 +247,13 @@ export async function generateEstimatePDF(
           yPos = 20;
         }
         const amount = formatCurrency(item.quantity * item.rate);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(safe(item.name), leftMargin + 6, yPos);
-        pdf.text(safe(amount), rightMargin - 3, yPos, { align: 'right' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(safe(item.name), leftMargin, yPos);
+        pdf.text(safe(amount), rightMargin, yPos, { align: 'right' });
         yPos += 4;
         pdf.setFontSize(9);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(100, 100, 100);
-        pdf.text(`${safe(item.quantity)} ${safe(item.unit)} × ${safe(formatCurrency(item.rate))}`, leftMargin + 6, yPos);
+        pdf.setTextColor(120, 120, 120);
+        pdf.text(`${safe(item.quantity)} ${safe(item.unit)} × ${safe(formatCurrency(item.rate))}`, leftMargin, yPos);
         pdf.setTextColor(0, 0, 0);
         pdf.setFontSize(10);
         yPos += 7;
@@ -277,79 +261,46 @@ export async function generateEstimatePDF(
 
       const { materialsTotal, labourTotal, subtotal, gst, total } = calculateEstimateTotals(estimate);
 
-      pdf.setFillColor(240, 240, 240);
-      pdf.rect(leftMargin + 3, yPos, rightMargin - leftMargin - 6, 6, 'F');
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(0, 0, 0);
-      pdf.text('Materials Subtotal', leftMargin + 6, yPos + 4);
-      pdf.text(formatCurrency(materialsTotal), rightMargin - 3, yPos + 4, { align: 'right' });
-      yPos += 10;
-
       // LABOUR SECTION
-      pdf.setFillColor(248, 249, 250);
-      pdf.rect(leftMargin + 3, yPos, rightMargin - leftMargin - 6, 6, 'F');
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(80, 80, 80);
-      pdf.text('Labour', leftMargin + 6, yPos + 4);
-      yPos += 8;
-
       pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(0, 0, 0);
-      pdf.text('Labour Charges', leftMargin + 6, yPos);
-      pdf.text(formatCurrency(labourTotal), rightMargin - 3, yPos, { align: 'right' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Labour', leftMargin, yPos);
+      pdf.text(formatCurrency(labourTotal), rightMargin, yPos, { align: 'right' });
       yPos += 4;
       pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(100, 100, 100);
-      pdf.text(`${estimate.labour.hours} hrs × ${formatCurrency(estimate.labour.rate)}/hr`, leftMargin + 6, yPos);
+      pdf.setTextColor(120, 120, 120);
+      pdf.text(`${estimate.labour.hours} hrs × ${formatCurrency(estimate.labour.rate)}/hr`, leftMargin, yPos);
       pdf.setTextColor(0, 0, 0);
       pdf.setFontSize(10);
-      yPos += 7;
-
-      pdf.setFillColor(240, 240, 240);
-      pdf.rect(leftMargin + 3, yPos, rightMargin - leftMargin - 6, 6, 'F');
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Labour Subtotal', leftMargin + 6, yPos + 4);
-      pdf.text(formatCurrency(labourTotal), rightMargin - 3, yPos + 4, { align: 'right' });
-      yPos += 12;
+      yPos += 10;
 
       // TOTALS SECTION
-      pdf.setDrawColor(200, 200, 200);
+      pdf.setDrawColor(220, 220, 220);
       pdf.line(leftMargin, yPos, rightMargin, yPos);
       yPos += 8;
 
-      pdf.setFontSize(11);
+      pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(60, 60, 60);
-      pdf.text('Subtotal', leftMargin + 3, yPos);
-      pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(0, 0, 0);
-      pdf.text(formatCurrency(subtotal), rightMargin - 3, yPos, { align: 'right' });
+      pdf.text('Subtotal', leftMargin, yPos);
+      pdf.text(formatCurrency(subtotal), rightMargin, yPos, { align: 'right' });
       yPos += 6;
 
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(60, 60, 60);
-      pdf.text('GST (10%)', leftMargin + 3, yPos);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(formatCurrency(gst), rightMargin - 3, yPos, { align: 'right' });
+      pdf.text('GST (10%)', leftMargin, yPos);
+      pdf.text(formatCurrency(gst), rightMargin, yPos, { align: 'right' });
       yPos += 10;
 
-      // Highlighted total
-      pdf.setFillColor(248, 249, 250);
-      pdf.rect(leftMargin, yPos, rightMargin - leftMargin, 12, 'F');
+      // Total with emphasis
+      pdf.setDrawColor(220, 220, 220);
+      pdf.line(leftMargin, yPos, rightMargin, yPos);
+      yPos += 8;
 
-      pdf.setFontSize(16);
+      pdf.setFontSize(14);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(0, 0, 0);
-      pdf.text('TOTAL', leftMargin + 3, yPos + 8);
-      pdf.setTextColor(59, 130, 246);
-      pdf.text(formatCurrency(total), rightMargin - 3, yPos + 8, { align: 'right' });
-      pdf.setTextColor(0, 0, 0);
-      yPos += 18;
+      pdf.text('Total', leftMargin, yPos);
+      pdf.text(formatCurrency(total), rightMargin, yPos, { align: 'right' });
+      yPos += 15;
 
       // PAYMENT DETAILS (if available)
       if (userProfile && (userProfile.bankName || userProfile.accountNumber || userProfile.bsbRouting || userProfile.paymentTerms)) {
@@ -359,64 +310,63 @@ export async function generateEstimatePDF(
           yPos = 20;
         }
 
-        pdf.setDrawColor(200, 200, 200);
+        pdf.setDrawColor(220, 220, 220);
         pdf.line(leftMargin, yPos, rightMargin, yPos);
         yPos += 10;
 
-        pdf.setFillColor(248, 249, 250);
-        pdf.rect(leftMargin, yPos, rightMargin - leftMargin, 7, 'F');
-
         pdf.setFontSize(9);
         pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(60, 60, 60);
-        pdf.text('PAYMENT DETAILS', leftMargin + 3, yPos + 4.5);
-        yPos += 10;
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('PAYMENT DETAILS', leftMargin, yPos);
+        yPos += 8;
 
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(0, 0, 0);
 
+        const labelWidth = 35;
+
         if (userProfile.bankName) {
           pdf.setFont('helvetica', 'bold');
-          pdf.text('Bank Name:', leftMargin + 3, yPos);
+          pdf.text('Bank Name:', leftMargin, yPos);
           pdf.setFont('helvetica', 'normal');
-          pdf.text(safe(userProfile.bankName), leftMargin + 40, yPos);
+          pdf.text(safe(userProfile.bankName), leftMargin + labelWidth, yPos);
           yPos += 5;
         }
 
         if (userProfile.accountName) {
           pdf.setFont('helvetica', 'bold');
-          pdf.text('Account Name:', leftMargin + 3, yPos);
+          pdf.text('Account Name:', leftMargin, yPos);
           pdf.setFont('helvetica', 'normal');
-          pdf.text(safe(userProfile.accountName), leftMargin + 40, yPos);
+          pdf.text(safe(userProfile.accountName), leftMargin + labelWidth, yPos);
           yPos += 5;
         }
 
         if (userProfile.bsbRouting) {
           pdf.setFont('helvetica', 'bold');
-          pdf.text('BSB:', leftMargin + 3, yPos);
+          pdf.text('BSB:', leftMargin, yPos);
           pdf.setFont('helvetica', 'normal');
-          pdf.text(safe(userProfile.bsbRouting), leftMargin + 40, yPos);
+          pdf.text(safe(userProfile.bsbRouting), leftMargin + labelWidth, yPos);
           yPos += 5;
         }
 
         if (userProfile.accountNumber) {
           pdf.setFont('helvetica', 'bold');
-          pdf.text('Account Number:', leftMargin + 3, yPos);
+          pdf.text('Account Number:', leftMargin, yPos);
           pdf.setFont('helvetica', 'normal');
-          pdf.text(safe(userProfile.accountNumber), leftMargin + 40, yPos);
+          pdf.text(safe(userProfile.accountNumber), leftMargin + labelWidth, yPos);
           yPos += 5;
         }
 
         if (userProfile.paymentTerms) {
           yPos += 3;
           pdf.setFont('helvetica', 'bold');
-          pdf.text('Payment Terms:', leftMargin + 3, yPos);
+          pdf.text('Payment Terms:', leftMargin, yPos);
           yPos += 5;
           pdf.setFont('helvetica', 'normal');
-          const terms = pdf.splitTextToSize(userProfile.paymentTerms, pageWidth - 46);
+          const terms = pdf.splitTextToSize(userProfile.paymentTerms, pageWidth - 40);
           terms.forEach((line: string) => {
-            pdf.text(line, leftMargin + 3, yPos);
+            pdf.text(line, leftMargin, yPos);
             yPos += 4;
           });
         }
@@ -424,12 +374,12 @@ export async function generateEstimatePDF(
         if (userProfile.paymentInstructions) {
           yPos += 3;
           pdf.setFont('helvetica', 'bold');
-          pdf.text('Payment Instructions:', leftMargin + 3, yPos);
+          pdf.text('Payment Instructions:', leftMargin, yPos);
           yPos += 5;
           pdf.setFont('helvetica', 'normal');
-          const instructions = pdf.splitTextToSize(userProfile.paymentInstructions, pageWidth - 46);
+          const instructions = pdf.splitTextToSize(userProfile.paymentInstructions, pageWidth - 40);
           instructions.forEach((line: string) => {
-            pdf.text(line, leftMargin + 3, yPos);
+            pdf.text(line, leftMargin, yPos);
             yPos += 4;
           });
         }
