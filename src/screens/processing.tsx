@@ -115,13 +115,6 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
 
         console.log('[Processing] Extract response:', extractData);
 
-        // Check if extraction requires user review
-        if (extractData.requires_review) {
-          console.log('[Processing] Extraction requires user review, redirecting to review screen');
-          onComplete('', intakeId);
-          return;
-        }
-
         console.log('[Processing] Extraction successful, proceeding to create quote');
         setStep('creating');
       }
@@ -183,13 +176,6 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       const createData = await createResponse.json();
 
       console.log('[Processing] Create quote response:', createData);
-
-      // If create-draft-quote indicates review is needed, redirect to review screen
-      if (createData.requires_review && !createData.quote_id) {
-        console.log('[Processing] Quote creation requires review, redirecting to review screen');
-        onComplete('', intakeId);
-        return;
-      }
 
       if (!createData.quote_id) {
         throw new Error('Quote creation incomplete. Please try again.');
