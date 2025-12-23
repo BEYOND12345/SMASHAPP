@@ -320,36 +320,13 @@ const App: React.FC = () => {
   const handleRecordingFinished = (intakeId: string, extractionData?: { overall_confidence: number; requires_review: boolean; has_required_missing: boolean }) => {
     console.log('[App] handleRecordingFinished', { intakeId, extractionData });
 
-    // Smart routing: skip EditTranscript if extraction confidence is high and no required fields missing
-    const shouldSkipReview = extractionData &&
-                             !extractionData.requires_review &&
-                             extractionData.overall_confidence >= 0.7 &&
-                             !extractionData.has_required_missing;
-
-    console.log('[App] Routing decision', {
-      shouldSkipReview,
-      confidence: extractionData?.overall_confidence,
-      requires_review: extractionData?.requires_review,
-      has_required_missing: extractionData?.has_required_missing
-    });
-
-    if (shouldSkipReview) {
-      // High confidence - skip transcript review, go directly to Processing
-      console.log('[App] Skipping EditTranscript - high confidence, going to Processing');
-      setState(prev => ({
-        ...prev,
-        voiceIntakeId: intakeId,
-        currentScreen: 'Processing'
-      }));
-    } else {
-      // Low confidence or missing fields - show transcript review
-      console.log('[App] Showing EditTranscript - review needed');
-      setState(prev => ({
-        ...prev,
-        voiceIntakeId: intakeId,
-        currentScreen: 'EditTranscript'
-      }));
-    }
+    // Always skip transcript review and go directly to Processing for speed
+    console.log('[App] Skipping EditTranscript - going directly to Processing');
+    setState(prev => ({
+      ...prev,
+      voiceIntakeId: intakeId,
+      currentScreen: 'Processing'
+    }));
   };
 
   const handleTranscriptContinue = (intakeId: string) => {
