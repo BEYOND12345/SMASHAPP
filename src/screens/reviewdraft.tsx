@@ -130,6 +130,20 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${quoteResult.data.line_items.length} total_ms=${totalTimeMs}`);
           setFirstRenderWithItemsLogged(true);
         }
+      } else if (pollNum >= 5) {
+        const { data: intakeData } = await supabase
+          .from('voice_intakes')
+          .select('status')
+          .eq('id', intakeId)
+          .maybeSingle();
+
+        if (intakeData?.status === 'quote_created') {
+          console.warn('[ReviewDraft] Quote created but has 0 line items - transcript had no work content');
+          setIsProcessing(false);
+          stopPolling();
+          stopStatusRotation();
+          setError('No work items were detected in your recording. Please try again and describe the job details, materials needed, and estimated hours.');
+        }
       }
     } catch (err) {
       console.error('[ReviewDraft] Load error:', err);
