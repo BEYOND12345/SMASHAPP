@@ -9,6 +9,7 @@ const corsHeaders = {
 
 interface CreateDraftRequest {
   intake_id: string;
+  trace_id?: string;
 }
 
 interface PricingProfile {
@@ -83,9 +84,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { intake_id }: CreateDraftRequest = await req.json();
+    const { intake_id, trace_id }: CreateDraftRequest = await req.json();
+    const startTime = Date.now();
 
-    console.log(`[REVIEW_FLOW] CREATE_DRAFT_QUOTE_START intake_id=${intake_id} user_id=${user.id}`);
+    console.log(`[PERF] trace_id=${trace_id || 'none'} step=create_draft_start intake_id=${intake_id} user_id=${user.id}`);
 
     if (!intake_id) {
       throw new Error("Missing intake_id");
@@ -716,7 +718,8 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", intake_id);
 
-    console.log(`[REVIEW_FLOW] CREATE_DRAFT_QUOTE_CREATED quote_id=${quote.id} line_items_count=${lineItems.length} total_cents=${quote.grand_total_cents}`);
+    const totalDuration = Date.now() - startTime;
+    console.log(`[PERF] trace_id=${trace_id || 'none'} step=create_draft_complete intake_id=${intake_id} quote_id=${quote.id} ms=${totalDuration} line_items_count=${lineItems.length}`);
 
     return new Response(
       JSON.stringify({

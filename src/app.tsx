@@ -317,15 +317,15 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleRecordingFinished = (intakeId: string, extractionData?: { overall_confidence: number; requires_review: boolean; has_required_missing: boolean }) => {
-    console.log('[App] handleRecordingFinished', { intakeId, extractionData });
+  const handleRecordingFinished = (intakeId: string, quoteId: string, traceId: string) => {
+    console.log(`[PERF] trace_id=${traceId} step=app_handle_recording_finished intake_id=${intakeId} quote_id=${quoteId}`);
 
-    // Always skip transcript review and go directly to Processing for speed
-    console.log('[App] Skipping EditTranscript - going directly to Processing');
+    // Navigate directly to ReviewDraft with quote shell
     setState(prev => ({
       ...prev,
       voiceIntakeId: intakeId,
-      currentScreen: 'Processing'
+      voiceQuoteId: quoteId,
+      currentScreen: 'ReviewDraft'
     }));
   };
 

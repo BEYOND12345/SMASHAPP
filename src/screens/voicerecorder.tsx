@@ -11,7 +11,7 @@ interface ExtractionMetadata {
 
 interface VoiceRecorderProps {
   onCancel: () => void;
-  onSuccess: (intakeId: string, extractionData?: ExtractionMetadata) => void;
+  onSuccess: (intakeId: string, quoteId: string, traceId: string) => void;
   customerId?: string;
 }
 
@@ -151,6 +151,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   };
 
   const processRecording = async () => {
+    const traceId = crypto.randomUUID();
+    const recordStopTime = Date.now();
+
+    console.log(`[PERF] trace_id=${traceId} step=record_stop ms=0`);
+
     try {
       setState('uploading');
 
@@ -159,7 +164,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       const mimeType = recordedMimeTypeRef.current;
       const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
 
-      // Determine file extension from mime type
       let fileExtension = 'webm';
       if (mimeType.includes('mp4')) {
         fileExtension = 'm4a';
@@ -169,15 +173,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         fileExtension = 'webm';
       }
 
-      console.log('[VOICE_CAPTURE] Audio recording complete', {
-        size_bytes: audioBlob.size,
-        size_kb: Math.round(audioBlob.size / 1024),
-        duration_seconds_timer: recordingTime,
-        duration_seconds_actual: actualDurationSeconds,
-        mime_type: mimeType,
-        file_extension: fileExtension,
-        chunks_count: audioChunksRef.current.length,
-      });
+      console.log(`[PERF] trace_id=${traceId} step=audio_validated size_kb=${Math.round(audioBlob.size / 1024)} duration_s=${actualDurationSeconds}`);
 
       if (audioBlob.size === 0) {
         console.error('[VOICE_CAPTURE] No audio recorded');
@@ -192,11 +188,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       }
 
       const bytesPerSecond = audioBlob.size / Math.max(actualDurationSeconds, 1);
-      console.log('[VOICE_CAPTURE] Audio quality check', {
-        bytes_per_second: Math.round(bytesPerSecond),
-        expected_min: 4000,
-      });
-
       if (bytesPerSecond < 500) {
         console.error('[VOICE_CAPTURE] Audio quality too low', {
           bytes_per_second: bytesPerSecond,
@@ -221,10 +212,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       const intakeId = crypto.randomUUID();
       const storagePath = `${profile.org_id}/${user.id}/voice_intakes/${intakeId}/audio.${fileExtension}`;
 
-      console.log('[VOICE_CAPTURE] Uploading audio to storage', {
-        intake_id: intakeId,
-        path: storagePath,
-      });
+      const uploadStartTime = Date.now();
 
       const { error: uploadError } = await supabase.storage
         .from('voice-intakes')
@@ -238,10 +226,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         throw uploadError;
       }
 
-      console.log('[VOICE_CAPTURE] Creating voice intake record', {
-        intake_id: intakeId,
-        customer_id: customerId || null,
-      });
+      console.log(`[PERF] trace_id=${traceId} step=upload_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
+
+      const intakeInsertStartTime = Date.now();
 
       const { error: intakeError } = await supabase
         .from('voice_intakes')
@@ -260,83 +247,133 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         throw intakeError;
       }
 
-      console.log('[VOICE_CAPTURE] ✓ Capture complete, starting transcription', {
-        intake_id: intakeId,
-      });
+      console.log(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - intakeInsertStartTime} total_ms=${Date.now() - recordStopTime}`);
 
-      setState('transcribing');
+      // Create quote shell immediately
+      const quoteShellStartTime = Date.now();
 
+      let customerId_for_quote = customerId;
+
+      if (!customerId_for_quote) {
+        const { data: placeholderCustomer } = await supabase
+          .from('customers')
+          .insert({
+            org_id: profile.org_id,
+            name: null,
+            email: null,
+            phone: null,
+          })
+          .select('id')
+          .single();
+
+        customerId_for_quote = placeholderCustomer?.id;
+      }
+
+      const { data: quoteNumber } = await supabase
+        .rpc('generate_quote_number', { p_org_id: profile.org_id });
+
+      const { data: quoteShell, error: quoteError } = await supabase
+        .from('quotes')
+        .insert({
+          org_id: profile.org_id,
+          customer_id: customerId_for_quote,
+          quote_number: quoteNumber,
+          title: 'Processing job',
+          description: '',
+          scope_of_work: [],
+          status: 'draft',
+          currency: 'AUD',
+          default_tax_rate: 10,
+          tax_inclusive: false,
+        })
+        .select('id')
+        .single();
+
+      if (quoteError || !quoteShell) {
+        console.error('[VOICE_CAPTURE] Failed to create quote shell', { error: quoteError });
+        throw new Error('Failed to create quote shell');
+      }
+
+      const quoteId = quoteShell.id;
+
+      await supabase
+        .from('voice_intakes')
+        .update({ created_quote_id: quoteId })
+        .eq('id', intakeId);
+
+      console.log(`[PERF] trace_id=${traceId} step=quote_shell_created intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - quoteShellStartTime} total_ms=${Date.now() - recordStopTime}`);
+
+      setState('success');
+
+      console.log(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${Date.now() - recordStopTime}`);
+
+      setTimeout(() => {
+        onSuccess(intakeId, quoteId, traceId);
+      }, 200);
+
+      // Start background processing (non-blocking)
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const transcribeResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ intake_id: intakeId }),
+      (async () => {
+        try {
+          const transcribeStartTime = Date.now();
+
+          const transcribeResponse = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+            }
+          );
+
+          if (transcribeResponse.ok) {
+            console.log(`[PERF] trace_id=${traceId} step=transcription_complete intake_id=${intakeId} ms=${Date.now() - transcribeStartTime}`);
+
+            const extractStartTime = Date.now();
+
+            const extractResponse = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+              }
+            );
+
+            if (extractResponse.ok) {
+              console.log(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${Date.now() - extractStartTime}`);
+
+              const createQuoteStartTime = Date.now();
+
+              const createResponse = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+                }
+              );
+
+              if (createResponse.ok) {
+                console.log(`[PERF] trace_id=${traceId} step=quote_creation_complete intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - createQuoteStartTime}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[BACKGROUND_PROCESSING] Error:', err);
         }
-      );
-
-      if (!transcribeResponse.ok) {
-        const errorData = await transcribeResponse.json();
-        console.error('[VOICE_CAPTURE] Transcription failed', {
-          intake_id: intakeId,
-          error: errorData.error,
-        });
-        throw new Error(errorData.error || 'Could not transcribe audio. Please try recording again.');
-      }
-
-      const transcribeData = await transcribeResponse.json();
-      console.log('[VOICE_CAPTURE] ✓ Transcription complete', {
-        intake_id: intakeId,
-        transcript_length: transcribeData.transcript?.length || 0,
-      });
-
-      setState('extracting');
-      console.log('[VOICE_CAPTURE] Starting extraction', { intake_id: intakeId });
-
-      const extractResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ intake_id: intakeId }),
-        }
-      );
-
-      if (!extractResponse.ok) {
-        const errorData = await extractResponse.json();
-        console.error('[VOICE_CAPTURE] Extraction failed', {
-          intake_id: intakeId,
-          error: errorData.error,
-        });
-        throw new Error(errorData.error || 'Could not analyze your recording. Please try again.');
-      }
-
-      const extractData = await extractResponse.json();
-      console.log('[VOICE_CAPTURE] ✓ Extraction complete', {
-        intake_id: intakeId,
-        requires_review: extractData.requires_review,
-        overall_confidence: extractData.overall_confidence,
-      });
-
-      const extractionMetadata: ExtractionMetadata = {
-        overall_confidence: extractData.overall_confidence || 0.5,
-        requires_review: extractData.requires_review || false,
-        has_required_missing: extractData.has_required_missing || false,
-      };
-
-      setState('success');
-      setTimeout(() => {
-        onSuccess(intakeId, extractionMetadata);
-      }, 1000);
+      })();
 
     } catch (err) {
       console.error('Processing error:', err);

@@ -9,6 +9,7 @@ const corsHeaders = {
 
 interface TranscribeRequest {
   intake_id: string;
+  trace_id?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -65,13 +66,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { intake_id }: TranscribeRequest = await req.json();
+    const { intake_id, trace_id }: TranscribeRequest = await req.json();
+    const startTime = Date.now();
 
-    console.log("[TRANSCRIPT] Starting transcription", {
-      intake_id,
-      user_id: user.id,
-      timestamp: new Date().toISOString(),
-    });
+    console.log(`[PERF] trace_id=${trace_id || 'none'} step=transcribe_start intake_id=${intake_id} user_id=${user.id}`);
 
     if (!intake_id) {
       console.error("[TRANSCRIPT] Missing intake_id");
@@ -241,10 +239,8 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to update intake: ${updateError.message}`);
     }
 
-    console.log("[TRANSCRIPT] ✓ Transcription pipeline complete", {
-      intake_id,
-      status: "transcribed",
-    });
+    const totalDuration = Date.now() - startTime;
+    console.log(`[PERF] trace_id=${trace_id || 'none'} step=transcribe_complete intake_id=${intake_id} ms=${totalDuration} transcript_length=${transcriptLength}`);
 
     return new Response(
       JSON.stringify({

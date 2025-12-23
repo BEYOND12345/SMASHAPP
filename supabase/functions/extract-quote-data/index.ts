@@ -10,6 +10,7 @@ const corsHeaders = {
 interface ExtractRequest {
   intake_id: string;
   user_corrections_json?: any;
+  trace_id?: string;
 }
 
 function buildMinimalPricingProfile(profileData: any, regionCode: string): any {
@@ -405,7 +406,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { intake_id, user_corrections_json }: ExtractRequest = await req.json();
+    const { intake_id, user_corrections_json, trace_id }: ExtractRequest = await req.json();
+
+    console.log(`[PERF] trace_id=${trace_id || 'none'} step=extract_start intake_id=${intake_id}`);
 
     if (!intake_id) {
       throw new Error("Missing intake_id");
@@ -781,7 +784,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const totalDuration = Date.now() - startTime;
-    console.log(`[PHASE_1.2] Total extraction pipeline: ${totalDuration}ms`);
+    console.log(`[PERF] trace_id=${trace_id || 'none'} step=extract_complete intake_id=${intake_id} ms=${totalDuration} status=${finalStatus}`);
 
     const performanceData: any = {
       total_duration_ms: totalDuration,
