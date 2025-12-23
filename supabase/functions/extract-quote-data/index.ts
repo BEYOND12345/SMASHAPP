@@ -12,166 +12,68 @@ interface ExtractRequest {
   user_corrections_json?: any;
 }
 
-const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-  'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
-  'including', 'until', 'against', 'among', 'throughout', 'despite', 'towards',
-  'upon', 'concerning', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'them',
-  'their', 'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all',
-  'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
-  'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
-  'can', 'will', 'just', 'should', 'now', 'uh', 'um', 'like', 'yeah', 'okay'
-]);
-
-function extractKeywords(transcript: string): string[] {
-  const words = transcript
-    .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
-    .split(/\s+/)
-    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
-
-  return [...new Set(words)];
-}
-
-function buildMinimalPricingProfile(profileData: any): any {
+function buildMinimalPricingProfile(profileData: any, regionCode: string): any {
   return {
     hourly_rate_cents: profileData.hourly_rate_cents,
     materials_markup_percent: profileData.materials_markup_percent,
     tax_rate_percent: profileData.tax_rate_percent,
     currency: profileData.currency,
     callout_fee_cents: profileData.callout_fee_cents || null,
-    travel_hourly_rate_cents: profileData.travel_hourly_rate_cents || null
+    travel_hourly_rate_cents: profileData.travel_hourly_rate_cents || null,
+    region_code: regionCode
   };
-}
-
-async function fetchRelevantCatalog(
-  keywords: string[],
-  orgId: string,
-  regionCode: string,
-  supabase: any
-): Promise<any[]> {
-  const topKeywords = keywords.slice(0, 10);
-
-  let query = supabase
-    .from("material_catalog_items")
-    .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
-    .eq("is_active", true);
-
-  query = query.or(`org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode})`);
-
-  const { data: allItems, error } = await query.limit(200);
-
-  if (error) {
-    console.error("[CATALOG] Query error:", error);
-    return [];
-  }
-
-  if (!allItems || allItems.length === 0) return [];
-
-  if (topKeywords.length === 0) return allItems;
-
-  const keywordSet = new Set(topKeywords);
-  const filtered = allItems.filter(item => {
-    const searchText = [
-      item.name,
-      item.category,
-      item.category_group,
-      ...(item.search_aliases || [])
-    ].join(' ').toLowerCase();
-
-    return topKeywords.some(kw => searchText.includes(kw));
-  });
-
-  return filtered.length > 0 ? filtered : allItems.slice(0, 50);
-}
-
-function scoreAndFilterCatalog(catalogItems: any[], keywords: string[], maxItems: number = 20): any[] {
-  if (!catalogItems || catalogItems.length === 0) return [];
-
-  const scored = catalogItems.map(item => {
-    let score = 0;
-    const searchText = [
-      item.name,
-      item.category,
-      item.category_group,
-      ...(item.search_aliases || [])
-    ].join(' ').toLowerCase();
-
-    keywords.forEach(keyword => {
-      if (searchText.includes(keyword)) {
-        score += keyword.length > 4 ? 3 : 1;
-      }
-    });
-
-    return { item, score };
-  });
-
-  return scored
-    .filter(s => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxItems)
-    .map(s => ({
-      id: s.item.id,
-      name: s.item.name,
-      category: s.item.category,
-      unit: s.item.unit,
-      typical_low_price_cents: s.item.typical_low_price_cents,
-      typical_high_price_cents: s.item.typical_high_price_cents
-    }));
 }
 
 const PROMPT_LINES = [
   "You are an expert trade quoting assistant.",
-  "Extract structured quote data from spoken transcript.",
-  "Internally normalize messy speech but do NOT output cleaned transcript.",
-  "Work ONLY with provided catalog items.",
-  "If no suitable catalog item exists mark as custom.",
-  "Be conservative. If something is unclear mark it as assumption and lower confidence.",
-  "",
-  "FIELD-LEVEL CONFIDENCE RULES:",
-  "Every extracted numeric value MUST include confidence score from 0.0 to 1.0.",
-  "Explicitly stated values use 0.85 to 0.95.",
-  "Implied values from context use 0.70 to 0.85.",
-  "Reasonable estimates from vague speech use 0.55 to 0.70.",
-  "Assumed or defaulted values use 0.40 to 0.55.",
+  "Extract only what the user said. Do not invent pricing. Do not invent catalog items.",
+  "Return only valid JSON. No markdown. No comments. No extra keys.",
+  "Use null for unknown values. Never output NaN. Never output Infinity.",
+  "Do not perform catalog matching. Do not output catalog_item_id.",
+  "Do not output unit_price_cents. Do not output estimated_cost_cents.",
+  "Do not output pricing_defaults_used. Do not output missing_fields severity. Do not output quality critical lists.",
+  "Keep content short. Use concise strings.",
   "",
   "EXTRACTION RULES:",
-  "1. VAGUE DURATIONS: couple hours equals 2 hours confidence 0.65, few days equals 3 days confidence 0.60",
-  "2. VAGUE QUANTITIES: couple equals 2 confidence 0.65, few equals 3 confidence 0.60, some equals 5 confidence 0.50",
+  "1. VAGUE DURATIONS: couple hours equals 2 hours, few days equals 3 days",
+  "2. VAGUE QUANTITIES: couple equals 2, few equals 3, some equals 5",
   "3. RANGES: three or four days store min 3 max 4 use max for estimates",
-  "4. UNIT NORMALIZATION: metres meters m lm all equal linear_m, square metres sqm m2 all equal square_m",
-  "5. WHEN UNSURE: Extract with lower confidence rather than mark as missing",
+  "4. UNIT NORMALIZATION: metres meters m lm all equal m, square metres sqm m2 all equal sqm",
+  "5. Extract all scope of work tasks as separate items in array",
   "",
-  "MATERIALS CATALOG MATCHING:",
-  "If Material Catalog provided try to match materials to catalog items.",
-  "Match based on name and category similarity.",
-  "If matched with confidence 0.75 or higher include catalog_item_id and set catalog_match_confidence.",
-  "For pricing from catalog if typical_low_price_cents and typical_high_price_cents exist use midpoint otherwise set needs_pricing true.",
-  "",
-  "MISSING FIELDS:",
-  "Flag missing fields with severity warning for most cases or required for extremely rare cases.",
-  "Examples of WARNING include customer contact labour hours materials pricing.",
-  "Examples of REQUIRED include NO work description at all.",
-  "",
-  "SCOPE OF WORK:",
-  "Break down work into discrete measurable tasks.",
-  "Separate prep work execution and finishing.",
-  "Be specific about locations and quantities.",
-  "",
-  "CRITICAL: Never output NaN or Infinity. Use null instead.",
-  "Return ONLY valid JSON.",
-  "Include customer with name email phone all nullable.",
-  "Include job with title summary site_address estimated_days_min estimated_days_max job_date scope_of_work array.",
-  "Include time labour_entries array with description hours object days object people object note.",
-  "Include materials items array with description quantity object unit object unit_price_cents estimated_cost_cents needs_pricing source_store notes catalog_item_id catalog_match_confidence.",
-  "Include fees with travel object materials_pickup object callout_fee_cents.",
-  "Include pricing_defaults_used with hourly_rate_cents materials_markup_percent tax_rate_percent currency.",
-  "Include assumptions array with field assumption confidence source.",
-  "Include missing_fields array with field reason severity.",
-  "Include quality with overall_confidence number ambiguous_fields array critical_fields_below_threshold array."
+  "Return ONLY this exact JSON structure:",
+  "{",
+  '  "customer": { "name": string|null, "email": string|null, "phone": string|null },',
+  '  "job": {',
+  '    "title": string|null,',
+  '    "summary": string|null,',
+  '    "site_address": string|null,',
+  '    "estimated_days_min": number|null,',
+  '    "estimated_days_max": number|null,',
+  '    "job_date": string|null,',
+  '    "scope_of_work": string[]',
+  "  },",
+  '  "time": {',
+  '    "labour_entries": [',
+  '      { "description": string, "hours": number|null, "days": number|null, "people": number|null, "note": string|null }',
+  "    ]",
+  "  },",
+  '  "materials": {',
+  '    "items": [',
+  '      { "description": string, "quantity": number|null, "unit": string|null, "notes": string|null }',
+  "    ]",
+  "  },",
+  '  "fees": {',
+  '    "travel_hours": number|null,',
+  '    "callout_fee_cents": number|null',
+  "  },",
+  '  "assumptions": [',
+  '    { "field": string, "assumption": string, "confidence": number|null, "source": string|null }',
+  "  ]",
+  "}"
 ];
 
-const COMBINED_EXTRACTION_PROMPT = PROMPT_LINES.join("\n");
+const EXTRACTION_ONLY_PROMPT = PROMPT_LINES.join("\n");
 
 async function parseOrRepairJson(rawContent: string, authHeader: string, supabaseUrl: string): Promise<any> {
   try {
@@ -235,6 +137,218 @@ async function parseOrRepairJson(rawContent: string, authHeader: string, supabas
       throw new Error(`Model returned invalid JSON and repair failed: ${String(parseError)}`);
     }
   }
+}
+
+function wrapFieldValue(value: any, defaultConfidence: number): any {
+  if (value === null || value === undefined) {
+    return { value: null, confidence: 0.0 };
+  }
+  return { value, confidence: defaultConfidence };
+}
+
+function calculateDeterministicConfidence(extractedData: any, transcript: string): number {
+  let confidence = 0.85;
+  const transcriptLower = transcript.toLowerCase();
+
+  if (!extractedData.job?.title) {
+    confidence -= 0.15;
+  }
+
+  if (!extractedData.job?.scope_of_work || extractedData.job.scope_of_work.length === 0) {
+    confidence -= 0.10;
+  }
+
+  const hasLabour = extractedData.time?.labour_entries && extractedData.time.labour_entries.length > 0;
+  const transcriptMentionsLabour = /\b(hour|hours|day|days|week|weeks)\b/.test(transcriptLower);
+  if (!hasLabour && transcriptMentionsLabour) {
+    confidence -= 0.10;
+  }
+
+  const hasMaterials = extractedData.materials?.items && extractedData.materials.items.length > 0;
+  const transcriptMentionsMaterials = /\b(buy|supply|purchase|material|materials|timber|paint|sheet)\b/.test(transcriptLower);
+  if (!hasMaterials && transcriptMentionsMaterials) {
+    confidence -= 0.10;
+  }
+
+  if (!extractedData.job?.site_address) {
+    confidence -= 0.05;
+  }
+
+  return Math.max(0.0, Math.min(1.0, confidence));
+}
+
+function generateMissingFields(extractedData: any): any[] {
+  const missingFields: any[] = [];
+
+  const hasNoContent =
+    (!extractedData.job?.scope_of_work || extractedData.job.scope_of_work.length === 0) &&
+    (!extractedData.job?.summary);
+
+  const hasNoWorkData =
+    (!extractedData.time?.labour_entries || extractedData.time.labour_entries.length === 0) &&
+    (!extractedData.materials?.items || extractedData.materials.items.length === 0) &&
+    (!extractedData.fees?.travel_hours) &&
+    (!extractedData.fees?.callout_fee_cents);
+
+  if (hasNoContent && hasNoWorkData && !extractedData.job?.title) {
+    missingFields.push({
+      field: "work_description",
+      reason: "No work description at all",
+      severity: "required"
+    });
+  }
+
+  if (!extractedData.customer?.name) {
+    missingFields.push({
+      field: "customer_name",
+      reason: "Customer name not provided",
+      severity: "warning"
+    });
+  }
+
+  if (!extractedData.job?.site_address) {
+    missingFields.push({
+      field: "site_address",
+      reason: "Site address not provided",
+      severity: "warning"
+    });
+  }
+
+  if (extractedData.time?.labour_entries) {
+    extractedData.time.labour_entries.forEach((entry: any, idx: number) => {
+      if (!entry.hours && !entry.days) {
+        missingFields.push({
+          field: `labour_entry_${idx}_time`,
+          reason: "Labour time not specified",
+          severity: "warning"
+        });
+      }
+    });
+  }
+
+  return missingFields;
+}
+
+async function matchAndPriceMaterials(
+  materials: any[],
+  orgId: string,
+  regionCode: string,
+  markupPercent: number,
+  supabase: any
+): Promise<any[]> {
+  if (!materials || materials.length === 0) {
+    return [];
+  }
+
+  const materialsForMatching = materials.map(m => ({
+    description: m.description || '',
+    unit: m.unit || null,
+    quantity: m.quantity || null
+  }));
+
+  const { data: matchResults, error } = await supabase
+    .rpc('match_catalog_items_for_quote_materials', {
+      p_org_id: orgId,
+      p_region_code: regionCode,
+      p_materials: materialsForMatching
+    });
+
+  if (error) {
+    console.error("[CATALOG_MATCH] SQL matching failed", error);
+    return materials.map(m => ({
+      description: m.description,
+      quantity: wrapFieldValue(m.quantity, 0.85),
+      unit: wrapFieldValue(m.unit, 0.85),
+      unit_price_cents: null,
+      estimated_cost_cents: null,
+      needs_pricing: true,
+      source_store: null,
+      notes: m.notes || null,
+      catalog_item_id: null,
+      catalog_match_confidence: null
+    }));
+  }
+
+  return materials.map((m, idx) => {
+    const match = matchResults[idx];
+    let unitPriceCents = null;
+    let estimatedCostCents = null;
+    let needsPricing = true;
+
+    if (match?.typical_low_price_cents && match?.typical_high_price_cents) {
+      const midpoint = Math.round((match.typical_low_price_cents + match.typical_high_price_cents) / 2);
+      unitPriceCents = Math.round(midpoint * (1 + markupPercent / 100));
+
+      const quantity = typeof m.quantity === 'number' ? m.quantity : null;
+      if (quantity !== null && unitPriceCents !== null) {
+        estimatedCostCents = Math.round(unitPriceCents * quantity);
+        needsPricing = false;
+      }
+    }
+
+    return {
+      description: m.description,
+      quantity: wrapFieldValue(m.quantity, 0.85),
+      unit: wrapFieldValue(match?.unit || m.unit, 0.85),
+      unit_price_cents: unitPriceCents,
+      estimated_cost_cents: estimatedCostCents,
+      needs_pricing: needsPricing,
+      source_store: null,
+      notes: m.notes || null,
+      catalog_item_id: match?.catalog_item_id || null,
+      catalog_match_confidence: match?.match_confidence || null
+    };
+  });
+}
+
+function enrichExtractedData(rawData: any, pricingProfile: any): any {
+  const enriched: any = {
+    customer: rawData.customer || { name: null, email: null, phone: null },
+    job: {
+      title: rawData.job?.title || null,
+      summary: rawData.job?.summary || null,
+      site_address: rawData.job?.site_address || null,
+      estimated_days_min: rawData.job?.estimated_days_min || null,
+      estimated_days_max: rawData.job?.estimated_days_max || null,
+      job_date: rawData.job?.job_date || null,
+      scope_of_work: rawData.job?.scope_of_work || []
+    },
+    time: {
+      labour_entries: (rawData.time?.labour_entries || []).map((entry: any) => ({
+        description: entry.description,
+        hours: wrapFieldValue(entry.hours, 0.85),
+        days: wrapFieldValue(entry.days, 0.85),
+        people: wrapFieldValue(entry.people, 0.85),
+        note: entry.note || null
+      }))
+    },
+    materials: {
+      items: []
+    },
+    fees: {
+      travel: {
+        hours: wrapFieldValue(rawData.fees?.travel_hours, 0.85)
+      },
+      materials_pickup: null,
+      callout_fee_cents: rawData.fees?.callout_fee_cents || null
+    },
+    pricing_defaults_used: {
+      hourly_rate_cents: pricingProfile.hourly_rate_cents,
+      materials_markup_percent: pricingProfile.materials_markup_percent,
+      tax_rate_percent: pricingProfile.tax_rate_percent,
+      currency: pricingProfile.currency
+    },
+    assumptions: rawData.assumptions || [],
+    missing_fields: [],
+    quality: {
+      overall_confidence: 0.85,
+      ambiguous_fields: [],
+      critical_fields_below_threshold: [],
+      requires_user_confirmation: false
+    }
+  };
+
+  return enriched;
 }
 
 Deno.serve(async (req: Request) => {
@@ -326,11 +440,12 @@ Deno.serve(async (req: Request) => {
     }
 
     let extractedData: any;
-    let catalogDuration: number | undefined;
     let extractionDuration: number | undefined;
+    let catalogMatchDuration: number | undefined;
+    let postProcessDuration: number | undefined;
 
     if (user_corrections_json && intake.extraction_json) {
-      console.log("[PHASE_1] User corrections path - merging deterministically");
+      console.log("[PHASE_1.2] User corrections path - merging deterministically");
       extractedData = JSON.parse(JSON.stringify(intake.extraction_json));
 
       if (user_corrections_json.labour_overrides && extractedData.time?.labour_entries) {
@@ -424,13 +539,13 @@ Deno.serve(async (req: Request) => {
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.overall_confidence = overallConfidence;
 
-      console.log(`[PHASE_1] Recalculated confidence: ${overallConfidence.toFixed(2)}`);
+      console.log(`[PHASE_1.2] Recalculated confidence: ${overallConfidence.toFixed(2)}`);
     } else {
       if (!intake.transcript_text) {
         throw new Error("No transcript available for extraction");
       }
 
-      console.log("[PHASE_1.1] Starting optimized single-pass extraction");
+      console.log("[PHASE_1.2] Starting extraction-only pipeline");
 
       const { data: profileData, error: profileError } = await supabase
         .rpc("get_effective_pricing_profile", { p_user_id: user.id });
@@ -446,29 +561,11 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       const regionCode = orgData?.country_code || 'AU';
-
-      const keywords = extractKeywords(intake.transcript_text);
-      console.log(`[PHASE_1.1] Extracted ${keywords.length} keywords for catalog filtering`);
-
-      const catalogStartTime = Date.now();
-      const catalogCandidates = await fetchRelevantCatalog(
-        keywords,
-        (profileData as any).org_id,
-        regionCode,
-        supabase
-      );
-
-      const filteredCatalog = scoreAndFilterCatalog(catalogCandidates, keywords, 20);
-      catalogDuration = Date.now() - catalogStartTime;
-
-      console.log(`[PHASE_1.1] Catalog query: ${catalogDuration}ms, fetched ${catalogCandidates?.length || 0}, filtered to ${filteredCatalog.length}`);
+      const minimalProfile = buildMinimalPricingProfile(profileData, regionCode);
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
-      console.log("[PHASE_1.1] Building minimal payload for GPT");
-
-      const minimalProfile = buildMinimalPricingProfile(profileData);
-      let extractionMessage = `Transcript:\n${intake.transcript_text}\n\nPricing Profile:\n${JSON.stringify(minimalProfile)}`;
+      let extractionMessage = `Transcript:\n${intake.transcript_text}\n\nPricing Defaults:\n${JSON.stringify(minimalProfile)}`;
 
       if (existingCustomer) {
         extractionMessage += `\n\nIMPORTANT: Customer is already selected. DO NOT extract customer information. Use these details:\n${JSON.stringify({
@@ -476,10 +573,6 @@ Deno.serve(async (req: Request) => {
           email: existingCustomer.email || null,
           phone: existingCustomer.phone || null,
         })}\n\nFocus ONLY on extracting job details, materials, and time estimates.`;
-      }
-
-      if (filteredCatalog.length > 0) {
-        extractionMessage += `\n\nMaterial Catalog (ONLY match to these ${filteredCatalog.length} items):\n${JSON.stringify(filteredCatalog)}`;
       }
 
       const extractionStartTime = Date.now();
@@ -493,14 +586,14 @@ Deno.serve(async (req: Request) => {
         body: JSON.stringify({
           endpoint: "chat/completions",
           body: {
-            model: "gpt-4o",
+            model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: COMBINED_EXTRACTION_PROMPT },
+              { role: "system", content: EXTRACTION_ONLY_PROMPT },
               { role: "user", content: extractionMessage },
             ],
             response_format: { type: "json_object" },
             temperature: 0.0,
-            max_tokens: 1100,
+            max_tokens: 900,
           },
         }),
       });
@@ -513,65 +606,26 @@ Deno.serve(async (req: Request) => {
       const extractionResult = await extractionResponse.json();
       extractionDuration = Date.now() - extractionStartTime;
 
-      console.log(`[PHASE_1.1] GPT extraction completed in ${extractionDuration}ms`);
+      console.log(`[PHASE_1.2] GPT extraction completed in ${extractionDuration}ms`);
 
-      if (!extractionResult) {
-        console.error("[PHASE_1.1] extractionResult is null or undefined");
-        throw new Error("Empty response from extraction model");
-      }
-
-      if (!extractionResult.choices) {
-        console.error("[PHASE_1.1] No choices in response", {
-          keys: Object.keys(extractionResult),
-          hasError: !!extractionResult.error
-        });
-        throw new Error("Invalid response structure from extraction model");
-      }
-
-      if (!extractionResult.choices[0]) {
-        console.error("[PHASE_1.1] choices array is empty", {
-          choicesLength: extractionResult.choices.length
-        });
-        throw new Error("No extraction result in response");
-      }
-
-      if (!extractionResult.choices[0].message) {
-        console.error("[PHASE_1.1] No message in first choice", {
-          choice: extractionResult.choices[0]
-        });
-        throw new Error("No message in extraction response");
+      if (!extractionResult?.choices?.[0]?.message?.content) {
+        throw new Error("Invalid response from extraction model");
       }
 
       const rawContent = extractionResult.choices[0].message.content;
+      const rawExtraction = await parseOrRepairJson(rawContent, authHeader, supabaseUrl);
 
-      if (!rawContent || typeof rawContent !== 'string') {
-        console.error("[PHASE_1.1] content is missing or not a string", {
-          contentType: typeof rawContent,
-          contentValue: rawContent
-        });
-        throw new Error("Model returned empty or invalid content");
-      }
+      console.log("[PHASE_1.2] Starting post-processing");
+      const postProcessStartTime = Date.now();
 
-      console.log("[PHASE_1.1] Raw response structure:", {
-        contentExists: !!rawContent,
-        contentType: typeof rawContent,
-        contentLength: rawContent.length,
-        first500: rawContent.substring(0, 500),
-        last200: rawContent.substring(Math.max(0, rawContent.length - 200))
-      });
-
-      extractedData = await parseOrRepairJson(rawContent, authHeader, supabaseUrl);
-
-      console.log("[PHASE_1.1] Successfully parsed extraction data");
+      extractedData = enrichExtractedData(rawExtraction, minimalProfile);
 
       if (existingCustomer) {
-        console.log("[CUSTOMER] Overriding extracted customer data with existing customer");
         extractedData.customer = {
           name: existingCustomer.name,
           email: existingCustomer.email || null,
           phone: existingCustomer.phone || null,
         };
-        if (!extractedData.assumptions) extractedData.assumptions = [];
         extractedData.assumptions.push({
           field: "customer",
           assumption: `Customer pre-selected: ${existingCustomer.name}`,
@@ -579,9 +633,43 @@ Deno.serve(async (req: Request) => {
           source: "user_selection"
         });
       }
+
+      const catalogMatchStartTime = Date.now();
+      const rawMaterials = rawExtraction.materials?.items || [];
+      const enrichedMaterials = await matchAndPriceMaterials(
+        rawMaterials,
+        (profileData as any).org_id,
+        regionCode,
+        minimalProfile.materials_markup_percent,
+        supabase
+      );
+      catalogMatchDuration = Date.now() - catalogMatchStartTime;
+
+      console.log(`[PHASE_1.2] Catalog match SQL in ${catalogMatchDuration}ms`);
+
+      extractedData.materials.items = enrichedMaterials;
+
+      const materialsNeedingPricing = enrichedMaterials.filter(m => m.needs_pricing);
+      if (materialsNeedingPricing.length > 0) {
+        extractedData.missing_fields.push({
+          field: "materials_pricing",
+          reason: `${materialsNeedingPricing.length} materials need pricing`,
+          severity: "warning"
+        });
+      }
+
+      extractedData.quality.overall_confidence = calculateDeterministicConfidence(
+        extractedData,
+        intake.transcript_text
+      );
+
+      extractedData.missing_fields = generateMissingFields(extractedData);
+
+      postProcessDuration = Date.now() - postProcessStartTime;
+      console.log(`[PHASE_1.2] Post processing in ${postProcessDuration}ms`);
     }
 
-    console.log("[PHASE_1] Determining status based on quality checks");
+    console.log("[PHASE_1.2] Determining status based on quality checks");
 
     const missingFields = extractedData.missing_fields || [];
     const assumptions = extractedData.assumptions || [];
@@ -679,7 +767,7 @@ Deno.serve(async (req: Request) => {
       .from("voice_intakes")
       .update({
         extraction_json: extractedData,
-        extraction_model: "gpt-4o",
+        extraction_model: "gpt-4o-mini-phase-1.2",
         extraction_confidence: overallConfidence,
         missing_fields: missingFields,
         assumptions: assumptions,
@@ -693,16 +781,21 @@ Deno.serve(async (req: Request) => {
     }
 
     const totalDuration = Date.now() - startTime;
-    console.log(`[PHASE_1.1] Total extraction pipeline: ${totalDuration}ms`);
+    console.log(`[PHASE_1.2] Total extraction pipeline: ${totalDuration}ms`);
 
     const performanceData: any = {
       total_duration_ms: totalDuration,
-      optimization: "phase_1.1_sql_filtered"
+      optimization: "phase_1.2_deterministic"
     };
 
-    if (typeof catalogDuration !== 'undefined') {
-      performanceData.catalog_query_ms = catalogDuration;
+    if (typeof extractionDuration !== 'undefined') {
       performanceData.gpt_duration_ms = extractionDuration;
+    }
+    if (typeof catalogMatchDuration !== 'undefined') {
+      performanceData.catalog_match_sql_ms = catalogMatchDuration;
+    }
+    if (typeof postProcessDuration !== 'undefined') {
+      performanceData.post_process_ms = postProcessDuration;
     }
 
     return new Response(
@@ -726,7 +819,7 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    console.error("[PHASE_1.1] Extraction error:", error);
+    console.error("[PHASE_1.2] Extraction error:", error);
 
     return new Response(
       JSON.stringify({
