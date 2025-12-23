@@ -52,13 +52,11 @@ async function fetchRelevantCatalog(
 ): Promise<any[]> {
   const topKeywords = keywords.slice(0, 10);
 
-  // Base query for org and region
   let query = supabase
     .from("material_catalog_items")
     .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
     .eq("is_active", true);
 
-  // Add org/region filter
   query = query.or(`org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode})`);
 
   const { data: allItems, error } = await query.limit(200);
@@ -70,7 +68,6 @@ async function fetchRelevantCatalog(
 
   if (!allItems || allItems.length === 0) return [];
 
-  // If we have keywords, filter in memory (still fast with 200 items)
   if (topKeywords.length === 0) return allItems;
 
   const keywordSet = new Set(topKeywords);
@@ -161,6 +158,7 @@ const PROMPT_LINES = [
   "Separate prep work execution and finishing.",
   "Be specific about locations and quantities.",
   "",
+  "CRITICAL: Never output NaN or Infinity. Use null instead.",
   "Return ONLY valid JSON.",
   "Include customer with name email phone all nullable.",
   "Include job with title summary site_address estimated_days_min estimated_days_max job_date scope_of_work array.",
@@ -174,6 +172,70 @@ const PROMPT_LINES = [
 ];
 
 const COMBINED_EXTRACTION_PROMPT = PROMPT_LINES.join("\n");
+
+async function parseOrRepairJson(rawContent: string, authHeader: string, supabaseUrl: string): Promise<any> {
+  try {
+    return JSON.parse(rawContent);
+  } catch (parseError) {
+    console.warn("[JSON_REPAIR] Initial parse failed, attempting repair", {
+      error: String(parseError),
+      contentLength: rawContent.length,
+      first200: rawContent.substring(0, 200),
+      last200: rawContent.substring(Math.max(0, rawContent.length - 200))
+    });
+
+    const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
+
+    try {
+      const repairResponse = await fetch(proxyUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          endpoint: "chat/completions",
+          body: {
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "You convert invalid JSON into valid JSON. Output only valid JSON."
+              },
+              {
+                role: "user",
+                content: `Fix this so it becomes valid JSON. Do not change keys or structure. Replace NaN or Infinity with null. Remove trailing commas. Output only JSON.\n\n${rawContent}`
+              }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.0,
+            max_tokens: 1500,
+          },
+        }),
+      });
+
+      if (!repairResponse.ok) {
+        throw new Error("Repair request failed");
+      }
+
+      const repairResult = await repairResponse.json();
+      const repairedContent = repairResult.choices?.[0]?.message?.content;
+
+      if (!repairedContent) {
+        throw new Error("No content in repair response");
+      }
+
+      console.log("[JSON_REPAIR] Repair successful");
+      return JSON.parse(repairedContent);
+    } catch (repairError) {
+      console.error("[JSON_REPAIR] Repair also failed", {
+        error: String(repairError),
+        first200: rawContent.substring(0, 200)
+      });
+      throw new Error(`Model returned invalid JSON and repair failed: ${String(parseError)}`);
+    }
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -437,8 +499,8 @@ Deno.serve(async (req: Request) => {
               { role: "user", content: extractionMessage },
             ],
             response_format: { type: "json_object" },
-            temperature: 0.2,
-            max_tokens: 800,
+            temperature: 0.0,
+            max_tokens: 1100,
           },
         }),
       });
@@ -453,32 +515,52 @@ Deno.serve(async (req: Request) => {
 
       console.log(`[PHASE_1.1] GPT extraction completed in ${extractionDuration}ms`);
 
-      if (!extractionResult.choices || !extractionResult.choices[0] || !extractionResult.choices[0].message) {
-        console.error("[PHASE_1.1] Invalid GPT response structure", JSON.stringify(extractionResult, null, 2));
-        throw new Error("Invalid response from extraction model");
+      if (!extractionResult) {
+        console.error("[PHASE_1.1] extractionResult is null or undefined");
+        throw new Error("Empty response from extraction model");
+      }
+
+      if (!extractionResult.choices) {
+        console.error("[PHASE_1.1] No choices in response", {
+          keys: Object.keys(extractionResult),
+          hasError: !!extractionResult.error
+        });
+        throw new Error("Invalid response structure from extraction model");
+      }
+
+      if (!extractionResult.choices[0]) {
+        console.error("[PHASE_1.1] choices array is empty", {
+          choicesLength: extractionResult.choices.length
+        });
+        throw new Error("No extraction result in response");
+      }
+
+      if (!extractionResult.choices[0].message) {
+        console.error("[PHASE_1.1] No message in first choice", {
+          choice: extractionResult.choices[0]
+        });
+        throw new Error("No message in extraction response");
       }
 
       const rawContent = extractionResult.choices[0].message.content;
 
-      // Log first 1000 chars to debug JSON issues
-      console.log("[PHASE_1.1] Raw GPT response (first 1000 chars):", rawContent?.substring(0, 1000));
-
       if (!rawContent || typeof rawContent !== 'string') {
-        console.error("[PHASE_1.1] GPT returned empty or non-string content");
-        throw new Error("Model returned empty response");
+        console.error("[PHASE_1.1] content is missing or not a string", {
+          contentType: typeof rawContent,
+          contentValue: rawContent
+        });
+        throw new Error("Model returned empty or invalid content");
       }
 
-      try {
-        extractedData = JSON.parse(rawContent);
-      } catch (parseError) {
-        console.error("[PHASE_1.1] JSON parse failed", {
-          error: String(parseError),
-          contentLength: rawContent.length,
-          firstChars: rawContent.substring(0, 100),
-          lastChars: rawContent.substring(Math.max(0, rawContent.length - 100))
-        });
-        throw new Error("Model returned invalid JSON");
-      }
+      console.log("[PHASE_1.1] Raw response structure:", {
+        contentExists: !!rawContent,
+        contentType: typeof rawContent,
+        contentLength: rawContent.length,
+        first500: rawContent.substring(0, 500),
+        last200: rawContent.substring(Math.max(0, rawContent.length - 200))
+      });
+
+      extractedData = await parseOrRepairJson(rawContent, authHeader, supabaseUrl);
 
       console.log("[PHASE_1.1] Successfully parsed extraction data");
 
