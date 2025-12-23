@@ -519,7 +519,7 @@ Deno.serve(async (req: Request) => {
 
         if (quantity === null || quantity === undefined || isNaN(quantity)) {
           quantity = 1;
-          warnings.push(`Material "${material.description}" had no quantity, defaulted to 1`);
+          warnings.push(`Material \"${material.description}\" had no quantity, defaulted to 1`);
         }
 
         let unitPriceCents = 0;
@@ -568,7 +568,7 @@ Deno.serve(async (req: Request) => {
         } else if (material.needs_pricing) {
           unitPriceCents = 0;
           notes = `Needs pricing${notes ? ` - ${notes}` : ''}`;
-          warnings.push(`Material "${material.description}" needs pricing`);
+          warnings.push(`Material \"${material.description}\" needs pricing`);
         }
 
         if (catalogItemId && matchConfidence) {
