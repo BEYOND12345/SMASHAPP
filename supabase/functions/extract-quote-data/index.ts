@@ -44,17 +44,48 @@ function buildMinimalPricingProfile(profileData: any): any {
   };
 }
 
-function buildCatalogSQLFilter(keywords: string[], orgId: string, regionCode: string): string {
+async function fetchRelevantCatalog(
+  keywords: string[],
+  orgId: string,
+  regionCode: string,
+  supabase: any
+): Promise<any[]> {
   const topKeywords = keywords.slice(0, 10);
-  if (topKeywords.length === 0) {
-    return `(org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode}))`;
+
+  // Base query for org and region
+  let query = supabase
+    .from("material_catalog_items")
+    .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
+    .eq("is_active", true);
+
+  // Add org/region filter
+  query = query.or(`org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode})`);
+
+  const { data: allItems, error } = await query.limit(200);
+
+  if (error) {
+    console.error("[CATALOG] Query error:", error);
+    return [];
   }
 
-  const ilikeConditions = topKeywords.map(kw =>
-    `name.ilike.%${kw}%,category.ilike.%${kw}%,category_group.ilike.%${kw}%`
-  ).join(',');
+  if (!allItems || allItems.length === 0) return [];
 
-  return `and(or(${ilikeConditions}),or(org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode})))`;
+  // If we have keywords, filter in memory (still fast with 200 items)
+  if (topKeywords.length === 0) return allItems;
+
+  const keywordSet = new Set(topKeywords);
+  const filtered = allItems.filter(item => {
+    const searchText = [
+      item.name,
+      item.category,
+      item.category_group,
+      ...(item.search_aliases || [])
+    ].join(' ').toLowerCase();
+
+    return topKeywords.some(kw => searchText.includes(kw));
+  });
+
+  return filtered.length > 0 ? filtered : allItems.slice(0, 50);
 }
 
 function scoreAndFilterCatalog(catalogItems: any[], keywords: string[], maxItems: number = 20): any[] {
@@ -358,19 +389,17 @@ Deno.serve(async (req: Request) => {
       console.log(`[PHASE_1.1] Extracted ${keywords.length} keywords for catalog filtering`);
 
       const catalogStartTime = Date.now();
-      const sqlFilter = buildCatalogSQLFilter(keywords, (profileData as any).org_id, regionCode);
+      const catalogCandidates = await fetchRelevantCatalog(
+        keywords,
+        (profileData as any).org_id,
+        regionCode,
+        supabase
+      );
 
-      const { data: catalogCandidates } = await supabase
-        .from("material_catalog_items")
-        .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
-        .or(sqlFilter)
-        .eq("is_active", true)
-        .limit(50);
-
-      const filteredCatalog = scoreAndFilterCatalog(catalogCandidates || [], keywords, 20);
+      const filteredCatalog = scoreAndFilterCatalog(catalogCandidates, keywords, 20);
       catalogDuration = Date.now() - catalogStartTime;
 
-      console.log(`[PHASE_1.1] Catalog query: ${catalogDuration}ms, SQL returned ${catalogCandidates?.length || 0}, filtered to ${filteredCatalog.length}`);
+      console.log(`[PHASE_1.1] Catalog query: ${catalogDuration}ms, fetched ${catalogCandidates?.length || 0}, filtered to ${filteredCatalog.length}`);
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
@@ -425,20 +454,33 @@ Deno.serve(async (req: Request) => {
       console.log(`[PHASE_1.1] GPT extraction completed in ${extractionDuration}ms`);
 
       if (!extractionResult.choices || !extractionResult.choices[0] || !extractionResult.choices[0].message) {
-        console.error("[PHASE_1.1] Invalid GPT response structure", { result: extractionResult });
+        console.error("[PHASE_1.1] Invalid GPT response structure", JSON.stringify(extractionResult, null, 2));
         throw new Error("Invalid response from extraction model");
       }
 
       const rawContent = extractionResult.choices[0].message.content;
+
+      // Log first 1000 chars to debug JSON issues
+      console.log("[PHASE_1.1] Raw GPT response (first 1000 chars):", rawContent?.substring(0, 1000));
+
+      if (!rawContent || typeof rawContent !== 'string') {
+        console.error("[PHASE_1.1] GPT returned empty or non-string content");
+        throw new Error("Model returned empty response");
+      }
+
       try {
         extractedData = JSON.parse(rawContent);
       } catch (parseError) {
-        console.error("[PHASE_1.1] Failed to parse GPT JSON response", {
-          error: parseError,
-          rawContent: rawContent?.substring(0, 500)
+        console.error("[PHASE_1.1] JSON parse failed", {
+          error: String(parseError),
+          contentLength: rawContent.length,
+          firstChars: rawContent.substring(0, 100),
+          lastChars: rawContent.substring(Math.max(0, rawContent.length - 100))
         });
         throw new Error("Model returned invalid JSON");
       }
+
+      console.log("[PHASE_1.1] Successfully parsed extraction data");
 
       if (existingCustomer) {
         console.log("[CUSTOMER] Overriding extracted customer data with existing customer");
