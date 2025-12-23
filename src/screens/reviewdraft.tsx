@@ -50,22 +50,25 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [statusMessage, setStatusMessage] = useState(STATUS_MESSAGES[0]);
   const [error, setError] = useState('');
   const [firstRenderWithItemsLogged, setFirstRenderWithItemsLogged] = useState(false);
+  const [pollCount, setPollCount] = useState(0);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIndexRef = useRef(0);
   const traceIdRef = useRef<string>('');
+  const mountTimeRef = useRef<number>(0);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const traceId = urlParams.get('trace_id') || '';
     traceIdRef.current = traceId;
+    mountTimeRef.current = Date.now();
 
     const now = Date.now();
     const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
     const renderTime = recordStopTime > 0 ? now - recordStopTime : 0;
 
-    console.log(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} ms=${renderTime}`);
+    console.warn(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} total_ms=${renderTime}`);
 
     loadData();
     startPolling();
@@ -79,6 +82,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const loadData = async () => {
     try {
+      setPollCount(prev => prev + 1);
+      const pollNum = pollCount + 1;
+
       const quoteResult = await supabase
         .from('quotes')
         .select(`
@@ -105,6 +111,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       setLoading(false);
 
       const hasLineItems = quoteResult.data.line_items && quoteResult.data.line_items.length > 0;
+      const elapsedMs = Date.now() - mountTimeRef.current;
+
+      console.log(`[POLL] #${pollNum} elapsed_ms=${elapsedMs} has_items=${hasLineItems} items_count=${quoteResult.data.line_items?.length || 0}`);
 
       if (hasLineItems) {
         setIsProcessing(false);
@@ -114,7 +123,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
         if (!firstRenderWithItemsLogged) {
           const now = Date.now();
-          console.log(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${quoteResult.data.line_items.length}`);
+          const urlParams = new URLSearchParams(window.location.search);
+          const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
+          const totalTimeMs = recordStopTime > 0 ? now - recordStopTime : 0;
+
+          console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${quoteResult.data.line_items.length} total_ms=${totalTimeMs}`);
           setFirstRenderWithItemsLogged(true);
         }
       }

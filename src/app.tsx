@@ -318,7 +318,8 @@ const App: React.FC = () => {
   };
 
   const handleRecordingFinished = (intakeId: string, quoteId: string, traceId: string, recordStopTime: number) => {
-    console.log(`[PERF] trace_id=${traceId} step=app_handle_recording_finished intake_id=${intakeId} quote_id=${quoteId}`);
+    const totalMs = Date.now() - recordStopTime;
+    console.warn(`[PERF] trace_id=${traceId} step=app_handle_recording_finished intake_id=${intakeId} quote_id=${quoteId} total_ms=${totalMs}`);
 
     // Store trace data for ReviewDraft
     const urlParams = new URLSearchParams(window.location.search);

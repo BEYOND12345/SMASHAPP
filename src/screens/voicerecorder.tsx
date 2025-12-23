@@ -154,7 +154,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     const traceId = crypto.randomUUID();
     const recordStopTime = Date.now();
 
-    console.log(`[PERF] trace_id=${traceId} step=record_stop ms=0`);
+    console.warn(`[PERF] trace_id=${traceId} step=record_stop ms=0 intake_id=null quote_id=null`);
 
     try {
       setState('uploading');
@@ -173,7 +173,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         fileExtension = 'webm';
       }
 
-      console.log(`[PERF] trace_id=${traceId} step=audio_validated size_kb=${Math.round(audioBlob.size / 1024)} duration_s=${actualDurationSeconds}`);
+      console.warn(`[PERF] trace_id=${traceId} step=audio_validated size_kb=${Math.round(audioBlob.size / 1024)} duration_s=${actualDurationSeconds} total_ms=0`);
 
       if (audioBlob.size === 0) {
         console.error('[VOICE_CAPTURE] No audio recorded');
@@ -226,7 +226,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         throw uploadError;
       }
 
-      console.log(`[PERF] trace_id=${traceId} step=upload_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
+      console.warn(`[PERF] trace_id=${traceId} step=upload_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
 
       const intakeInsertStartTime = Date.now();
 
@@ -247,7 +247,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         throw intakeError;
       }
 
-      console.log(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - intakeInsertStartTime} total_ms=${Date.now() - recordStopTime}`);
+      console.warn(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - intakeInsertStartTime} total_ms=${Date.now() - recordStopTime}`);
 
       // Create quote shell immediately
       const quoteShellStartTime = Date.now();
@@ -301,12 +301,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         .update({ created_quote_id: quoteId })
         .eq('id', intakeId);
 
-      console.log(`[PERF] trace_id=${traceId} step=quote_shell_created intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - quoteShellStartTime} total_ms=${Date.now() - recordStopTime}`);
+      console.warn(`[PERF] trace_id=${traceId} step=quote_shell_created intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - quoteShellStartTime} total_ms=${Date.now() - recordStopTime}`);
 
       setState('success');
 
       const navTime = Date.now() - recordStopTime;
-      console.log(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${navTime}`);
+      console.warn(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${navTime}`);
 
       setTimeout(() => {
         onSuccess(intakeId, quoteId, traceId, recordStopTime);
@@ -324,7 +324,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         try {
           const transcribeStartTime = Date.now();
 
-          console.log(`[BACKGROUND_PROCESSING] Starting transcription for intake ${intakeId}`);
+          console.warn(`[BACKGROUND_PROCESSING] Starting transcription for intake ${intakeId}`);
           const transcribeResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
             {
@@ -344,12 +344,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           }
 
           const transcribeResult = await transcribeResponse.json();
-          console.log(`[PERF] trace_id=${traceId} step=transcription_complete intake_id=${intakeId} ms=${Date.now() - transcribeStartTime}`);
+          const transcribeElapsed = Date.now() - transcribeStartTime;
+          const transcribeTotalMs = Date.now() - recordStopTime;
+          console.warn(`[PERF] trace_id=${traceId} step=transcription_complete intake_id=${intakeId} ms=${transcribeElapsed} total_ms=${transcribeTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Transcription result:', transcribeResult);
 
           const extractStartTime = Date.now();
 
-          console.log(`[BACKGROUND_PROCESSING] Starting extraction for intake ${intakeId}`);
+          console.warn(`[BACKGROUND_PROCESSING] Starting extraction for intake ${intakeId}`);
           const extractResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
             {
@@ -369,12 +371,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           }
 
           const extractResult = await extractResponse.json();
-          console.log(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${Date.now() - extractStartTime}`);
+          const extractElapsed = Date.now() - extractStartTime;
+          const extractTotalMs = Date.now() - recordStopTime;
+          console.warn(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${extractElapsed} total_ms=${extractTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Extraction result:', extractResult);
 
           const createQuoteStartTime = Date.now();
 
-          console.log(`[BACKGROUND_PROCESSING] Starting quote creation for intake ${intakeId}`);
+          console.warn(`[BACKGROUND_PROCESSING] Starting quote creation for intake ${intakeId}`);
           const createResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
             {
@@ -394,7 +398,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           }
 
           const createResult = await createResponse.json();
-          console.log(`[PERF] trace_id=${traceId} step=quote_creation_complete intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - createQuoteStartTime}`);
+          const createElapsed = Date.now() - createQuoteStartTime;
+          const createTotalMs = Date.now() - recordStopTime;
+          console.warn(`[PERF] trace_id=${traceId} step=quote_creation_complete intake_id=${intakeId} quote_id=${quoteId} ms=${createElapsed} total_ms=${createTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Quote creation result:', createResult);
         } catch (err) {
           console.error('[BACKGROUND_PROCESSING] Exception:', err);
