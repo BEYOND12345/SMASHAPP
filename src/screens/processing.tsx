@@ -46,7 +46,16 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
                            (intakeData.status === 'extracted' || intakeData.status === 'needs_user_review');
 
       if (hasExtraction) {
-        console.log('[Processing] Extraction already complete, skipping extraction step');
+        console.log('[Processing] Extraction already complete, checking if review is needed');
+
+        // If status is needs_user_review, redirect to review screen
+        if (intakeData.status === 'needs_user_review') {
+          console.log('[Processing] Extraction requires user review, redirecting to review screen');
+          onComplete('', intakeId);
+          return;
+        }
+
+        console.log('[Processing] Extraction complete and approved, proceeding to quote creation');
         setStep('creating');
       } else {
         console.log('[Processing] No extraction found, running extraction');
@@ -105,6 +114,14 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
         const extractData = await extractResponse.json();
 
         console.log('[Processing] Extract response:', extractData);
+
+        // Check if extraction requires user review
+        if (extractData.requires_review) {
+          console.log('[Processing] Extraction requires user review, redirecting to review screen');
+          onComplete('', intakeId);
+          return;
+        }
+
         console.log('[Processing] Extraction successful, proceeding to create quote');
         setStep('creating');
       }
@@ -166,6 +183,13 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       const createData = await createResponse.json();
 
       console.log('[Processing] Create quote response:', createData);
+
+      // If create-draft-quote indicates review is needed, redirect to review screen
+      if (createData.requires_review && !createData.quote_id) {
+        console.log('[Processing] Quote creation requires review, redirecting to review screen');
+        onComplete('', intakeId);
+        return;
+      }
 
       if (!createData.quote_id) {
         throw new Error('Quote creation incomplete. Please try again.');

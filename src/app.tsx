@@ -16,6 +16,7 @@ import { InvoicePreview } from './screens/invoicepreview';
 import { PublicQuoteView } from './screens/publicquoteview';
 import { PublicInvoiceView } from './screens/publicinvoiceview';
 import { Settings } from './screens/settings';
+import { ReviewQuote } from './screens/reviewquote';
 import { ReviewDraft } from './screens/reviewdraft';
 import { MaterialsCatalog } from './screens/materialscatalog';
 import { supabase } from './lib/supabase';
@@ -361,14 +362,32 @@ const App: React.FC = () => {
 
   const handleProcessingFinished = (quoteId: string, intakeId: string) => {
     console.log('[App] handleProcessingFinished called with quoteId:', quoteId, 'intakeId:', intakeId);
-    setState(prev => ({
-      ...prev,
-      voiceQuoteId: quoteId,
-      voiceIntakeId: intakeId,
-      currentScreen: 'ReviewDraft'
-    }));
+
+    if (!quoteId) {
+      console.log('[App] No quoteId, routing to ReviewQuote for user review');
+      setState(prev => ({
+        ...prev,
+        voiceIntakeId: intakeId,
+        currentScreen: 'ReviewQuote'
+      }));
+    } else {
+      console.log('[App] Quote created, routing to ReviewDraft');
+      setState(prev => ({
+        ...prev,
+        voiceQuoteId: quoteId,
+        voiceIntakeId: intakeId,
+        currentScreen: 'ReviewDraft'
+      }));
+    }
   };
 
+  const handleReviewQuoteConfirmed = () => {
+    console.log('[App] ReviewQuote confirmed, going back to Processing to create quote');
+    setState(prev => ({
+      ...prev,
+      currentScreen: 'Processing'
+    }));
+  };
 
   const handleSelectEstimate = (id: string) => {
     setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }));
@@ -810,6 +829,15 @@ const App: React.FC = () => {
           <Processing
             intakeId={state.voiceIntakeId}
             onComplete={handleProcessingFinished}
+          />
+        ) : null;
+
+      case 'ReviewQuote':
+        return state.voiceIntakeId ? (
+          <ReviewQuote
+            intakeId={state.voiceIntakeId}
+            onBack={() => navigate('NewEstimate')}
+            onConfirmed={handleReviewQuoteConfirmed}
           />
         ) : null;
 

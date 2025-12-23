@@ -46,6 +46,7 @@ export type ScreenName =
   | 'VoiceRecorder'
   | 'EditTranscript'
   | 'Processing'
+  | 'ReviewQuote'
   | 'ReviewDraft'
   | 'EstimatePreview'
   | 'SendEstimate'
