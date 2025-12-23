@@ -12,33 +12,76 @@ interface ExtractRequest {
   user_corrections_json?: any;
 }
 
-const SPEECH_REPAIR_PROMPT = `You are a speech repair system for construction quote transcripts. Your job is to clean up messy, incomplete human speech into clear, structured sentences BEFORE extraction.
+// PHASE 1 OPTIMIZATION: Helper functions for catalog pre-filtering
+const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+  'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during',
+  'including', 'until', 'against', 'among', 'throughout', 'despite', 'towards',
+  'upon', 'concerning', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'them',
+  'their', 'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all',
+  'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
+  'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+  'can', 'will', 'just', 'should', 'now', 'uh', 'um', 'like', 'yeah', 'okay'
+]);
 
-RULES:
-1. DO NOT invent quantities, prices, or material brands not mentioned
-2. DO NOT apply business logic or pricing rules
-3. DO preserve uncertainty (e.g., "three or four days" stays as is)
-4. DO expand vague references into clearer structure
-5. DO separate combined statements into distinct sentences
-6. DO correct obvious speech recognition errors
-7. DO preserve the speaker's uncertainty phrases like "maybe", "around", "approximately"
+function extractKeywords(transcript: string): string[] {
+  const words = transcript
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
 
-EXAMPLE TRANSFORMATIONS:
+  return [...new Set(words)];
+}
 
-Input: "uh yeah so three rooms and I'll scrape it first maybe three hours or so and then paint white and the doors"
-Output: "Paint three bedrooms. Scrape walls first, approximately 3 hours. Paint walls white. Paint doors and trim."
+function filterCatalog(catalogItems: any[], keywords: string[], maxItems: number = 20): any[] {
+  if (!catalogItems || catalogItems.length === 0) return [];
 
-Input: "need to replace that uh that blackbutt timber like twenty meters or so and some screws dunno how many"
-Output: "Replace blackbutt timber, approximately 20 linear meters. Need screws, quantity not specified."
+  const scored = catalogItems.map(item => {
+    let score = 0;
+    const searchText = [
+      item.name,
+      item.category,
+      item.category_group,
+      ...(item.search_aliases || [])
+    ].join(' ').toLowerCase();
 
-Input: "job's in Richmond probably take me a day maybe two to do it all"
-Output: "Job location: Richmond. Estimated duration: 1 to 2 days."
+    keywords.forEach(keyword => {
+      if (searchText.includes(keyword)) {
+        score += keyword.length > 4 ? 3 : 1;
+      }
+    });
 
-Return ONLY the repaired transcript text, no JSON, no explanation.`;
+    return { item, score };
+  });
 
-const EXTRACTION_PROMPT = `You are a construction quote extraction system. Extract structured quote data from the REPAIRED transcript.
+  return scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxItems)
+    .map(s => ({
+      id: s.item.id,
+      name: s.item.name,
+      category: s.item.category,
+      unit: s.item.unit,
+      typical_low_price_cents: s.item.typical_low_price_cents,
+      typical_high_price_cents: s.item.typical_high_price_cents
+    }));
+}
 
-CRITICAL: Missing details are NORMAL and EXPECTED in voice quotes. Your job is to extract what WAS said and flag what WASN'T, but NEVER block or fail because of missing information.
+// PHASE 1: SINGLE COMBINED EXTRACTION PROMPT
+const COMBINED_EXTRACTION_PROMPT = `You are an expert trade quoting assistant.
+
+Your task is to extract structured quote data from a spoken transcript.
+You must internally normalize messy speech, filler words, and casual phrasing,
+but you must NOT output the cleaned transcript.
+
+You must work ONLY with the provided catalog items.
+Do NOT invent materials or prices outside the catalog.
+If no suitable catalog item exists, mark it as "custom".
+
+Be conservative.
+If something is unclear, mark it as an assumption and lower confidence.
 
 FIELD-LEVEL CONFIDENCE RULES:
 - Every extracted numeric value MUST include a confidence score (0.0 to 1.0)
@@ -46,67 +89,34 @@ FIELD-LEVEL CONFIDENCE RULES:
 - Implied values from context: confidence 0.70-0.85
 - Reasonable estimates from vague speech: confidence 0.55-0.70
 - Assumed/defaulted values: confidence 0.40-0.55
-- DO NOT set confidence to 0 - if you extract something, it has at least 0.40 confidence
 
 EXTRACTION RULES:
-1. VAGUE DURATIONS: "a couple hours" → 2 hours (confidence 0.65), "few days" → 3 days (confidence 0.60), "about a week" → 5 days (confidence 0.65)
+1. VAGUE DURATIONS: "a couple hours" → 2 hours (confidence 0.65), "few days" → 3 days (confidence 0.60)
 2. VAGUE QUANTITIES: "a couple" → 2 (confidence 0.65), "a few" → 3 (confidence 0.60), "some" → 5 (confidence 0.50)
 3. RANGES: "three or four days" → store min: 3, max: 4, use max for estimates
-4. UNIT CONVERSION: "20 linear meters" = {quantity: 20, unit: "linear_m"}, "100 screws" = {quantity: 100, unit: "each"}
-5. DEFAULTS: If hourly rate not spoken, use profile default and mark in defaults_used
-6. TRAVEL: If mentioned but vague, estimate reasonably (e.g., "drive there" → 1 hour with confidence 0.55)
-7. MATERIALS: If mentioned without cost, set needs_pricing: true, but ALWAYS include them
-8. NEVER invent brands or specific costs not mentioned
-9. UNIT NORMALIZATION: "metres"/"meters"/"m"/"lm" = "linear_m", "square metres"/"sqm"/"m2" = "square_m"
-10. WHEN UNSURE: Extract with lower confidence rather than mark as missing
+4. UNIT NORMALIZATION: "metres"/"meters"/"m"/"lm" = "linear_m", "square metres"/"sqm"/"m2" = "square_m"
+5. WHEN UNSURE: Extract with lower confidence rather than mark as missing
 
-ASSUMPTIONS LEDGER:
-- Log EVERY assumption, rounding, default, or interpretation
-- Format: {field: "field_name", assumption: "description", confidence: 0.0-1.0, source: "reason"}
-- Examples:
-  * Rounded "three or four" to 4 days
-  * Assumed standard 2-coat system (not mentioned)
-  * Defaulted to hourly travel rate (charge method not specified)
+MATERIALS CATALOG MATCHING:
+- If a Material Catalog is provided, try to match mentioned materials to catalog items
+- Match based on name and category similarity
+- If matched with confidence >= 0.75, include catalog_item_id and set catalog_match_confidence
+- PRICING FROM CATALOG:
+  - If typical_low_price_cents and typical_high_price_cents exist: use midpoint
+  - Otherwise set needs_pricing: true
 
-MISSING FIELDS DETECTION:
-- Flag missing fields, but be LENIENT - missing details are normal
-- severity: "warning" (most cases) - field is missing but quote can still be created
-- severity: "required" (EXTREMELY RARE) - only for truly critical fields that make the quote completely impossible
-- Examples of WARNING (not blocking): customer contact, labour hours, exact quantities, exact durations, travel details, materials pricing
-- Examples of REQUIRED (blocking): NO work description at all (empty job title and summary)
-- CRITICAL: Missing labour hours should ALWAYS be "warning" not "required" - user can fill them in during review
-- When in doubt, use "warning" not "required"
+MISSING FIELDS:
+- Flag missing fields with severity: "warning" (most cases) or "required" (extremely rare)
+- Examples of WARNING: customer contact, labour hours, materials pricing
+- Examples of REQUIRED: NO work description at all
 
-SCOPE OF WORK - CRITICAL REQUIREMENTS:
-8. Break down work into DISCRETE, MEASURABLE tasks - never combine multiple activities
-9. Separate prep work, execution, and finishing into distinct items
-10. Be SPECIFIC about locations and quantities (e.g., "three bedrooms" not just "bedrooms")
-11. Each scope item should be a single, clear task that a customer can understand
-12. Use professional trade terminology but keep it accessible
+SCOPE OF WORK:
+- Break down work into DISCRETE, MEASURABLE tasks
+- Separate prep work, execution, and finishing
+- Be SPECIFIC about locations and quantities
 
-MATERIALS CATALOG MATCHING (TIER 1 - EXACT MATCH):
-13. If a Material Catalog is provided, try to match mentioned materials to catalog items
-14. Match based on description similarity and search_aliases (e.g., "black paint" matches items with "paint" in aliases, "screws" matches "Screws - Decking")
-15. If matched with confidence >= 0.75, include catalog_item_id and set catalog_match_confidence (0.0-1.0)
-16. PRICING FROM CATALOG:
-    - If unit_price_cents exists: use that value
-    - If unit_price_cents is null but typical_low_price_cents and typical_high_price_cents exist: calculate midpoint (typical_low + typical_high) / 2
-    - Always set needs_pricing: false when a price is available from catalog
-
-TIER 2 FALLBACK PRICING (NO CONFIDENT MATCH):
-17. If no confident match (confidence < 0.75) AND Category Price Guide is provided:
-    - Infer the most likely category_group and unit from the material description
-    - Look up the conservative_midpoint_cents for that category_group and unit in the Price Guide
-    - Set unit_price_cents to the conservative_midpoint_cents value
-    - DO NOT set catalog_item_id (leave as null)
-    - Set needs_pricing: false
-    - Set notes: "Estimated - [category_group] typical pricing"
-    - Set catalog_match_confidence: null
-18. If no confident match AND no price guide data available, set needs_pricing: true and unit_price_cents: null
-
-Return ONLY valid JSON matching this exact schema:
+Return ONLY valid JSON matching this schema:
 {
-  "repaired_transcript": "string - cleaned up version of raw transcript",
   "customer": {
     "name": "string or null",
     "email": "string or null",
@@ -119,7 +129,7 @@ Return ONLY valid JSON matching this exact schema:
     "estimated_days_min": "number or null",
     "estimated_days_max": "number or null",
     "job_date": "ISO date string or null",
-    "scope_of_work": ["string - discrete, measurable task items"]
+    "scope_of_work": ["string"]
   },
   "time": {
     "labour_entries": [
@@ -169,23 +179,23 @@ Return ONLY valid JSON matching this exact schema:
   },
   "assumptions": [
     {
-      "field": "string - field name",
-      "assumption": "string - what was assumed",
+      "field": "string",
+      "assumption": "string",
       "confidence": "number 0-1",
-      "source": "string - reason for assumption"
+      "source": "string"
     }
   ],
   "missing_fields": [
     {
-      "field": "string - field name",
-      "reason": "string - why missing",
+      "field": "string",
+      "reason": "string",
       "severity": "required or warning"
     }
   ],
   "quality": {
     "overall_confidence": "number 0-1",
     "ambiguous_fields": ["string"],
-    "critical_fields_below_threshold": ["string - fields with confidence < 0.6"]
+    "critical_fields_below_threshold": ["string"]
   }
 }`;
 
@@ -193,6 +203,8 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
+
+  const startTime = Date.now();
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -278,7 +290,7 @@ Deno.serve(async (req: Request) => {
     let extractedData: any;
 
     if (user_corrections_json && intake.extraction_json) {
-      console.log("Phase A2: Merging user corrections deterministically...");
+      console.log("[PHASE_1] User corrections path - merging deterministically");
       extractedData = JSON.parse(JSON.stringify(intake.extraction_json));
 
       if (user_corrections_json.labour_overrides && extractedData.time?.labour_entries) {
@@ -372,11 +384,13 @@ Deno.serve(async (req: Request) => {
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.overall_confidence = overallConfidence;
 
-      console.log(`Recalculated confidence: ${overallConfidence.toFixed(2)}`);
+      console.log(`[PHASE_1] Recalculated confidence: ${overallConfidence.toFixed(2)}`);
     } else {
       if (!intake.transcript_text) {
         throw new Error("No transcript available for extraction");
       }
+
+      console.log("[PHASE_1] Starting single-pass extraction optimization");
 
       const { data: profileData, error: profileError } = await supabase
         .rpc("get_effective_pricing_profile", { p_user_id: user.id });
@@ -393,77 +407,27 @@ Deno.serve(async (req: Request) => {
 
       const regionCode = orgData?.country_code || 'AU';
 
-      const { data: catalogItems } = await supabase
+      // PHASE 1: Extract keywords from transcript
+      const keywords = extractKeywords(intake.transcript_text);
+      console.log("[PHASE_1] Extracted keywords:", keywords.slice(0, 10).join(', '));
+
+      // PHASE 1: Fetch ALL catalog items first
+      const { data: allCatalogItems } = await supabase
         .from("material_catalog_items")
-        .select("id, name, category, category_group, unit, unit_price_cents, typical_low_price_cents, typical_high_price_cents, supplier_name, search_aliases")
+        .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
         .or(`org_id.eq.${(profileData as any).org_id},and(org_id.is.null,region_code.eq.${regionCode})`)
-        .eq("is_active", true)
-        .order("category", { ascending: true })
-        .order("name", { ascending: true });
+        .eq("is_active", true);
 
-      // Calculate category-level pricing guide for fallback estimation
-      const priceGuide: any = {};
-      if (catalogItems && catalogItems.length > 0) {
-        catalogItems.forEach((item: any) => {
-          if (item.typical_low_price_cents && item.typical_high_price_cents) {
-            const key = `${item.category_group}|${item.unit}`;
-            if (!priceGuide[key]) {
-              priceGuide[key] = [];
-            }
-            // Use conservative (low) estimate for fallback
-            priceGuide[key].push(item.typical_low_price_cents);
-          }
-        });
-
-        // Calculate conservative midpoint (median of low prices) for each category+unit combo
-        Object.keys(priceGuide).forEach(key => {
-          const prices = priceGuide[key].sort((a: number, b: number) => a - b);
-          const median = prices[Math.floor(prices.length / 2)];
-          const [category_group, unit] = key.split('|');
-          priceGuide[key] = {
-            category_group,
-            unit,
-            conservative_midpoint_cents: median,
-            sample_count: prices.length
-          };
-        });
-      }
+      // PHASE 1: Pre-filter catalog to 10-20 items max
+      const filteredCatalog = filterCatalog(allCatalogItems || [], keywords, 20);
+      console.log(`[PHASE_1] Filtered catalog: ${allCatalogItems?.length || 0} → ${filteredCatalog.length} items`);
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
-      console.log("Step 1: Repairing transcript...");
-      const repairResponse = await fetch(proxyUrl, {
-        method: "POST",
-        headers: {
-          "Authorization": authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          endpoint: "chat/completions",
-          body: {
-            model: "gpt-4o",
-            messages: [
-              { role: "system", content: SPEECH_REPAIR_PROMPT },
-              { role: "user", content: intake.transcript_text },
-            ],
-            temperature: 0.1,
-          },
-        }),
-      });
+      // PHASE 1: SINGLE GPT CALL (no repair step)
+      console.log("[PHASE_1] Single extraction call (no repair step)");
 
-      if (!repairResponse.ok) {
-        const errorText = await repairResponse.text();
-        throw new Error(`Speech repair failed: ${errorText}`);
-      }
-
-      const repairResult = await repairResponse.json();
-      const repairedTranscript = repairResult.choices[0].message.content.trim();
-
-      console.log("Repaired transcript:", repairedTranscript);
-
-      console.log("Step 2: Extracting structured data with confidence scores...");
-
-      let extractionMessage = `Raw Transcript:\n${intake.transcript_text}\n\nRepaired Transcript:\n${repairedTranscript}\n\nPricing Profile:\n${JSON.stringify(profileData, null, 2)}`;
+      let extractionMessage = `Transcript:\n${intake.transcript_text}\n\nPricing Profile:\n${JSON.stringify(profileData, null, 2)}`;
 
       if (existingCustomer) {
         extractionMessage += `\n\nIMPORTANT: Customer is already selected. DO NOT extract customer information. Use these details:\n${JSON.stringify({
@@ -473,13 +437,11 @@ Deno.serve(async (req: Request) => {
         }, null, 2)}\n\nFocus ONLY on extracting job details, materials, and time estimates.`;
       }
 
-      if (catalogItems && catalogItems.length > 0) {
-        extractionMessage += `\n\nMaterial Catalog (match materials to these if possible):\n${JSON.stringify(catalogItems, null, 2)}`;
+      if (filteredCatalog.length > 0) {
+        extractionMessage += `\n\nMaterial Catalog (ONLY match to these ${filteredCatalog.length} items):\n${JSON.stringify(filteredCatalog, null, 2)}`;
       }
 
-      if (Object.keys(priceGuide).length > 0) {
-        extractionMessage += `\n\nCategory Price Guide (use for fallback estimation when no confident catalog match):\n${JSON.stringify(Object.values(priceGuide), null, 2)}`;
-      }
+      const extractionStartTime = Date.now();
 
       const extractionResponse = await fetch(proxyUrl, {
         method: "POST",
@@ -492,11 +454,12 @@ Deno.serve(async (req: Request) => {
           body: {
             model: "gpt-4o",
             messages: [
-              { role: "system", content: EXTRACTION_PROMPT },
+              { role: "system", content: COMBINED_EXTRACTION_PROMPT },
               { role: "user", content: extractionMessage },
             ],
             response_format: { type: "json_object" },
             temperature: 0.2,
+            max_tokens: 800,
           },
         }),
       });
@@ -507,6 +470,10 @@ Deno.serve(async (req: Request) => {
       }
 
       const extractionResult = await extractionResponse.json();
+      const extractionDuration = Date.now() - extractionStartTime;
+
+      console.log(`[PHASE_1] Extraction completed in ${extractionDuration}ms`);
+
       extractedData = JSON.parse(extractionResult.choices[0].message.content);
 
       if (existingCustomer) {
@@ -526,7 +493,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log("Step 3: Determining status based on quality checks...");
+    console.log("[PHASE_1] Determining status based on quality checks");
 
     const missingFields = extractedData.missing_fields || [];
     const assumptions = extractedData.assumptions || [];
@@ -637,6 +604,9 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to update intake: ${updateError.message}`);
     }
 
+    const totalDuration = Date.now() - startTime;
+    console.log(`[PHASE_1] ✓ Total extraction pipeline: ${totalDuration}ms`);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -651,13 +621,17 @@ Deno.serve(async (req: Request) => {
           assumptions_count: assumptions.length,
           has_low_confidence_labour: hasLowConfidenceLabour,
         },
+        performance: {
+          total_duration_ms: totalDuration,
+          optimization: "phase_1_single_pass"
+        }
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   } catch (error) {
-    console.error("Extraction error:", error);
+    console.error("[PHASE_1] Extraction error:", error);
 
     return new Response(
       JSON.stringify({
