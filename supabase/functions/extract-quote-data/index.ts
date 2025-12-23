@@ -33,7 +33,31 @@ function extractKeywords(transcript: string): string[] {
   return [...new Set(words)];
 }
 
-function filterCatalog(catalogItems: any[], keywords: string[], maxItems: number = 20): any[] {
+function buildMinimalPricingProfile(profileData: any): any {
+  return {
+    hourly_rate_cents: profileData.hourly_rate_cents,
+    materials_markup_percent: profileData.materials_markup_percent,
+    tax_rate_percent: profileData.tax_rate_percent,
+    currency: profileData.currency,
+    callout_fee_cents: profileData.callout_fee_cents || null,
+    travel_hourly_rate_cents: profileData.travel_hourly_rate_cents || null
+  };
+}
+
+function buildCatalogSQLFilter(keywords: string[], orgId: string, regionCode: string): string {
+  const topKeywords = keywords.slice(0, 10);
+  if (topKeywords.length === 0) {
+    return `(org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode}))`;
+  }
+
+  const ilikeConditions = topKeywords.map(kw =>
+    `name.ilike.%${kw}%,category.ilike.%${kw}%,category_group.ilike.%${kw}%`
+  ).join(',');
+
+  return `and(or(${ilikeConditions}),or(org_id.eq.${orgId},and(org_id.is.null,region_code.eq.${regionCode})))`;
+}
+
+function scoreAndFilterCatalog(catalogItems: any[], keywords: string[], maxItems: number = 20): any[] {
   if (!catalogItems || catalogItems.length === 0) return [];
 
   const scored = catalogItems.map(item => {
@@ -209,6 +233,8 @@ Deno.serve(async (req: Request) => {
     }
 
     let extractedData: any;
+    let catalogDuration: number | undefined;
+    let extractionDuration: number | undefined;
 
     if (user_corrections_json && intake.extraction_json) {
       console.log("[PHASE_1] User corrections path - merging deterministically");
@@ -311,7 +337,7 @@ Deno.serve(async (req: Request) => {
         throw new Error("No transcript available for extraction");
       }
 
-      console.log("[PHASE_1] Starting single-pass extraction optimization");
+      console.log("[PHASE_1.1] Starting optimized single-pass extraction");
 
       const { data: profileData, error: profileError } = await supabase
         .rpc("get_effective_pricing_profile", { p_user_id: user.id });
@@ -329,33 +355,40 @@ Deno.serve(async (req: Request) => {
       const regionCode = orgData?.country_code || 'AU';
 
       const keywords = extractKeywords(intake.transcript_text);
-      console.log("[PHASE_1] Extracted keywords:", keywords.slice(0, 10).join(', '));
+      console.log(`[PHASE_1.1] Extracted ${keywords.length} keywords for catalog filtering`);
 
-      const { data: allCatalogItems } = await supabase
+      const catalogStartTime = Date.now();
+      const sqlFilter = buildCatalogSQLFilter(keywords, (profileData as any).org_id, regionCode);
+
+      const { data: catalogCandidates } = await supabase
         .from("material_catalog_items")
         .select("id, name, category, category_group, unit, typical_low_price_cents, typical_high_price_cents, search_aliases")
-        .or(`org_id.eq.${(profileData as any).org_id},and(org_id.is.null,region_code.eq.${regionCode})`)
-        .eq("is_active", true);
+        .or(sqlFilter)
+        .eq("is_active", true)
+        .limit(50);
 
-      const filteredCatalog = filterCatalog(allCatalogItems || [], keywords, 20);
-      console.log(`[PHASE_1] Filtered catalog: ${allCatalogItems?.length || 0} to ${filteredCatalog.length} items`);
+      const filteredCatalog = scoreAndFilterCatalog(catalogCandidates || [], keywords, 20);
+      catalogDuration = Date.now() - catalogStartTime;
+
+      console.log(`[PHASE_1.1] Catalog query: ${catalogDuration}ms, SQL returned ${catalogCandidates?.length || 0}, filtered to ${filteredCatalog.length}`);
 
       const proxyUrl = `${supabaseUrl}/functions/v1/openai-proxy`;
 
-      console.log("[PHASE_1] Single extraction call (no repair step)");
+      console.log("[PHASE_1.1] Building minimal payload for GPT");
 
-      let extractionMessage = `Transcript:\n${intake.transcript_text}\n\nPricing Profile:\n${JSON.stringify(profileData, null, 2)}`;
+      const minimalProfile = buildMinimalPricingProfile(profileData);
+      let extractionMessage = `Transcript:\n${intake.transcript_text}\n\nPricing Profile:\n${JSON.stringify(minimalProfile)}`;
 
       if (existingCustomer) {
         extractionMessage += `\n\nIMPORTANT: Customer is already selected. DO NOT extract customer information. Use these details:\n${JSON.stringify({
           name: existingCustomer.name,
           email: existingCustomer.email || null,
           phone: existingCustomer.phone || null,
-        }, null, 2)}\n\nFocus ONLY on extracting job details, materials, and time estimates.`;
+        })}\n\nFocus ONLY on extracting job details, materials, and time estimates.`;
       }
 
       if (filteredCatalog.length > 0) {
-        extractionMessage += `\n\nMaterial Catalog (ONLY match to these ${filteredCatalog.length} items):\n${JSON.stringify(filteredCatalog, null, 2)}`;
+        extractionMessage += `\n\nMaterial Catalog (ONLY match to these ${filteredCatalog.length} items):\n${JSON.stringify(filteredCatalog)}`;
       }
 
       const extractionStartTime = Date.now();
@@ -387,11 +420,25 @@ Deno.serve(async (req: Request) => {
       }
 
       const extractionResult = await extractionResponse.json();
-      const extractionDuration = Date.now() - extractionStartTime;
+      extractionDuration = Date.now() - extractionStartTime;
 
-      console.log(`[PHASE_1] Extraction completed in ${extractionDuration}ms`);
+      console.log(`[PHASE_1.1] GPT extraction completed in ${extractionDuration}ms`);
 
-      extractedData = JSON.parse(extractionResult.choices[0].message.content);
+      if (!extractionResult.choices || !extractionResult.choices[0] || !extractionResult.choices[0].message) {
+        console.error("[PHASE_1.1] Invalid GPT response structure", { result: extractionResult });
+        throw new Error("Invalid response from extraction model");
+      }
+
+      const rawContent = extractionResult.choices[0].message.content;
+      try {
+        extractedData = JSON.parse(rawContent);
+      } catch (parseError) {
+        console.error("[PHASE_1.1] Failed to parse GPT JSON response", {
+          error: parseError,
+          rawContent: rawContent?.substring(0, 500)
+        });
+        throw new Error("Model returned invalid JSON");
+      }
 
       if (existingCustomer) {
         console.log("[CUSTOMER] Overriding extracted customer data with existing customer");
@@ -522,7 +569,17 @@ Deno.serve(async (req: Request) => {
     }
 
     const totalDuration = Date.now() - startTime;
-    console.log(`[PHASE_1] Total extraction pipeline: ${totalDuration}ms`);
+    console.log(`[PHASE_1.1] Total extraction pipeline: ${totalDuration}ms`);
+
+    const performanceData: any = {
+      total_duration_ms: totalDuration,
+      optimization: "phase_1.1_sql_filtered"
+    };
+
+    if (typeof catalogDuration !== 'undefined') {
+      performanceData.catalog_query_ms = catalogDuration;
+      performanceData.gpt_duration_ms = extractionDuration;
+    }
 
     return new Response(
       JSON.stringify({
@@ -538,17 +595,14 @@ Deno.serve(async (req: Request) => {
           assumptions_count: assumptions.length,
           has_low_confidence_labour: hasLowConfidenceLabour,
         },
-        performance: {
-          total_duration_ms: totalDuration,
-          optimization: "phase_1_single_pass"
-        }
+        performance: performanceData
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   } catch (error) {
-    console.error("[PHASE_1] Extraction error:", error);
+    console.error("[PHASE_1.1] Extraction error:", error);
 
     return new Response(
       JSON.stringify({
