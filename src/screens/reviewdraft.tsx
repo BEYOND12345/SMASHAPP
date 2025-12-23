@@ -45,6 +45,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [loading, setLoading] = useState(true);
   const [showTranscript, setShowTranscript] = useState(false);
   const [error, setError] = useState('');
+  const [transcript, setTranscript] = useState('');
+  const [originalTranscript, setOriginalTranscript] = useState('');
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [savingTranscript, setSavingTranscript] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -95,12 +99,39 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
       setIntake(intakeResult.data);
       setQuote(quoteResult.data);
+      setTranscript(intakeResult.data.transcript_text || '');
+      setOriginalTranscript(intakeResult.data.transcript_text || '');
       console.log('[ReviewDraft] Data loaded successfully');
     } catch (err) {
       console.error('[ReviewDraft] Load error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveTranscript = async () => {
+    if (!intake || transcript === originalTranscript) return;
+
+    try {
+      setSavingTranscript(true);
+      setError('');
+
+      const { error: updateError } = await supabase
+        .from('voice_intakes')
+        .update({ transcript_text: transcript })
+        .eq('id', intakeId);
+
+      if (updateError) throw updateError;
+
+      setOriginalTranscript(transcript);
+      setIsEditingTranscript(false);
+      console.log('[ReviewDraft] Transcript saved successfully');
+    } catch (err) {
+      console.error('[ReviewDraft] Save error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save transcript');
+    } finally {
+      setSavingTranscript(false);
     }
   };
 
@@ -145,9 +176,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       />
 
       <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-[14px] text-blue-900 font-medium">
-            Review the extracted details below. You can edit and refine everything in the next step.
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <p className="text-[14px] text-green-900 font-medium">
+            Your quote draft is ready! Review the details below, check the transcript if needed, then continue to edit and finalize.
           </p>
         </div>
 
@@ -164,9 +195,50 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             )}
           </button>
           {showTranscript && (
-            <p className="mt-3 text-sm text-secondary leading-relaxed">
-              {intake.transcript_text}
-            </p>
+            <div className="mt-3 space-y-3">
+              {isEditingTranscript ? (
+                <>
+                  <textarea
+                    value={transcript}
+                    onChange={(e) => setTranscript(e.target.value)}
+                    className="w-full min-h-[120px] p-3 bg-white border border-divider rounded-lg text-sm text-primary resize-none focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleSaveTranscript}
+                      disabled={savingTranscript || transcript === originalTranscript}
+                      className="flex-1"
+                      size="sm"
+                    >
+                      {savingTranscript ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : 'Save Changes'}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setTranscript(originalTranscript);
+                        setIsEditingTranscript(false);
+                      }}
+                      variant="secondary"
+                      className="flex-1"
+                      size="sm"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-secondary leading-relaxed">
+                    {transcript}
+                  </p>
+                  <button
+                    onClick={() => setIsEditingTranscript(true)}
+                    className="text-sm text-brand hover:text-brandDark font-medium"
+                  >
+                    Edit Transcript
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </Card>
 

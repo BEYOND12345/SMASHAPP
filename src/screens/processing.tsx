@@ -21,7 +21,6 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
 
   const processIntake = async () => {
     try {
-      setStep('extracting');
       setError('');
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -31,61 +30,84 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
         throw new Error('Session expired. Please log in again.');
       }
 
-      // Retry logic for extraction (handles cold starts and transient failures)
-      let extractResponse;
-      let lastError;
+      // Check if extraction already exists
+      console.log('[Processing] Checking if extraction already complete');
+      const { data: intakeData, error: intakeError } = await supabase
+        .from('voice_intakes')
+        .select('status, extraction_json')
+        .eq('id', intakeId)
+        .maybeSingle();
 
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          console.log(`[Processing] Extraction attempt ${attempt}/3`);
+      if (intakeError) {
+        console.error('[Processing] Failed to check intake status:', intakeError);
+      }
 
-          extractResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ intake_id: intakeId }),
+      const hasExtraction = intakeData?.extraction_json &&
+                           (intakeData.status === 'extracted' || intakeData.status === 'needs_user_review');
+
+      if (hasExtraction) {
+        console.log('[Processing] Extraction already complete, skipping extraction step');
+        setStep('creating');
+      } else {
+        console.log('[Processing] No extraction found, running extraction');
+        setStep('extracting');
+
+        // Retry logic for extraction (handles cold starts and transient failures)
+        let extractResponse;
+        let lastError;
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            console.log(`[Processing] Extraction attempt ${attempt}/3`);
+
+            extractResponse = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ intake_id: intakeId }),
+              }
+            );
+
+            if (extractResponse.ok) {
+              break; // Success!
             }
-          );
 
-          if (extractResponse.ok) {
-            break; // Success!
-          }
+            // For 503 (service unavailable) or 429 (rate limit), retry
+            if (extractResponse.status === 503 || extractResponse.status === 429) {
+              const waitTime = attempt * 2000; // 2s, 4s, 6s
+              console.log(`[Processing] Got ${extractResponse.status}, retrying in ${waitTime}ms...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              continue;
+            }
 
-          // For 503 (service unavailable) or 429 (rate limit), retry
-          if (extractResponse.status === 503 || extractResponse.status === 429) {
-            const waitTime = attempt * 2000; // 2s, 4s, 6s
-            console.log(`[Processing] Got ${extractResponse.status}, retrying in ${waitTime}ms...`);
+            // For other errors, don't retry
+            const errorData = await extractResponse.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Could not analyze your recording. Please try again.');
+          } catch (err) {
+            lastError = err;
+            if (attempt === 3) throw err;
+
+            // Wait before retry
+            const waitTime = attempt * 2000;
+            console.log(`[Processing] Attempt ${attempt} failed, retrying in ${waitTime}ms...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
-            continue;
           }
-
-          // For other errors, don't retry
-          const errorData = await extractResponse.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Could not analyze your recording. Please try again.');
-        } catch (err) {
-          lastError = err;
-          if (attempt === 3) throw err;
-
-          // Wait before retry
-          const waitTime = attempt * 2000;
-          console.log(`[Processing] Attempt ${attempt} failed, retrying in ${waitTime}ms...`);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
         }
+
+        if (!extractResponse || !extractResponse.ok) {
+          throw lastError || new Error('Could not analyze your recording after multiple attempts. Please try again.');
+        }
+
+        const extractData = await extractResponse.json();
+
+        console.log('[Processing] Extract response:', extractData);
+        console.log('[Processing] Extraction successful, proceeding to create quote');
+        setStep('creating');
       }
-
-      if (!extractResponse || !extractResponse.ok) {
-        throw lastError || new Error('Could not analyze your recording after multiple attempts. Please try again.');
-      }
-
-      const extractData = await extractResponse.json();
-
-      console.log('[Processing] Extract response:', extractData);
-      console.log('[Processing] Extraction successful, proceeding to create quote');
-      setStep('creating');
 
       console.log('[Processing] Calling create-draft-quote with intake_id:', intakeId);
 
@@ -194,7 +216,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
           </h2>
           <p className="text-[14px] text-secondary">
             {step === 'extracting' && 'Extracting job details...'}
-            {step === 'creating' && 'Building your estimate...'}
+            {step === 'creating' && 'Finalizing your estimate...'}
             {step === 'success' && 'Redirecting...'}
           </p>
         </div>

@@ -3,13 +3,19 @@ import { Layout, Header } from '../components/layout';
 import { Mic, X, Loader2, Check, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+interface ExtractionMetadata {
+  overall_confidence: number;
+  requires_review: boolean;
+  has_required_missing: boolean;
+}
+
 interface VoiceRecorderProps {
   onCancel: () => void;
-  onSuccess: (intakeId: string) => void;
+  onSuccess: (intakeId: string, extractionData?: ExtractionMetadata) => void;
   customerId?: string;
 }
 
-type RecordingState = 'idle' | 'recording' | 'uploading' | 'transcribing' | 'success' | 'error';
+type RecordingState = 'idle' | 'recording' | 'uploading' | 'transcribing' | 'extracting' | 'success' | 'error';
 
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSuccess, customerId }) => {
   const [state, setState] = useState<RecordingState>('idle');
@@ -290,9 +296,46 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         transcript_length: transcribeData.transcript?.length || 0,
       });
 
+      setState('extracting');
+      console.log('[VOICE_CAPTURE] Starting extraction', { intake_id: intakeId });
+
+      const extractResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ intake_id: intakeId }),
+        }
+      );
+
+      if (!extractResponse.ok) {
+        const errorData = await extractResponse.json();
+        console.error('[VOICE_CAPTURE] Extraction failed', {
+          intake_id: intakeId,
+          error: errorData.error,
+        });
+        throw new Error(errorData.error || 'Could not analyze your recording. Please try again.');
+      }
+
+      const extractData = await extractResponse.json();
+      console.log('[VOICE_CAPTURE] ✓ Extraction complete', {
+        intake_id: intakeId,
+        requires_review: extractData.requires_review,
+        overall_confidence: extractData.overall_confidence,
+      });
+
+      const extractionMetadata: ExtractionMetadata = {
+        overall_confidence: extractData.overall_confidence || 0.5,
+        requires_review: extractData.requires_review || false,
+        has_required_missing: extractData.has_required_missing || false,
+      };
+
       setState('success');
       setTimeout(() => {
-        onSuccess(intakeId);
+        onSuccess(intakeId, extractionMetadata);
       }, 1000);
 
     } catch (err) {
@@ -315,7 +358,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       case 'recording': return 'Listening...';
       case 'uploading': return 'Uploading...';
       case 'transcribing': return 'Transcribing audio...';
-      case 'success': return 'Transcription complete!';
+      case 'extracting': return 'Analyzing details...';
+      case 'success': return 'Quote ready!';
       case 'error': return 'Error occurred';
     }
   };
@@ -326,12 +370,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       case 'recording': return 'Speak clearly about the job';
       case 'uploading': return 'Saving your recording...';
       case 'transcribing': return 'Converting speech to text...';
-      case 'success': return 'Review your transcript next';
+      case 'extracting': return 'Extracting quote details...';
+      case 'success': return 'Creating your quote draft';
       case 'error': return error || 'Something went wrong';
     }
   };
 
-  const isProcessing = ['uploading', 'transcribing'].includes(state);
+  const isProcessing = ['uploading', 'transcribing', 'extracting'].includes(state);
 
   return (
     <Layout showNav={false} className="bg-surface flex flex-col items-center justify-between h-full pb-10">

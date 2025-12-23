@@ -112,10 +112,15 @@ export const EditTranscript: React.FC<EditTranscriptProps> = ({ intakeId, onCanc
 
       <div className="flex-1 flex flex-col px-6 pt-4 pb-8 overflow-hidden">
         <div className="mb-6">
-          <h1 className="text-[24px] font-bold text-primary mb-2">Review Transcript</h1>
-          <p className="text-[15px] text-secondary">
-            Check the transcript for accuracy. You can edit any mistakes before continuing.
+          <h1 className="text-[24px] font-bold text-primary mb-2">Quick Review Needed</h1>
+          <p className="text-[15px] text-secondary mb-4">
+            We detected some unclear details in your recording. Please check the transcript below for accuracy.
           </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+            <p className="text-[13px] text-blue-900">
+              <strong>Why am I seeing this?</strong> Our system detected low confidence in some details or missing information. A quick check ensures your quote is accurate.
+            </p>
+          </div>
         </div>
 
         <div className="flex-1 mb-6 overflow-hidden">
