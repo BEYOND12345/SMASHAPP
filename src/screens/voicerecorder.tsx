@@ -173,7 +173,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         fileExtension = 'webm';
       }
 
-      console.warn(`[PERF] trace_id=${traceId} step=audio_validated size_kb=${Math.round(audioBlob.size / 1024)} duration_s=${actualDurationSeconds} total_ms=0`);
+      console.warn(`[PERF] trace_id=${traceId} step=audio_validated size_kb=${Math.round(audioBlob.size / 1024)} duration_s=${actualDurationSeconds} total_ms=${Date.now() - recordStopTime}`);
 
       if (audioBlob.size === 0) {
         console.error('[VOICE_CAPTURE] No audio recorded');
@@ -209,47 +209,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       }
 
       const profile = profileData as any;
-      const intakeId = crypto.randomUUID();
-      const storagePath = `${profile.org_id}/${user.id}/voice_intakes/${intakeId}/audio.${fileExtension}`;
 
-      const uploadStartTime = Date.now();
+      console.warn(`[PERF] trace_id=${traceId} step=profile_loaded total_ms=${Date.now() - recordStopTime}`);
 
-      const { error: uploadError } = await supabase.storage
-        .from('voice-intakes')
-        .upload(storagePath, audioBlob, {
-          contentType: mimeType,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error('[VOICE_CAPTURE] Upload failed', { error: uploadError });
-        throw uploadError;
-      }
-
-      console.warn(`[PERF] trace_id=${traceId} step=upload_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
-
-      const intakeInsertStartTime = Date.now();
-
-      const { error: intakeError } = await supabase
-        .from('voice_intakes')
-        .insert({
-          id: intakeId,
-          org_id: profile.org_id,
-          user_id: user.id,
-          customer_id: customerId || null,
-          source: 'web',
-          audio_storage_path: storagePath,
-          status: 'captured',
-        });
-
-      if (intakeError) {
-        console.error('[VOICE_CAPTURE] Failed to create intake', { error: intakeError });
-        throw intakeError;
-      }
-
-      console.warn(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - intakeInsertStartTime} total_ms=${Date.now() - recordStopTime}`);
-
-      // Create quote shell immediately
+      // Create quote shell IMMEDIATELY (before upload)
       const quoteShellStartTime = Date.now();
 
       let customerId_for_quote = customerId;
@@ -296,23 +259,23 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
       const quoteId = quoteShell.id;
 
-      await supabase
-        .from('voice_intakes')
-        .update({ created_quote_id: quoteId })
-        .eq('id', intakeId);
+      console.warn(`[PERF] trace_id=${traceId} step=quote_shell_created quote_id=${quoteId} ms=${Date.now() - quoteShellStartTime} total_ms=${Date.now() - recordStopTime}`);
 
-      console.warn(`[PERF] trace_id=${traceId} step=quote_shell_created intake_id=${intakeId} quote_id=${quoteId} ms=${Date.now() - quoteShellStartTime} total_ms=${Date.now() - recordStopTime}`);
+      // Pre-generate intake ID and storage path for background processing
+      const intakeId = crypto.randomUUID();
+      const storagePath = `${profile.org_id}/${user.id}/voice_intakes/${intakeId}/audio.${fileExtension}`;
 
       setState('success');
 
       const navTime = Date.now() - recordStopTime;
       console.warn(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${navTime}`);
 
+      // Navigate immediately
       setTimeout(() => {
         onSuccess(intakeId, quoteId, traceId, recordStopTime);
-      }, 200);
+      }, 50);
 
-      // Start background processing (non-blocking)
+      // Start background processing (non-blocking) - Upload + Transcribe in parallel
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
@@ -322,9 +285,48 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
       (async () => {
         try {
-          const transcribeStartTime = Date.now();
+          // Upload audio and create intake record in background
+          const uploadStartTime = Date.now();
+          console.warn(`[BACKGROUND_PROCESSING] Starting upload for intake ${intakeId}`);
 
+          const { error: uploadError } = await supabase.storage
+            .from('voice-intakes')
+            .upload(storagePath, audioBlob, {
+              contentType: mimeType,
+              upsert: false,
+            });
+
+          if (uploadError) {
+            console.error('[BACKGROUND_PROCESSING] Upload failed', { error: uploadError });
+            throw uploadError;
+          }
+
+          console.warn(`[PERF] trace_id=${traceId} step=upload_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
+
+          const { error: intakeError } = await supabase
+            .from('voice_intakes')
+            .insert({
+              id: intakeId,
+              org_id: profile.org_id,
+              user_id: user.id,
+              customer_id: customerId || null,
+              source: 'web',
+              audio_storage_path: storagePath,
+              status: 'captured',
+              created_quote_id: quoteId,
+            });
+
+          if (intakeError) {
+            console.error('[BACKGROUND_PROCESSING] Failed to create intake', { error: intakeError });
+            throw intakeError;
+          }
+
+          console.warn(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
+
+          // Now start transcription
+          const transcribeStartTime = Date.now();
           console.warn(`[BACKGROUND_PROCESSING] Starting transcription for intake ${intakeId}`);
+
           const transcribeResponse = await fetch(
             `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
             {
