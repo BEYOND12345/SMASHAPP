@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { AppState, Estimate, JobStatus, ScreenName, UserProfile } from './types';
+import { AppState, Estimate, Invoice, JobStatus, ScreenName, UserProfile } from './types';
 import { Login } from './screens/login';
 import { Signup } from './screens/signup';
 import { Onboarding } from './screens/onboarding';
 import { EstimatesList } from './screens/estimateslist';
+import { InvoicesList } from './screens/invoiceslist';
 import { NewEstimate } from './screens/newestimate';
 import { EditEstimate } from './screens/editestimate';
 import { VoiceRecorder } from './screens/voicerecorder';
@@ -52,7 +53,9 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string }>({
     currentScreen: 'Login',
     selectedEstimateId: null,
+    selectedInvoiceId: null,
     estimates: [],
+    invoices: [],
     user: null,
     isAuthenticated: false,
     sendingType: 'estimate',
@@ -147,6 +150,84 @@ const App: React.FC = () => {
     }
   };
 
+  // Load invoices from database
+  const loadInvoicesFromDatabase = async (userId: string) => {
+    try {
+      console.log('[App] Loading invoices from database for user:', userId);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn('[App] No active session, skipping invoice load');
+        return;
+      }
+
+      const { data: invoicesData, error } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          quote:quotes!invoices_quote_id_fkey(
+            *,
+            customer:customers(*)
+          ),
+          line_items:invoice_line_items(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[App] Failed to load invoices:', error);
+        return;
+      }
+
+      console.log('[App] Loaded invoices:', invoicesData?.length || 0);
+
+      if (!invoicesData || invoicesData.length === 0) {
+        console.log('[App] No invoices found in database');
+        setState(prev => ({ ...prev, invoices: [] }));
+        return;
+      }
+
+      const invoices: Invoice[] = invoicesData.map((invoiceData: any) => ({
+        id: invoiceData.id,
+        invoiceNumber: invoiceData.invoice_number || invoiceData.id.substring(0, 8),
+        jobTitle: invoiceData.quote?.title || 'Invoice',
+        clientName: invoiceData.quote?.customer?.name || 'Customer',
+        clientAddress: invoiceData.quote?.customer?.billing_street || '',
+        clientEmail: invoiceData.quote?.customer?.email || '',
+        clientPhone: invoiceData.quote?.customer?.phone || '',
+        status: invoiceData.status as 'draft' | 'sent' | 'paid' | 'overdue',
+        date: new Date(invoiceData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+        dueDate: invoiceData.due_date ? new Date(invoiceData.due_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : undefined,
+        materials: invoiceData.line_items
+          ?.filter((item: any) => item.item_type === 'materials')
+          .map((item: any) => ({
+            id: item.id,
+            name: item.description,
+            quantity: item.quantity,
+            unit: item.unit || 'item',
+            rate: item.unit_price_cents / 100,
+          })) || [],
+        labour: {
+          hours: invoiceData.line_items
+            ?.filter((item: any) => item.item_type === 'labour')
+            .reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+          rate: invoiceData.line_items
+            ?.find((item: any) => item.item_type === 'labour')?.unit_price_cents / 100 || 0,
+        },
+        gstRate: invoiceData.default_tax_rate || 0.10,
+        quoteId: invoiceData.quote_id || undefined,
+      }));
+
+      console.log('[App] Converted invoices:', invoices.length);
+
+      setState(prev => ({
+        ...prev,
+        invoices: invoices
+      }));
+    } catch (err) {
+      console.error('[App] Error loading invoices:', err);
+    }
+  };
+
   useEffect(() => {
     const initSession = async () => {
       try {
@@ -163,11 +244,12 @@ const App: React.FC = () => {
             phone: '0400 000 000'
           };
 
-          // Load quotes from database with timeout
-          const loadPromise = loadQuotesFromDatabase(session.user.id);
+          // Load quotes and invoices from database with timeout
+          const loadQuotesPromise = loadQuotesFromDatabase(session.user.id);
+          const loadInvoicesPromise = loadInvoicesFromDatabase(session.user.id);
           const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000));
 
-          await Promise.race([loadPromise, timeoutPromise]);
+          await Promise.race([Promise.all([loadQuotesPromise, loadInvoicesPromise]), timeoutPromise]);
           console.log('[App] Database load complete or timed out');
 
           setState(prev => ({
@@ -200,10 +282,11 @@ const App: React.FC = () => {
           phone: '0400 000 000'
         };
 
-        // Load quotes from database with timeout
-        const loadPromise = loadQuotesFromDatabase(session.user.id);
+        // Load quotes and invoices from database with timeout
+        const loadQuotesPromise = loadQuotesFromDatabase(session.user.id);
+        const loadInvoicesPromise = loadInvoicesFromDatabase(session.user.id);
         const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000));
-        await Promise.race([loadPromise, timeoutPromise]);
+        await Promise.race([Promise.all([loadQuotesPromise, loadInvoicesPromise]), timeoutPromise]);
 
         setState(prev => ({
           ...prev,
@@ -217,7 +300,9 @@ const App: React.FC = () => {
         setState({
           currentScreen: 'Login',
           selectedEstimateId: null,
+          selectedInvoiceId: null,
           estimates: [],
+          invoices: [],
           user: null,
           isAuthenticated: false,
           sendingType: 'estimate',
@@ -293,7 +378,9 @@ const App: React.FC = () => {
     setState({
       currentScreen: 'Login',
       selectedEstimateId: null,
+      selectedInvoiceId: null,
       estimates: [],
+      invoices: [],
       user: null,
       isAuthenticated: false,
       sendingType: 'estimate',
@@ -769,14 +856,25 @@ const App: React.FC = () => {
         ) : null;
 
       case 'EstimatesList':
-        return <EstimatesList
-          estimates={state.estimates}
-          onNewEstimate={handleNewEstimate}
-          onSelectEstimate={handleSelectEstimate}
-          activeTab={state.activeTab}
-          onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
-          onProfileClick={() => navigate('Settings')}
-        />;
+        return state.activeTab === 'estimates' ? (
+          <EstimatesList
+            estimates={state.estimates}
+            onNewEstimate={handleNewEstimate}
+            onSelectEstimate={handleSelectEstimate}
+            activeTab={state.activeTab}
+            onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
+            onProfileClick={() => navigate('Settings')}
+          />
+        ) : (
+          <InvoicesList
+            invoices={state.invoices}
+            onNewEstimate={handleNewEstimate}
+            onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
+            activeTab={state.activeTab}
+            onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
+            onProfileClick={() => navigate('Settings')}
+          />
+        );
       
       case 'NewEstimate':
         return <NewEstimate

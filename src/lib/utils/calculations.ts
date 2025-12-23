@@ -1,4 +1,4 @@
-import type { Estimate } from '../../types';
+import type { Estimate, Invoice } from '../../types';
 
 /**
  * Safe number conversion that returns 0 for null/undefined/NaN values
@@ -72,6 +72,46 @@ export function calculateEstimateTotals(estimate: Estimate | null | undefined) {
   const gst = subtotal * gstRate;
 
   // Calculate total
+  const total = subtotal + gst;
+
+  return {
+    materialsTotal,
+    labourTotal,
+    subtotal,
+    gst,
+    total,
+  };
+}
+
+/**
+ * Safely calculate invoice totals with defensive checks for missing data
+ */
+export function calculateInvoiceTotals(invoice: Invoice | null | undefined) {
+  if (!invoice) {
+    return {
+      materialsTotal: 0,
+      labourTotal: 0,
+      subtotal: 0,
+      gst: 0,
+      total: 0,
+    };
+  }
+
+  const materialsTotal = Array.isArray(invoice.materials)
+    ? invoice.materials.reduce((sum, item) => {
+        const quantity = safeNumber(item?.quantity);
+        const rate = safeNumber(item?.rate);
+        return sum + quantity * rate;
+      }, 0)
+    : 0;
+
+  const labourHours = safeNumber(invoice.labour?.hours);
+  const labourRate = safeNumber(invoice.labour?.rate);
+  const labourTotal = labourHours * labourRate;
+
+  const subtotal = materialsTotal + labourTotal;
+  const gstRate = safeNumber(invoice.gstRate);
+  const gst = subtotal * gstRate;
   const total = subtotal + gst;
 
   return {

@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Layout, Header, Section } from '../components/layout';
 import { Card } from '../components/card';
 import { Button } from '../components/button';
 import { Estimate, JobStatus, UserProfile } from '../types';
-import { ChevronLeft, Calendar, CheckCircle2, ArrowRight, User, Trash2 } from 'lucide-react';
+import { ChevronLeft, Calendar, CheckCircle2, ArrowRight, User, Trash2, Download } from 'lucide-react';
 import { calculateEstimateTotals, formatCurrency } from '../lib/utils/calculations';
+import { generateEstimatePDF } from '../lib/utils/pdfGenerator';
 
 interface EstimatePreviewProps {
   estimate: Estimate;
@@ -36,19 +37,44 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
   type = 'estimate'
 }) => {
   const { materialsTotal, labourTotal, subtotal, gst, total } = calculateEstimateTotals(estimate);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const isInvoice = type === 'invoice';
+
+  const handleDownloadPDF = async () => {
+    try {
+      setIsDownloading(true);
+      console.log('[EstimatePreview] Starting PDF generation...');
+
+      const pdfBlob = await generateEstimatePDF(estimate, userProfile, type, estimate.id);
+
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${type}-${estimate.jobTitle.replace(/\s+/g, '-')}-${estimate.id.substring(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      console.log('[EstimatePreview] PDF downloaded successfully');
+    } catch (error) {
+      console.error('[EstimatePreview] PDF generation failed:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Helper to render the correct buttons based on status
   const renderActions = () => {
     if (isPublic) {
       return (
         <>
-          <Button variant="outline" className="flex-1" onClick={() => {
-            console.log('[EstimatePreview] === ENTRY POINT 2: Public PDF Button (NOT IMPLEMENTED) ===');
-            console.log('[EstimatePreview] This button does nothing (empty handler)');
-            alert('PDF download not implemented for public quote view');
-          }}>PDF</Button>
+          <Button variant="outline" className="flex-1" onClick={handleDownloadPDF} disabled={isDownloading}>
+            <Download size={16} className="mr-2" />
+            {isDownloading ? 'Generating...' : 'PDF'}
+          </Button>
           <Button variant="primary" className="flex-1" onClick={onApprove}>Approve Quote</Button>
         </>
       );
@@ -116,11 +142,20 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
             </button>
           }
           right={
-            onDelete && (
-              <button onClick={onDelete} className="w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                <Trash2 size={20} />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleDownloadPDF}
+                disabled={isDownloading}
+                className="w-10 h-10 flex items-center justify-center text-primary hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
+              >
+                <Download size={20} />
               </button>
-            )
+              {onDelete && (
+                <button onClick={onDelete} className="w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                  <Trash2 size={20} />
+                </button>
+              )}
+            </div>
           }
         />
        ) : (

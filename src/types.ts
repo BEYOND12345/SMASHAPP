@@ -56,6 +56,23 @@ export type ScreenName =
   | 'PublicInvoiceView'
   | 'InvoicesList';
 
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  jobTitle: string;
+  clientName: string;
+  clientAddress?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  status: 'draft' | 'sent' | 'paid' | 'overdue';
+  date: string;
+  dueDate?: string;
+  materials: MaterialItem[];
+  labour: LabourItem;
+  gstRate: number;
+  quoteId?: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -84,7 +101,9 @@ export interface UserProfile {
 export interface AppState {
   currentScreen: ScreenName;
   selectedEstimateId: string | null;
+  selectedInvoiceId: string | null;
   estimates: Estimate[];
+  invoices: Invoice[];
   user: UserProfile | null;
   isAuthenticated: boolean;
 }
