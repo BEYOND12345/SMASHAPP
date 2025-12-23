@@ -63,7 +63,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
           if (invoiceData) {
             console.log('[SendEstimate] Invoice data loaded:', {
               id: invoiceData.id,
-              has_approval_token: !!invoiceData.approval_token,
+              has_short_code: !!invoiceData.short_code,
               is_public: invoiceData.is_public,
               has_customer: !!invoiceData.customer
             });
@@ -103,12 +103,12 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
             setEstimate(estimateObj);
 
-            if (invoiceData.approval_token) {
-              const url = `${window.location.origin}/invoice/${invoiceData.approval_token}`;
+            if (invoiceData.short_code) {
+              const url = `${window.location.origin}/i/${invoiceData.short_code}`;
               console.log('[SendEstimate] Invoice share URL generated:', url);
               setShareUrl(url);
             } else {
-              console.error('[SendEstimate] Invoice missing approval_token');
+              console.error('[SendEstimate] Invoice missing short_code');
               setError('Invoice is not ready for sharing. Please try again.');
             }
           } else {
@@ -136,7 +136,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
           if (quoteData) {
             console.log('[SendEstimate] Quote data loaded:', {
               id: quoteData.id,
-              has_approval_token: !!quoteData.approval_token,
+              has_short_code: !!quoteData.short_code,
               is_public: quoteData.is_public
             });
             const materials = quoteData.quote_line_items
@@ -172,12 +172,12 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
 
             setEstimate(estimateObj);
 
-            if (quoteData.approval_token) {
-              const url = `${window.location.origin}/quote/${quoteData.approval_token}`;
+            if (quoteData.short_code) {
+              const url = `${window.location.origin}/q/${quoteData.short_code}`;
               console.log('[SendEstimate] Quote share URL generated:', url);
               setShareUrl(url);
             } else {
-              console.error('[SendEstimate] Quote missing approval_token');
+              console.error('[SendEstimate] Quote missing short_code');
               setError('Estimate is not ready for sharing. Please try again.');
             }
           } else {

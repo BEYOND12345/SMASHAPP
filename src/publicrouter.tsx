@@ -28,8 +28,8 @@ export const PublicRouter: React.FC = () => {
 
   useEffect(() => {
     const path = window.location.pathname;
-    const quoteMatch = path.match(/^\/quote\/([a-f0-9-]+)$/i);
-    const invoiceMatch = path.match(/^\/invoice\/([a-f0-9-]+)$/i);
+    const quoteMatch = path.match(/^\/(?:quote|q)\/([a-zA-Z0-9-]+)$/i);
+    const invoiceMatch = path.match(/^\/(?:invoice|i)\/([a-zA-Z0-9-]+)$/i);
 
     if (quoteMatch) {
       setViewType('quote');
@@ -43,10 +43,10 @@ export const PublicRouter: React.FC = () => {
     }
   }, []);
 
-  const loadPublicQuote = async (token: string) => {
+  const loadPublicQuote = async (identifier: string) => {
     try {
       const { data, error } = await supabase.rpc('get_public_quote', {
-        p_token: token
+        identifier: identifier
       });
 
       if (error) {
@@ -56,56 +56,59 @@ export const PublicRouter: React.FC = () => {
         return;
       }
 
-      if (!data || data.length === 0) {
+      if (!data) {
         setError('Quote not found');
         setLoading(false);
         return;
       }
 
-      const quoteData = data[0];
-
-      const { data: lineItems, error: lineItemsError } = await supabase.rpc(
-        'get_public_quote_line_items',
-        { p_token: token }
-      );
-
-      if (lineItemsError) {
-        console.error('[PublicRouter] Error loading line items:', lineItemsError);
-      }
+      const quoteData = data;
+      const lineItems = quoteData.line_items || [];
 
       const materials = lineItems
-        ?.filter((item: any) => item.item_type === 'materials' || item.item_type === 'material')
+        .filter((item: any) => item.item_type === 'materials' || item.item_type === 'material')
         .map((item: any) => ({
           id: item.id,
           name: item.description,
           quantity: item.quantity,
           unit: item.unit || 'unit',
-          rate: item.unit_price_cents / 100,
-        })) || [];
+          rate: item.unit_price / 100,
+        }));
 
-      const labourItem = lineItems?.find((item: any) => item.item_type === 'labour');
+      const labourItem = lineItems.find((item: any) => item.item_type === 'labour');
 
       const estimateObj: Estimate = {
         id: quoteData.id,
-        jobTitle: quoteData.title || 'Quote',
+        jobTitle: quoteData.scope_of_work || 'Quote',
         clientName: quoteData.customer_name || '',
-        clientAddress: quoteData.address_line_1 || '',
+        clientAddress: '',
         timeline: '2-3 days',
-        scopeOfWork: [],
+        scopeOfWork: quoteData.scope_of_work ? [quoteData.scope_of_work] : [],
         materials,
         labour: {
           hours: labourItem?.quantity || 0,
-          rate: (labourItem?.unit_price_cents || 0) / 100,
+          rate: (labourItem?.unit_price || 0) / 100,
         },
-        status: JobStatus.SENT,
+        status: quoteData.status === 'accepted' ? JobStatus.APPROVED : JobStatus.SENT,
         date: new Date(quoteData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
         gstRate: 0.10,
       };
 
       setEstimate(estimateObj);
       setBusinessInfo({
-        name: quoteData.business_name,
-        phone: quoteData.business_phone,
+        name: quoteData.organization.business_name,
+        phone: quoteData.organization.phone,
+        email: quoteData.organization.email,
+        abn: quoteData.organization.business_number,
+        website: quoteData.organization.website,
+        businessAddress: [
+          quoteData.organization.address_line1,
+          quoteData.organization.address_line2,
+          quoteData.organization.city,
+          quoteData.organization.state,
+          quoteData.organization.postal_code,
+          quoteData.organization.country
+        ].filter(Boolean).join(', ')
       });
       setLoading(false);
     } catch (err) {
@@ -115,10 +118,10 @@ export const PublicRouter: React.FC = () => {
     }
   };
 
-  const loadPublicInvoice = async (token: string) => {
+  const loadPublicInvoice = async (identifier: string) => {
     try {
       const { data, error } = await supabase.rpc('get_public_invoice', {
-        p_token: token
+        identifier: identifier
       });
 
       if (error) {
@@ -128,46 +131,38 @@ export const PublicRouter: React.FC = () => {
         return;
       }
 
-      if (!data || data.length === 0) {
+      if (!data) {
         setError('Invoice not found');
         setLoading(false);
         return;
       }
 
-      const invoiceData = data[0];
-
-      const { data: lineItems, error: lineItemsError } = await supabase.rpc(
-        'get_public_invoice_line_items',
-        { p_invoice_id: invoiceData.id }
-      );
-
-      if (lineItemsError) {
-        console.error('[PublicRouter] Error loading line items:', lineItemsError);
-      }
+      const invoiceData = data;
+      const lineItems = invoiceData.line_items || [];
 
       const materials = lineItems
-        ?.filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
+        .filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
         .map((item: any) => ({
           id: item.id,
           name: item.description,
           quantity: item.quantity,
           unit: 'unit',
-          rate: item.unit_price_cents / 100,
-        })) || [];
+          rate: item.unit_price / 100,
+        }));
 
-      const labourItem = lineItems?.find((item: any) => item.item_type === 'labour');
+      const labourItem = lineItems.find((item: any) => item.item_type === 'labour');
 
       const estimateObj: Estimate = {
         id: invoiceData.id,
-        jobTitle: invoiceData.title || 'Invoice',
+        jobTitle: 'Invoice',
         clientName: invoiceData.customer_name || '',
-        clientAddress: invoiceData.address_line_1 || '',
+        clientAddress: '',
         timeline: '',
-        scopeOfWork: invoiceData.description ? [invoiceData.description] : [],
+        scopeOfWork: [],
         materials,
         labour: {
           hours: labourItem?.quantity || 0,
-          rate: (labourItem?.unit_price_cents || 0) / 100,
+          rate: (labourItem?.unit_price || 0) / 100,
         },
         status: invoiceData.status === 'paid' ? JobStatus.PAID : JobStatus.APPROVED,
         date: new Date(invoiceData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
@@ -176,19 +171,24 @@ export const PublicRouter: React.FC = () => {
 
       setEstimate(estimateObj);
       setBusinessInfo({
-        name: invoiceData.business_name,
-        phone: invoiceData.business_phone,
-        businessAddress: invoiceData.business_address,
-        email: invoiceData.business_email,
-        abn: invoiceData.business_abn,
-        website: invoiceData.business_website,
-        logoUrl: invoiceData.business_logo_url,
-        bankName: invoiceData.bank_name,
-        accountName: invoiceData.account_name,
-        bsbRouting: invoiceData.bsb_routing,
-        accountNumber: invoiceData.account_number,
-        paymentTerms: invoiceData.payment_terms,
-        paymentInstructions: invoiceData.payment_instructions,
+        name: invoiceData.organization.business_name,
+        phone: invoiceData.organization.phone,
+        businessAddress: [
+          invoiceData.organization.address_line1,
+          invoiceData.organization.address_line2,
+          invoiceData.organization.city,
+          invoiceData.organization.state,
+          invoiceData.organization.postal_code,
+          invoiceData.organization.country
+        ].filter(Boolean).join(', '),
+        email: invoiceData.organization.email,
+        abn: invoiceData.organization.business_number,
+        website: invoiceData.organization.website,
+        bankName: invoiceData.organization.bank_name,
+        accountName: invoiceData.organization.account_name,
+        bsbRouting: invoiceData.organization.bsb,
+        accountNumber: invoiceData.organization.account_number,
+        paymentInstructions: invoiceData.organization.payment_instructions,
       });
       setInvoiceNumber(invoiceData.invoice_number);
       setLoading(false);
@@ -251,60 +251,46 @@ export const PublicRouter: React.FC = () => {
 
     try {
       const path = window.location.pathname;
-      const quoteMatch = path.match(/^\/quote\/([a-f0-9-]+)$/i);
+      const quoteMatch = path.match(/^\/(?:quote|q)\/([a-zA-Z0-9-]+)$/i);
       if (!quoteMatch) {
         alert('Invalid quote URL');
         return;
       }
 
-      const approvalToken = quoteMatch[1];
+      const identifier = quoteMatch[1];
 
-      // Get the quote ID from the approval token
       const { data: quoteData, error: quoteError } = await supabase
-        .rpc('get_public_quote', { p_token: approvalToken });
+        .rpc('get_public_quote', { identifier: identifier });
 
-      if (quoteError || !quoteData || quoteData.length === 0) {
+      if (quoteError || !quoteData) {
         console.error('[PublicRouter] Failed to get quote for approval:', quoteError);
         alert('Failed to load quote details. Please try again.');
         return;
       }
 
-      const quoteId = quoteData[0].id;
+      const quoteId = quoteData.id;
+      const lineItems = quoteData.line_items || [];
 
-      // Get line items to build the snapshot
-      const { data: lineItems, error: lineItemsError } = await supabase
-        .rpc('get_public_quote_line_items', { p_token: approvalToken });
-
-      if (lineItemsError) {
-        console.error('[PublicRouter] Failed to get line items:', lineItemsError);
-        alert('Failed to load quote details. Please try again.');
-        return;
-      }
-
-      // Build the acceptance snapshot
       const acceptedSnapshot = {
         quote_id: quoteId,
-        title: quoteData[0].title,
-        customer_name: quoteData[0].customer_name,
-        line_items: lineItems || [],
+        quote_number: quoteData.quote_number,
+        customer_name: quoteData.customer_name,
+        line_items: lineItems,
         totals: {
-          labour_subtotal_cents: quoteData[0].labour_subtotal_cents,
-          materials_subtotal_cents: quoteData[0].materials_subtotal_cents,
-          subtotal_cents: quoteData[0].subtotal_cents,
-          tax_total_cents: quoteData[0].tax_total_cents,
-          grand_total_cents: quoteData[0].grand_total_cents,
+          subtotal: quoteData.subtotal,
+          tax: quoteData.tax,
+          total: quoteData.total,
         },
         accepted_at: new Date().toISOString()
       };
 
-      // Update quote to accepted status
       const { error: updateError } = await supabase
         .from('quotes')
         .update({
           status: 'accepted',
           accepted_at: new Date().toISOString(),
-          accepted_by_name: quoteData[0].customer_name || 'Customer',
-          accepted_by_email: quoteData[0].customer_email,
+          accepted_by_name: quoteData.customer_name || 'Customer',
+          accepted_by_email: quoteData.customer_email,
           accepted_quote_snapshot: acceptedSnapshot
         })
         .eq('id', quoteId);
@@ -315,7 +301,6 @@ export const PublicRouter: React.FC = () => {
         return;
       }
 
-      // Create invoice from accepted quote
       const { data: invoiceId, error: invoiceError } = await supabase
         .rpc('create_invoice_from_accepted_quote', { p_quote_id: quoteId });
 
