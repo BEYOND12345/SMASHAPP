@@ -317,8 +317,16 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleRecordingFinished = (intakeId: string, quoteId: string, traceId: string) => {
+  const handleRecordingFinished = (intakeId: string, quoteId: string, traceId: string, recordStopTime: number) => {
     console.log(`[PERF] trace_id=${traceId} step=app_handle_recording_finished intake_id=${intakeId} quote_id=${quoteId}`);
+
+    // Store trace data for ReviewDraft
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('trace_id', traceId);
+    urlParams.set('record_stop_time', recordStopTime.toString());
+    urlParams.set('intake_id', intakeId);
+    urlParams.set('quote_id', quoteId);
+    window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
 
     // Navigate directly to ReviewDraft with quote shell
     setState(prev => ({

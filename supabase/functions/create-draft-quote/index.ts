@@ -113,42 +113,50 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[REVIEW_FLOW] CREATE_DRAFT_QUOTE_LOCK_ACQUIRED intake_id=${intake_id}`);
 
-    if (intake.created_quote_id) {
-      console.log(`Idempotent replay detected for intake ${intake_id}, returning existing quote ${intake.created_quote_id}`);
+    let existingQuoteId = intake.created_quote_id;
+    let isUpdatingShell = false;
 
-      const { data: existingQuote, error: quoteError } = await supabase
-        .from("quotes")
-        .select("*")
-        .eq("id", intake.created_quote_id)
-        .maybeSingle();
-
-      if (quoteError || !existingQuote) {
-        throw new Error("Existing quote not found");
-      }
-
+    if (existingQuoteId) {
       const { count: lineItemsCount } = await supabase
         .from("quote_line_items")
         .select("*", { count: "exact", head: true })
-        .eq("quote_id", existingQuote.id);
+        .eq("quote_id", existingQuoteId);
 
-      const extractedData = intake.extraction_json as any;
-      const pricingSnapshot = extractedData?.pricing_used || {};
+      if (lineItemsCount && lineItemsCount > 0) {
+        console.log(`Idempotent replay detected for intake ${intake_id}, quote ${existingQuoteId} already has ${lineItemsCount} line items`);
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          quote_id: existingQuote.id,
-          intake_id: intake.id,
-          idempotent_replay: true,
-          requires_review: intake.status === "needs_user_review",
-          line_items_count: lineItemsCount || 0,
-          warnings: ["Quote already created from this voice intake"],
-          pricing_used: pricingSnapshot,
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        const { data: existingQuote, error: quoteError } = await supabase
+          .from("quotes")
+          .select("*")
+          .eq("id", existingQuoteId)
+          .maybeSingle();
+
+        if (quoteError || !existingQuote) {
+          throw new Error("Existing quote not found");
         }
-      );
+
+        const extractedData = intake.extraction_json as any;
+        const pricingSnapshot = extractedData?.pricing_used || {};
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            quote_id: existingQuote.id,
+            intake_id: intake.id,
+            idempotent_replay: true,
+            requires_review: intake.status === "needs_user_review",
+            line_items_count: lineItemsCount || 0,
+            warnings: ["Quote already created from this voice intake"],
+            pricing_used: pricingSnapshot,
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      } else {
+        console.log(`[QUOTE_CREATE] Found quote shell ${existingQuoteId} with no line items, will update it`);
+        isUpdatingShell = true;
+      }
     }
 
     const validStatuses = ["extracted", "needs_user_review"];
@@ -449,33 +457,65 @@ Deno.serve(async (req: Request) => {
     const quoteDescription = extracted.job?.summary || "";
     const scopeOfWork = extracted.job?.scope_of_work || [];
 
-    const { data: quoteNumber, error: quoteNumberError } = await supabase
-      .rpc("generate_quote_number", { p_org_id: profile.org_id });
+    let quote: any;
 
-    if (quoteNumberError || !quoteNumber) {
-      throw new Error(`Failed to generate quote number: ${quoteNumberError?.message}`);
-    }
+    if (isUpdatingShell && existingQuoteId) {
+      console.log(`[QUOTE_CREATE] Updating quote shell ${existingQuoteId} with extracted data`);
 
-    const { data: quote, error: quoteError } = await supabase
-      .from("quotes")
-      .insert({
-        org_id: profile.org_id,
-        customer_id: customerId,
-        quote_number: quoteNumber,
-        title: quoteTitle,
-        description: quoteDescription,
-        scope_of_work: scopeOfWork,
-        status: "draft",
-        currency: profile.default_currency,
-        default_tax_rate: profile.default_tax_rate,
-        tax_inclusive: profile.org_tax_inclusive,
-        terms_and_conditions: profile.default_payment_terms || null,
-      })
-      .select()
-      .single();
+      const { data: updatedQuote, error: updateError } = await supabase
+        .from("quotes")
+        .update({
+          customer_id: customerId,
+          title: quoteTitle,
+          description: quoteDescription,
+          scope_of_work: scopeOfWork,
+          currency: profile.default_currency,
+          default_tax_rate: profile.default_tax_rate,
+          tax_inclusive: profile.org_tax_inclusive,
+          terms_and_conditions: profile.default_payment_terms || null,
+        })
+        .eq("id", existingQuoteId)
+        .select()
+        .single();
 
-    if (quoteError) {
-      throw new Error(`Failed to create quote: ${quoteError.message}`);
+      if (updateError) {
+        throw new Error(`Failed to update quote shell: ${updateError.message}`);
+      }
+
+      quote = updatedQuote;
+    } else {
+      console.log(`[QUOTE_CREATE] Creating new quote`);
+
+      const { data: quoteNumber, error: quoteNumberError } = await supabase
+        .rpc("generate_quote_number", { p_org_id: profile.org_id });
+
+      if (quoteNumberError || !quoteNumber) {
+        throw new Error(`Failed to generate quote number: ${quoteNumberError?.message}`);
+      }
+
+      const { data: newQuote, error: quoteError } = await supabase
+        .from("quotes")
+        .insert({
+          org_id: profile.org_id,
+          customer_id: customerId,
+          quote_number: quoteNumber,
+          title: quoteTitle,
+          description: quoteDescription,
+          scope_of_work: scopeOfWork,
+          status: "draft",
+          currency: profile.default_currency,
+          default_tax_rate: profile.default_tax_rate,
+          tax_inclusive: profile.org_tax_inclusive,
+          terms_and_conditions: profile.default_payment_terms || null,
+        })
+        .select()
+        .single();
+
+      if (quoteError) {
+        throw new Error(`Failed to create quote: ${quoteError.message}`);
+      }
+
+      quote = newQuote;
     }
 
     const lineItems = [];

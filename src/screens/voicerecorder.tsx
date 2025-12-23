@@ -11,7 +11,7 @@ interface ExtractionMetadata {
 
 interface VoiceRecorderProps {
   onCancel: () => void;
-  onSuccess: (intakeId: string, quoteId: string, traceId: string) => void;
+  onSuccess: (intakeId: string, quoteId: string, traceId: string, recordStopTime: number) => void;
   customerId?: string;
 }
 
@@ -305,10 +305,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
       setState('success');
 
-      console.log(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${Date.now() - recordStopTime}`);
+      const navTime = Date.now() - recordStopTime;
+      console.log(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${navTime}`);
 
       setTimeout(() => {
-        onSuccess(intakeId, quoteId, traceId);
+        onSuccess(intakeId, quoteId, traceId, recordStopTime);
       }, 200);
 
       // Start background processing (non-blocking)
