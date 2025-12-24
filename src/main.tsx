@@ -7,7 +7,7 @@ import './index.css';
 
 const isPublicRoute = () => {
   const path = window.location.pathname;
-  return /^\/(quote|invoice)\/[a-f0-9-]+$/i.test(path);
+  return /^\/(quote|q|invoice|i)\/[a-zA-Z0-9-]+$/i.test(path);
 };
 
 createRoot(document.getElementById('root')!).render(
