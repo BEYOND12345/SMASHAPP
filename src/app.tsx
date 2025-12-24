@@ -21,6 +21,7 @@ import { ReviewQuote } from './screens/reviewquote';
 import { ReviewDraft } from './screens/reviewdraft';
 import { MaterialsCatalog } from './screens/materialscatalog';
 import { supabase } from './lib/supabase';
+import { parsePublicRoute } from './lib/utils/routeHelpers';
 
 // Mock Data
 const MOCK_ESTIMATES: Estimate[] = [
@@ -320,6 +321,134 @@ const App: React.FC = () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // URL Route Monitoring - Handle public share links when logged in
+  useEffect(() => {
+    const handleUrlChange = async () => {
+      // Only handle URLs if user is authenticated
+      if (!state.isAuthenticated || !state.user) {
+        return;
+      }
+
+      const currentPath = window.location.pathname;
+      const publicRoute = parsePublicRoute(currentPath);
+
+      if (!publicRoute) {
+        return; // Not a public route, nothing to do
+      }
+
+      console.log('[App] Public route detected while logged in:', publicRoute);
+
+      try {
+        if (publicRoute.type === 'quote') {
+          // Look up quote by short code
+          const { data: quoteData, error } = await supabase
+            .from('quotes')
+            .select('id')
+            .eq('short_code', publicRoute.shortCode)
+            .maybeSingle();
+
+          if (error) {
+            console.error('[App] Failed to lookup quote by short code:', error);
+            alert('Failed to load quote. Please try again.');
+            return;
+          }
+
+          if (!quoteData) {
+            console.error('[App] Quote not found with short code:', publicRoute.shortCode);
+            alert('Quote not found.');
+            // Navigate to estimates list
+            setState(prev => ({ ...prev, currentScreen: 'EstimatesList' }));
+            // Clean up URL
+            window.history.replaceState({}, '', '/');
+            return;
+          }
+
+          console.log('[App] Found quote:', quoteData.id);
+
+          // Load the full quote data
+          await loadQuotesFromDatabase(state.user.id);
+
+          // Navigate to JobCard with this quote
+          setState(prev => ({
+            ...prev,
+            selectedEstimateId: quoteData.id,
+            currentScreen: 'JobCard'
+          }));
+
+          // Clean up URL to avoid confusion
+          window.history.replaceState({}, '', '/');
+        } else if (publicRoute.type === 'invoice') {
+          // Look up invoice by short code
+          const { data: invoiceData, error } = await supabase
+            .from('invoices')
+            .select('id, quote_id')
+            .eq('short_code', publicRoute.shortCode)
+            .maybeSingle();
+
+          if (error) {
+            console.error('[App] Failed to lookup invoice by short code:', error);
+            alert('Failed to load invoice. Please try again.');
+            return;
+          }
+
+          if (!invoiceData) {
+            console.error('[App] Invoice not found with short code:', publicRoute.shortCode);
+            alert('Invoice not found.');
+            // Navigate to invoices list
+            setState(prev => ({ ...prev, currentScreen: 'EstimatesList', activeTab: 'invoices' }));
+            // Clean up URL
+            window.history.replaceState({}, '', '/');
+            return;
+          }
+
+          console.log('[App] Found invoice:', invoiceData.id);
+
+          // Load invoices and quotes
+          await Promise.all([
+            loadQuotesFromDatabase(state.user.id),
+            loadInvoicesFromDatabase(state.user.id)
+          ]);
+
+          // Navigate to JobCard with the quote that has this invoice
+          if (invoiceData.quote_id) {
+            setState(prev => ({
+              ...prev,
+              selectedEstimateId: invoiceData.quote_id,
+              currentScreen: 'InvoicePreview'
+            }));
+          } else {
+            setState(prev => ({
+              ...prev,
+              selectedInvoiceId: invoiceData.id,
+              currentScreen: 'InvoicePreview'
+            }));
+          }
+
+          // Clean up URL
+          window.history.replaceState({}, '', '/');
+        }
+      } catch (err) {
+        console.error('[App] Error handling public route:', err);
+        alert('An error occurred. Please try again.');
+      }
+    };
+
+    // Check URL on mount and when authentication changes
+    handleUrlChange();
+
+    // Listen for browser back/forward navigation
+    const handlePopState = () => {
+      console.log('[App] Browser navigation detected');
+      handleUrlChange();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [state.isAuthenticated, state.user]);
 
   // Navigation Helpers
   const navigate = (screen: ScreenName) => setState(prev => ({ ...prev, currentScreen: screen }));
