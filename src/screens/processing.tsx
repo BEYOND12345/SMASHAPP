@@ -34,7 +34,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       console.log('[Processing] Checking if extraction already complete');
       const { data: intakeData, error: intakeError } = await supabase
         .from('voice_intakes')
-        .select('status, extraction_json')
+        .select('status, extraction_json, created_quote_id')
         .eq('id', intakeId)
         .maybeSingle();
 
@@ -43,10 +43,20 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       }
 
       const hasExtraction = intakeData?.extraction_json &&
-                           (intakeData.status === 'extracted' || intakeData.status === 'needs_user_review');
+                           (intakeData.status === 'extracted' || intakeData.status === 'needs_user_review' || intakeData.status === 'quote_created');
 
       if (hasExtraction) {
-        console.log('[Processing] Extraction already complete, checking if review is needed');
+        console.log('[Processing] Extraction already complete, checking if review is needed or quote created');
+
+        // If quote already created, skip to success
+        if (intakeData.created_quote_id) {
+          console.log('[Processing] Quote already created:', intakeData.created_quote_id);
+          setStep('success');
+          setTimeout(() => {
+            onComplete(intakeData.created_quote_id, intakeId);
+          }, 500);
+          return;
+        }
 
         // If status is needs_user_review, redirect to review screen
         if (intakeData.status === 'needs_user_review') {
