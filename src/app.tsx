@@ -84,7 +84,7 @@ const App: React.FC = () => {
         .from('quotes')
         .select(`
           *,
-          customer:customers(*),
+          customer:customers!customer_id(*),
           line_items:quote_line_items(*)
         `)
         .order('created_at', { ascending: false });
@@ -106,7 +106,7 @@ const App: React.FC = () => {
         id: quoteData.id,
         jobTitle: quoteData.title || 'Untitled Job',
         clientName: quoteData.customer?.name || 'No Customer',
-        clientAddress: quoteData.customer?.billing_street || '',
+        clientAddress: '',
         clientEmail: quoteData.customer?.email || '',
         clientPhone: quoteData.customer?.phone || '',
         timeline: '2-3 days',
@@ -168,7 +168,7 @@ const App: React.FC = () => {
           *,
           quote:quotes!source_quote_id(
             *,
-            customer:customers(*)
+            customer:customers!customer_id(*)
           ),
           line_items:invoice_line_items(*)
         `)
@@ -192,7 +192,7 @@ const App: React.FC = () => {
         invoiceNumber: invoiceData.invoice_number || invoiceData.id.substring(0, 8),
         jobTitle: invoiceData.quote?.title || 'Invoice',
         clientName: invoiceData.quote?.customer?.name || 'Customer',
-        clientAddress: invoiceData.quote?.customer?.billing_street || '',
+        clientAddress: '',
         clientEmail: invoiceData.quote?.customer?.email || '',
         clientPhone: invoiceData.quote?.customer?.phone || '',
         status: invoiceData.status as 'draft' | 'sent' | 'paid' | 'overdue',
@@ -1072,7 +1072,7 @@ const App: React.FC = () => {
                   .from('quotes')
                   .select(`
                     *,
-                    customer:customers(*),
+                    customer:customers!customer_id(*),
                     line_items:quote_line_items(*)
                   `)
                   .eq('id', quoteId)
@@ -1088,7 +1088,7 @@ const App: React.FC = () => {
                   id: quoteData.id,
                   jobTitle: quoteData.title || '',
                   clientName: quoteData.customer?.name || '',
-                  clientAddress: quoteData.customer?.billing_street || '',
+                  clientAddress: '',
                   clientEmail: quoteData.customer?.email || '',
                   clientPhone: quoteData.customer?.phone || '',
                   timeline: '2-3 days',

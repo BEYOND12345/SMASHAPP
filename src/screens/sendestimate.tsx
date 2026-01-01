@@ -45,7 +45,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             .select(`
               *,
               invoice_line_items (*),
-              customer:customers (*),
+              customer:customers!customer_id (*),
               quote:quotes!source_quote_id (
                 scope_of_work
               )
@@ -67,7 +67,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               is_public: invoiceData.is_public,
               has_customer: !!invoiceData.customer
             });
-            const materials = invoiceData.invoice_line_items
+            const materials = (invoiceData.invoice_line_items || [])
               .filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
               .map((item: any) => ({
                 id: item.id,
@@ -77,7 +77,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
                 rate: item.unit_price_cents / 100,
               }));
 
-            const labourItem = invoiceData.invoice_line_items.find((item: any) => item.item_type === 'labour');
+            const labourItem = (invoiceData.invoice_line_items || []).find((item: any) => item.item_type === 'labour');
 
             const dueDate = invoiceData.due_date ? new Date(invoiceData.due_date) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
             const timeline = `Due: ${dueDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
@@ -86,7 +86,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               id: invoiceData.id,
               jobTitle: invoiceData.title || `Invoice ${invoiceData.invoice_number}`,
               clientName: invoiceData.customer?.name || '',
-              clientAddress: invoiceData.customer?.billing_street || '',
+              clientAddress: '',
               clientEmail: invoiceData.customer?.email || '',
               clientPhone: invoiceData.customer?.phone || '',
               timeline: timeline,
@@ -97,7 +97,6 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
                 rate: (labourItem?.unit_price_cents || 0) / 100,
               },
               status: invoiceData.status,
-              createdAt: invoiceData.created_at,
               gstRate: invoiceData.default_tax_rate || 0.10,
             };
 
@@ -121,7 +120,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             .select(`
               *,
               quote_line_items (*),
-              customer:customers (*)
+              customer:customers!customer_id (*)
             `)
             .eq('id', estimateId)
             .maybeSingle();
@@ -139,7 +138,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               has_short_code: !!quoteData.short_code,
               is_public: quoteData.is_public
             });
-            const materials = quoteData.quote_line_items
+            const materials = (quoteData.quote_line_items || [])
               .filter((item: any) => item.item_type === 'materials')
               .map((item: any) => ({
                 id: item.id,
@@ -149,13 +148,13 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
                 rate: item.unit_price_cents / 100,
               }));
 
-            const labourItem = quoteData.quote_line_items.find((item: any) => item.item_type === 'labour');
+            const labourItem = (quoteData.quote_line_items || []).find((item: any) => item.item_type === 'labour');
 
             const estimateObj: Estimate = {
               id: quoteData.id,
               jobTitle: quoteData.title || '',
               clientName: quoteData.customer?.name || '',
-              clientAddress: quoteData.customer?.billing_street || '',
+              clientAddress: '',
               clientEmail: quoteData.customer?.email || '',
               clientPhone: quoteData.customer?.phone || '',
               timeline: '2-3 days',

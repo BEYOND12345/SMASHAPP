@@ -89,7 +89,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         .from('quotes')
         .select(`
           *,
-          customer:customers(*),
+          customer:customers!customer_id(*),
           line_items:quote_line_items(*)
         `)
         .eq('id', quoteId)

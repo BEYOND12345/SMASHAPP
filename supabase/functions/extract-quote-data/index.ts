@@ -430,7 +430,7 @@ Deno.serve(async (req: Request) => {
       console.log("[CUSTOMER] Using pre-selected customer:", intake.customer_id);
       const { data: customerData, error: customerError } = await supabase
         .from("customers")
-        .select("id, name, email, phone, billing_street")
+        .select("id, name, email, phone")
         .eq("id", intake.customer_id)
         .maybeSingle();
 
