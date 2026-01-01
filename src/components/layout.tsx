@@ -1,11 +1,11 @@
 import React from 'react';
-import { Home, FileText } from 'lucide-react';
+import { Home, FileText, Users } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
   showNav?: boolean;
-  activeTab?: 'estimates' | 'invoices';
-  onTabChange?: (tab: 'estimates' | 'invoices') => void;
+  activeTab?: 'estimates' | 'invoices' | 'customers';
+  onTabChange?: (tab: 'estimates' | 'invoices' | 'customers') => void;
   className?: string;
   fab?: React.ReactNode;
 }
@@ -32,7 +32,7 @@ export const Layout: React.FC<LayoutProps> = ({
         )}
 
         {showNav && (
-          <nav className="h-[96px] bg-white border-t border-gray-50 flex items-start pt-5 justify-center gap-20 shrink-0 z-50 absolute bottom-0 w-full left-0 rounded-t-[32px] shadow-[0_-5px_20px_rgba(0,0,0,0.02)]">
+          <nav className="h-[96px] bg-white border-t border-gray-50 flex items-start pt-5 justify-center gap-12 shrink-0 z-50 absolute bottom-0 w-full left-0 rounded-t-[32px] shadow-[0_-5px_20px_rgba(0,0,0,0.02)]">
             <button
               onClick={() => onTabChange?.('estimates')}
               className={`group flex flex-col items-center gap-1.5 w-16 transition-all duration-300 ${activeTab === 'estimates' ? 'text-primary' : 'text-tertiary hover:text-secondary'}`}
@@ -50,6 +50,15 @@ export const Layout: React.FC<LayoutProps> = ({
                 <FileText size={26} strokeWidth={activeTab === 'invoices' ? 2.5 : 2} />
                </div>
               <span className={`text-[10px] font-bold tracking-wide transition-colors ${activeTab === 'invoices' ? 'text-primary' : 'text-tertiary'}`}>Invoices</span>
+            </button>
+            <button
+              onClick={() => onTabChange?.('customers')}
+              className={`group flex flex-col items-center gap-1.5 w-16 transition-all duration-300 ${activeTab === 'customers' ? 'text-primary' : 'text-tertiary hover:text-secondary'}`}
+            >
+               <div className={`transition-transform duration-300 ${activeTab === 'customers' ? '-translate-y-1' : ''}`}>
+                <Users size={26} strokeWidth={activeTab === 'customers' ? 2.5 : 2} />
+               </div>
+              <span className={`text-[10px] font-bold tracking-wide transition-colors ${activeTab === 'customers' ? 'text-primary' : 'text-tertiary'}`}>Customers</span>
             </button>
           </nav>
         )}

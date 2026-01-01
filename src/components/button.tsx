@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'accent' | 'success';
+  variant?: 'primary' | 'secondary' | 'outline' | 'accent' | 'success' | 'danger';
   fullWidth?: boolean;
   children: React.ReactNode;
 }
@@ -21,7 +21,8 @@ export const Button: React.FC<ButtonProps> = ({
     secondary: 'bg-surface text-primary border border-border hover:bg-gray-100',
     outline: 'bg-white text-primary border-2 border-border hover:border-gray-300 hover:bg-gray-50',
     accent: 'bg-accent text-accentText hover:bg-accentDark shadow-md hover:shadow-lg',
-    success: 'bg-accent text-accentText hover:bg-accentDark shadow-md shadow-accent/20 hover:shadow-lg'
+    success: 'bg-accent text-accentText hover:bg-accentDark shadow-md shadow-accent/20 hover:shadow-lg',
+    danger: 'bg-red-500 text-white hover:bg-red-600 shadow-md hover:shadow-lg'
   };
 
   const widthClass = fullWidth ? 'w-full' : '';

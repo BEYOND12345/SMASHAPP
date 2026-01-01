@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { AppState, Estimate, Invoice, JobStatus, ScreenName, UserProfile } from './types';
+import { AppState, Estimate, Invoice, Customer, JobStatus, ScreenName, UserProfile } from './types';
 import { Login } from './screens/login';
 import { Signup } from './screens/signup';
 import { Onboarding } from './screens/onboarding';
 import { EstimatesList } from './screens/estimateslist';
 import { InvoicesList } from './screens/invoiceslist';
+import { CustomersList } from './screens/customerslist';
+import { CustomerProfile } from './screens/customerprofile';
 import { NewEstimate } from './screens/newestimate';
 import { EditEstimate } from './screens/editestimate';
 import { VoiceRecorder } from './screens/voicerecorder';
@@ -51,12 +53,14 @@ const MOCK_ESTIMATES: Estimate[] = [
 ];
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string }>({
+  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices' | 'customers'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string }>({
     currentScreen: 'Login',
     selectedEstimateId: null,
     selectedInvoiceId: null,
+    selectedCustomerId: null,
     estimates: [],
     invoices: [],
+    customers: [],
     user: null,
     isAuthenticated: false,
     sendingType: 'estimate',
@@ -246,6 +250,57 @@ const App: React.FC = () => {
     }
   };
 
+  // Load customers from database
+  const loadCustomersFromDatabase = async (userId: string) => {
+    try {
+      console.log('[App] Loading customers from database for user:', userId);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn('[App] No active session, skipping customer load');
+        return;
+      }
+
+      const { data: customersData, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('[App] Failed to load customers:', error);
+        return;
+      }
+
+      console.log('[App] Loaded customers:', customersData?.length || 0);
+
+      if (!customersData || customersData.length === 0) {
+        console.log('[App] No customers found in database');
+        setState(prev => ({ ...prev, customers: [] }));
+        return;
+      }
+
+      const customers: Customer[] = customersData.map((customerData: any) => ({
+        id: customerData.id,
+        name: customerData.name || '',
+        email: customerData.email || undefined,
+        phone: customerData.phone || undefined,
+        company_name: customerData.company_name || undefined,
+        notes: customerData.notes || undefined,
+        created_at: customerData.created_at,
+        updated_at: customerData.updated_at
+      }));
+
+      console.log('[App] Converted customers:', customers.length);
+
+      setState(prev => ({
+        ...prev,
+        customers: customers
+      }));
+    } catch (err) {
+      console.error('[App] Error loading customers:', err);
+    }
+  };
+
   useEffect(() => {
     const initSession = async () => {
       try {
@@ -262,12 +317,13 @@ const App: React.FC = () => {
             phone: '0400 000 000'
           };
 
-          // Load quotes and invoices from database with timeout
+          // Load quotes, invoices, and customers from database with timeout
           const loadQuotesPromise = loadQuotesFromDatabase(session.user.id);
           const loadInvoicesPromise = loadInvoicesFromDatabase(session.user.id);
+          const loadCustomersPromise = loadCustomersFromDatabase(session.user.id);
           const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000));
 
-          await Promise.race([Promise.all([loadQuotesPromise, loadInvoicesPromise]), timeoutPromise]);
+          await Promise.race([Promise.all([loadQuotesPromise, loadInvoicesPromise, loadCustomersPromise]), timeoutPromise]);
           console.log('[App] Database load complete or timed out');
 
           setState(prev => ({
@@ -300,11 +356,12 @@ const App: React.FC = () => {
           phone: '0400 000 000'
         };
 
-        // Load quotes and invoices from database with timeout
+        // Load quotes, invoices, and customers from database with timeout
         const loadQuotesPromise = loadQuotesFromDatabase(session.user.id);
         const loadInvoicesPromise = loadInvoicesFromDatabase(session.user.id);
+        const loadCustomersPromise = loadCustomersFromDatabase(session.user.id);
         const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000));
-        await Promise.race([Promise.all([loadQuotesPromise, loadInvoicesPromise]), timeoutPromise]);
+        await Promise.race([Promise.all([loadQuotesPromise, loadInvoicesPromise, loadCustomersPromise]), timeoutPromise]);
 
         setState(prev => ({
           ...prev,
@@ -319,8 +376,10 @@ const App: React.FC = () => {
           currentScreen: 'Login',
           selectedEstimateId: null,
           selectedInvoiceId: null,
+          selectedCustomerId: null,
           estimates: [],
           invoices: [],
+          customers: [],
           user: null,
           isAuthenticated: false,
           sendingType: 'estimate',
@@ -525,8 +584,10 @@ const App: React.FC = () => {
       currentScreen: 'Login',
       selectedEstimateId: null,
       selectedInvoiceId: null,
+      selectedCustomerId: null,
       estimates: [],
       invoices: [],
+      customers: [],
       user: null,
       isAuthenticated: false,
       sendingType: 'estimate',
@@ -969,6 +1030,51 @@ const App: React.FC = () => {
   };
 
   const getSelectedEstimate = () => state.estimates.find(e => e.id === state.selectedEstimateId);
+  const getSelectedCustomer = () => state.customers.find(c => c.id === state.selectedCustomerId);
+
+  const handleSelectCustomer = (id: string) => {
+    setState(prev => ({ ...prev, selectedCustomerId: id, currentScreen: 'CustomerProfile' }));
+  };
+
+  const handleNewQuoteForCustomer = (customerId: string) => {
+    // Store the customer ID for use in voice recorder
+    setState(prev => ({
+      ...prev,
+      voiceCustomerId: customerId,
+      currentScreen: 'NewEstimate'
+    }));
+  };
+
+  const handleDeleteCustomer = async (customerId: string) => {
+    try {
+      console.log('[App] Deleting customer:', customerId);
+
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', customerId);
+
+      if (error) {
+        console.error('[App] Failed to delete customer:', error);
+        alert('Failed to delete customer. Please try again.');
+        return;
+      }
+
+      console.log('[App] Customer deleted successfully');
+
+      // Update local state and navigate back
+      setState(prev => ({
+        ...prev,
+        customers: prev.customers.filter(c => c.id !== customerId),
+        selectedCustomerId: null,
+        currentScreen: 'EstimatesList',
+        activeTab: 'customers'
+      }));
+    } catch (err) {
+      console.error('[App] Error deleting customer:', err);
+      alert('Failed to delete customer. Please try again.');
+    }
+  };
 
   // Render Router
   const renderScreen = () => {
@@ -1023,7 +1129,7 @@ const App: React.FC = () => {
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
           />
-        ) : (
+        ) : state.activeTab === 'invoices' ? (
           <InvoicesList
             invoices={state.invoices}
             onNewEstimate={handleNewEstimate}
@@ -1032,7 +1138,31 @@ const App: React.FC = () => {
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
           />
+        ) : (
+          <CustomersList
+            customers={state.customers}
+            onNewEstimate={handleNewEstimate}
+            onSelectCustomer={handleSelectCustomer}
+            activeTab={state.activeTab}
+            onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
+            onProfileClick={() => navigate('Settings')}
+          />
         );
+
+      case 'CustomerProfile':
+        const selectedCustomer = getSelectedCustomer();
+        return selectedCustomer ? (
+          <CustomerProfile
+            customer={selectedCustomer}
+            quotes={state.estimates}
+            invoices={state.invoices}
+            onBack={() => setState(prev => ({ ...prev, currentScreen: 'EstimatesList', activeTab: 'customers' }))}
+            onNewQuote={handleNewQuoteForCustomer}
+            onSelectQuote={(id) => setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }))}
+            onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
+            onDeleteCustomer={handleDeleteCustomer}
+          />
+        ) : null;
       
       case 'NewEstimate':
         return <NewEstimate

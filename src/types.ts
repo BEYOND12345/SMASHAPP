@@ -54,7 +54,9 @@ export type ScreenName =
   | 'InvoicePreview'
   | 'PublicQuoteView'
   | 'PublicInvoiceView'
-  | 'InvoicesList';
+  | 'InvoicesList'
+  | 'CustomersList'
+  | 'CustomerProfile';
 
 export interface Invoice {
   id: string;
@@ -71,6 +73,17 @@ export interface Invoice {
   labour: LabourItem;
   gstRate: number;
   quoteId?: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  company_name?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UserProfile {
@@ -102,8 +115,10 @@ export interface AppState {
   currentScreen: ScreenName;
   selectedEstimateId: string | null;
   selectedInvoiceId: string | null;
+  selectedCustomerId: string | null;
   estimates: Estimate[];
   invoices: Invoice[];
+  customers: Customer[];
   user: UserProfile | null;
   isAuthenticated: boolean;
 }
