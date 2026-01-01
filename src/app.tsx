@@ -382,7 +382,7 @@ const App: React.FC = () => {
           // Look up invoice by short code
           const { data: invoiceData, error } = await supabase
             .from('invoices')
-            .select('id, quote_id')
+            .select('id, source_quote_id')
             .eq('short_code', publicRoute.shortCode)
             .maybeSingle();
 
@@ -411,10 +411,10 @@ const App: React.FC = () => {
           ]);
 
           // Navigate to JobCard with the quote that has this invoice
-          if (invoiceData.quote_id) {
+          if (invoiceData.source_quote_id) {
             setState(prev => ({
               ...prev,
-              selectedEstimateId: invoiceData.quote_id,
+              selectedEstimateId: invoiceData.source_quote_id,
               currentScreen: 'InvoicePreview'
             }));
           } else {

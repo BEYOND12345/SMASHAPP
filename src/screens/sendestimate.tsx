@@ -46,7 +46,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               *,
               invoice_line_items (*),
               customer:customers (*),
-              source_quote:quotes (
+              quote:quotes!source_quote_id (
                 scope_of_work
               )
             `)
@@ -90,7 +90,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               clientEmail: invoiceData.customer?.email || '',
               clientPhone: invoiceData.customer?.phone || '',
               timeline: timeline,
-              scopeOfWork: invoiceData.source_quote?.scope_of_work || (invoiceData.description ? [invoiceData.description] : []),
+              scopeOfWork: invoiceData.quote?.scope_of_work || (invoiceData.description ? [invoiceData.description] : []),
               materials,
               labour: {
                 hours: labourItem?.quantity || 0,
