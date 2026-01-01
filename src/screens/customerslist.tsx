@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Customer } from '../types';
 import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
-import { User, Search } from 'lucide-react';
+import { User, Search, Users } from 'lucide-react';
 import { getInitials } from '../lib/utils/calculations';
 
 interface CustomersListProps {
@@ -55,57 +55,68 @@ export const CustomersList: React.FC<CustomersListProps> = ({
       />
 
       <div className="px-5 mt-4">
-        <div className="flex gap-2 relative">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              type="text"
-              placeholder="Search by name, email, phone, or company..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
-            />
-          </div>
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search customers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
+          />
         </div>
       </div>
 
-      <div className="px-5 mt-2">
-        <p className="text-[13px] text-tertiary font-medium">
-          {filteredCustomers.length} {filteredCustomers.length === 1 ? 'customer' : 'customers'}
+      <div className="px-5 mt-4 mb-2">
+        <p className="text-[12px] text-tertiary font-semibold uppercase tracking-wider">
+          {filteredCustomers.length} {filteredCustomers.length === 1 ? 'Customer' : 'Customers'}
         </p>
       </div>
 
-      <div className="px-5 flex flex-col gap-3 mt-3">
+      <div className="px-5 flex flex-col gap-2.5">
         {filteredCustomers.length === 0 ? (
-           <div className="flex flex-col items-center justify-center h-[60vh] text-secondary opacity-60">
-             <p className="font-medium tracking-tight">
-               {searchTerm.trim() ? 'No matches found' : 'No customers yet'}
+           <div className="flex flex-col items-center justify-center h-[60vh]">
+             <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+               <Users size={32} className="text-gray-400" />
+             </div>
+             <p className="text-[15px] text-secondary font-medium">
+               {searchTerm.trim() ? 'No customers found' : 'No customers yet'}
+             </p>
+             <p className="text-[13px] text-tertiary mt-1">
+               {searchTerm.trim() ? 'Try a different search term' : 'Customers will appear here as you create quotes'}
              </p>
            </div>
         ) : (
-          filteredCustomers.map(customer => (
-            <div
-              key={customer.id}
-              onClick={() => onSelectCustomer(customer.id)}
-              className="bg-white rounded-[20px] p-5 shadow-card hover:scale-[0.99] transition-transform duration-200 cursor-pointer flex items-center gap-3"
-            >
-              <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-[14px] font-bold text-gray-900 tracking-tight flex-shrink-0">
-                {getInitials(customer.name)}
+          filteredCustomers.map(customer => {
+            const hasSecondaryInfo = customer.company_name || customer.email || customer.phone;
+            return (
+              <div
+                key={customer.id}
+                onClick={() => onSelectCustomer(customer.id)}
+                className="bg-white rounded-[16px] p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer border border-gray-50 flex items-center gap-3"
+              >
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center text-[15px] font-bold text-gray-700 tracking-tight flex-shrink-0 border border-gray-200">
+                  {getInitials(customer.name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-[15px] font-bold text-primary tracking-tight leading-tight mb-0.5">{customer.name}</h3>
+                  {hasSecondaryInfo && (
+                    <div className="flex flex-col gap-0.5">
+                      {customer.company_name && (
+                        <p className="text-[13px] text-secondary font-medium truncate">{customer.company_name}</p>
+                      )}
+                      {customer.email && (
+                        <p className="text-[12px] text-tertiary truncate">{customer.email}</p>
+                      )}
+                      {customer.phone && !customer.email && (
+                        <p className="text-[12px] text-tertiary">{customer.phone}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-[15px] font-bold text-primary tracking-tight leading-none mb-1">{customer.name}</h3>
-                {customer.company_name && (
-                  <p className="text-[13px] text-secondary truncate">{customer.company_name}</p>
-                )}
-                {customer.email && (
-                  <p className="text-[12px] text-tertiary truncate mt-0.5">{customer.email}</p>
-                )}
-                {customer.phone && (
-                  <p className="text-[12px] text-tertiary mt-0.5">{customer.phone}</p>
-                )}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </Layout>
