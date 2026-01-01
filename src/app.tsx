@@ -166,7 +166,7 @@ const App: React.FC = () => {
         .from('invoices')
         .select(`
           *,
-          quote:quotes!invoices_quote_id_fkey(
+          quote:quotes!source_quote_id(
             *,
             customer:customers(*)
           ),
@@ -215,7 +215,7 @@ const App: React.FC = () => {
             ?.find((item: any) => item.item_type === 'labour')?.unit_price_cents / 100 || 0,
         },
         gstRate: invoiceData.default_tax_rate || 0.10,
-        quoteId: invoiceData.quote_id || undefined,
+        quoteId: invoiceData.source_quote_id || undefined,
       }));
 
       console.log('[App] Converted invoices:', invoices.length);
