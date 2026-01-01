@@ -138,18 +138,18 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
 
         {/* Stats */}
         <div className="bg-white rounded-[20px] p-5 shadow-sm">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center">
-              <p className="text-[28px] font-bold text-primary tracking-tight leading-none">{totalJobs}</p>
-              <p className="text-[11px] text-tertiary font-semibold uppercase tracking-wider mt-2">Jobs</p>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+              <span className="text-[13px] text-secondary font-semibold uppercase tracking-wide">Jobs</span>
+              <span className="text-[24px] font-bold text-primary tracking-tight">{totalJobs}</span>
             </div>
-            <div className="text-center border-x border-gray-100 px-2">
-              <p className="text-[17px] font-bold text-primary tracking-tight leading-none break-all">{formatCurrency(totalRevenue)}</p>
-              <p className="text-[11px] text-tertiary font-semibold uppercase tracking-wider mt-2">Revenue</p>
+            <div className="flex items-center justify-between py-2 border-b border-gray-100">
+              <span className="text-[13px] text-secondary font-semibold uppercase tracking-wide">Revenue</span>
+              <span className="text-[20px] font-bold text-primary tracking-tight">{formatCurrency(totalRevenue)}</span>
             </div>
-            <div className="text-center">
-              <p className="text-[13px] font-bold text-primary tracking-tight leading-tight whitespace-nowrap">{lastActivityDate || '—'}</p>
-              <p className="text-[11px] text-tertiary font-semibold uppercase tracking-wider mt-2">Last Job</p>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-[13px] text-secondary font-semibold uppercase tracking-wide">Last Job</span>
+              <span className="text-[15px] font-bold text-primary tracking-tight">{lastActivityDate || '—'}</span>
             </div>
           </div>
         </div>
