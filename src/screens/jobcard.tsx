@@ -157,8 +157,8 @@ export const JobCard: React.FC<JobCardProps> = ({
       </div>
 
       {/* Smart Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-border z-50 pb-safe">
-         <div className="max-w-lg mx-auto">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-5 bg-white/90 backdrop-blur-xl border-t border-border z-50 pb-safe">
+         <div>
            {getSmartAction()}
          </div>
       </div>

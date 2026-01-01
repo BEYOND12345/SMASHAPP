@@ -585,7 +585,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       </div>
 
       {state === 'error' && (
-        <div className="fixed bottom-32 left-0 right-0 flex justify-center px-6">
+        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 w-full max-w-[390px] flex justify-center px-6">
           <button
             onClick={resetAndRetry}
             className="bg-brand hover:bg-brandDark text-white px-8 py-3 rounded-full font-semibold text-[15px] shadow-lg transition-all transform hover:scale-105"

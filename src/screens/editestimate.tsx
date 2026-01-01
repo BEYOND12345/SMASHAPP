@@ -217,8 +217,8 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
           </Card>
         </Section>
 
-        <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-border z-40 pb-safe">
-          <div className="max-w-lg mx-auto flex gap-3 justify-center">
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-5 bg-white/90 backdrop-blur-xl border-t border-border z-40 pb-safe">
+          <div className="flex gap-3 justify-center">
             <Button variant="secondary" className="flex-1" onClick={onBack}>
               Cancel
             </Button>
