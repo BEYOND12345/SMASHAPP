@@ -35,6 +35,8 @@ const StatusDot: React.FC<{ status: 'draft' | 'sent' | 'paid' | 'overdue' }> = (
   );
 };
 
+type InvoiceStatusFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
+
 export const InvoicesList: React.FC<InvoicesListProps> = ({
   invoices,
   onNewEstimate,
@@ -44,9 +46,16 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
   onProfileClick
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>('all');
 
   let filteredInvoices = invoices;
 
+  // Apply status filter
+  if (statusFilter !== 'all') {
+    filteredInvoices = filteredInvoices.filter(inv => inv.status === statusFilter);
+  }
+
+  // Apply search filter
   if (searchTerm.trim()) {
     const search = searchTerm.toLowerCase();
     filteredInvoices = filteredInvoices.filter(inv =>
@@ -56,6 +65,11 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
       (inv.clientAddress && inv.clientAddress.toLowerCase().includes(search))
     );
   }
+
+  const getFilterCount = (status: InvoiceStatusFilter): number => {
+    if (status === 'all') return invoices.length;
+    return invoices.filter(inv => inv.status === status).length;
+  };
 
   return (
     <Layout
@@ -85,6 +99,41 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
           />
+        </div>
+      </div>
+
+      <div className="px-5 mt-4 -mb-1 overflow-x-auto hide-scrollbar">
+        <div className="flex gap-2 pb-1">
+          {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceStatusFilter[]).map((status) => {
+            const count = getFilterCount(status);
+            const isActive = statusFilter === status;
+            const labels = {
+              all: 'All',
+              draft: 'Draft',
+              sent: 'Sent',
+              paid: 'Paid',
+              overdue: 'Overdue'
+            };
+
+            return (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`
+                  flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap transition-all
+                  ${isActive
+                    ? 'bg-accent text-white shadow-md'
+                    : 'bg-white text-secondary border border-gray-100 hover:border-gray-200'
+                  }
+                `}
+              >
+                {labels[status]}
+                <span className={`text-[11px] font-bold ${isActive ? 'text-white/80' : 'text-tertiary'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

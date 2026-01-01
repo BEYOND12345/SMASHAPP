@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Estimate, JobStatus } from '../types';
 import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
@@ -30,6 +30,8 @@ const StatusDot: React.FC<{ status: JobStatus }> = ({ status }) => {
   );
 }
 
+type EstimateStatusFilter = 'all' | JobStatus.DRAFT | JobStatus.SENT | JobStatus.APPROVED | JobStatus.PAID;
+
 export const EstimatesList: React.FC<EstimatesListProps> = ({
   estimates,
   onNewEstimate,
@@ -39,11 +41,22 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
   onProfileClick
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<EstimateStatusFilter>('all');
+
+  // Reset filter when switching tabs
+  useEffect(() => {
+    setStatusFilter('all');
+  }, [activeTab]);
 
   // Filter estimates based on active tab
   let filteredEstimates = activeTab === 'estimates'
     ? estimates.filter(est => est.status === JobStatus.DRAFT || est.status === JobStatus.SENT)
     : estimates.filter(est => est.status === JobStatus.APPROVED || est.status === JobStatus.PAID);
+
+  // Apply status filter
+  if (statusFilter !== 'all') {
+    filteredEstimates = filteredEstimates.filter(est => est.status === statusFilter);
+  }
 
   // Apply search filter
   if (searchTerm.trim()) {
@@ -54,6 +67,23 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
       (est.clientAddress && est.clientAddress.toLowerCase().includes(search))
     );
   }
+
+  const getFilterCount = (status: EstimateStatusFilter): number => {
+    const baseFiltered = activeTab === 'estimates'
+      ? estimates.filter(est => est.status === JobStatus.DRAFT || est.status === JobStatus.SENT)
+      : estimates.filter(est => est.status === JobStatus.APPROVED || est.status === JobStatus.PAID);
+
+    if (status === 'all') return baseFiltered.length;
+    return baseFiltered.filter(est => est.status === status).length;
+  };
+
+  const getAvailableFilters = (): EstimateStatusFilter[] => {
+    if (activeTab === 'estimates') {
+      return ['all', JobStatus.DRAFT, JobStatus.SENT];
+    } else {
+      return ['all', JobStatus.APPROVED, JobStatus.PAID];
+    }
+  };
 
   return (
     <Layout
@@ -83,6 +113,35 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
           />
+        </div>
+      </div>
+
+      <div className="px-5 mt-4 -mb-1 overflow-x-auto hide-scrollbar">
+        <div className="flex gap-2 pb-1">
+          {getAvailableFilters().map((status) => {
+            const count = getFilterCount(status);
+            const isActive = statusFilter === status;
+            const label = status === 'all' ? 'All' : status;
+
+            return (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`
+                  flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap transition-all
+                  ${isActive
+                    ? 'bg-accent text-white shadow-md'
+                    : 'bg-white text-secondary border border-gray-100 hover:border-gray-200'
+                  }
+                `}
+              >
+                {label}
+                <span className={`text-[11px] font-bold ${isActive ? 'text-white/80' : 'text-tertiary'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
