@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Estimate, JobStatus } from '../types';
 import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
-import { User, Search } from 'lucide-react';
+import { User, Search, Filter, Check } from 'lucide-react';
 import { calculateEstimateTotals, formatCurrency, getInitials } from '../lib/utils/calculations';
 
 interface EstimatesListProps {
@@ -42,10 +42,12 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<EstimateStatusFilter>('all');
+  const [showFilterModal, setShowFilterModal] = useState(false);
 
   // Reset filter when switching tabs
   useEffect(() => {
     setStatusFilter('all');
+    setShowFilterModal(false);
   }, [activeTab]);
 
   // Filter estimates based on active tab
@@ -104,44 +106,71 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
       />
 
       <div className="px-5 mt-4">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search by name, job, or address..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
-          />
-        </div>
-      </div>
+        <div className="flex gap-2 relative">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="Search by name, job, or address..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
+            />
+          </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterModal(!showFilterModal)}
+              className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${
+                statusFilter !== 'all'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'bg-white text-secondary border border-gray-100'
+              }`}
+            >
+              <Filter size={20} />
+            </button>
 
-      <div className="px-5 mt-4 -mb-1 overflow-x-auto hide-scrollbar">
-        <div className="flex gap-2 pb-1">
-          {getAvailableFilters().map((status) => {
-            const count = getFilterCount(status);
-            const isActive = statusFilter === status;
-            const label = status === 'all' ? 'All' : status;
+            {/* Filter Dropdown */}
+            {showFilterModal && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowFilterModal(false)}
+                />
+                <div className="absolute right-0 top-14 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                  {getAvailableFilters().map((status) => {
+                    const count = getFilterCount(status);
+                    const isActive = statusFilter === status;
+                    const label = status === 'all' ? 'All' : status;
 
-            return (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`
-                  flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap transition-all
-                  ${isActive
-                    ? 'bg-accent text-white shadow-md'
-                    : 'bg-white text-secondary border border-gray-100 hover:border-gray-200'
-                  }
-                `}
-              >
-                {label}
-                <span className={`text-[11px] font-bold ${isActive ? 'text-white/80' : 'text-tertiary'}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+                    return (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setStatusFilter(status);
+                          setShowFilterModal(false);
+                        }}
+                        className={`
+                          w-full flex items-center justify-between px-4 py-3 text-[14px] font-medium transition-all
+                          ${isActive
+                            ? 'bg-accent/10 text-accent'
+                            : 'text-secondary hover:bg-gray-50'
+                          }
+                        `}
+                      >
+                        <span>{label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[12px] font-bold ${isActive ? 'text-accent' : 'text-tertiary'}`}>
+                            {count}
+                          </span>
+                          {isActive && <Check size={16} className="text-accent" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
