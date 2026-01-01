@@ -1237,8 +1237,8 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
       </div>
 
       {/* Fixed Bottom Actions with Status Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 safe-area-bottom">
-        <div className="max-w-4xl mx-auto space-y-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 pb-safe">
+        <div className="max-w-lg mx-auto space-y-3">
           {/* Status Bar - SINGLE SOURCE OF TRUTH */}
           <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
             <div className="flex items-center gap-4">

@@ -418,8 +418,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         </Card>
       </div>
 
-      <div className="p-6 border-t border-border bg-white">
-        <div className="flex gap-3">
+      <div className="fixed bottom-0 left-0 right-0 p-6 border-t border-border bg-white pb-safe">
+        <div className="max-w-lg mx-auto flex gap-3">
           <Button variant="secondary" onClick={onBack} className="flex-1">
             Cancel
           </Button>

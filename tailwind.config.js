@@ -23,6 +23,9 @@ export default {
       fontFamily: {
         sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
+      padding: {
+        'safe': 'max(1.25rem, env(safe-area-inset-bottom))',
+      },
     },
   },
   plugins: [],

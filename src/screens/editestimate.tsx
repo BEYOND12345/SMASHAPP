@@ -217,13 +217,15 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
           </Card>
         </Section>
 
-        <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-border flex gap-3 justify-center max-w-[390px] mx-auto z-40">
-          <Button variant="secondary" className="flex-1" onClick={onBack}>
-            Cancel
-          </Button>
-          <Button variant="primary" className="flex-[2]" onClick={handleSave}>
-            Save Changes
-          </Button>
+        <div className="fixed bottom-0 left-0 right-0 p-5 bg-white/90 backdrop-blur-xl border-t border-border z-40 pb-safe">
+          <div className="max-w-lg mx-auto flex gap-3 justify-center">
+            <Button variant="secondary" className="flex-1" onClick={onBack}>
+              Cancel
+            </Button>
+            <Button variant="primary" className="flex-[2]" onClick={handleSave}>
+              Save Changes
+            </Button>
+          </div>
         </div>
       </div>
     </Layout>
