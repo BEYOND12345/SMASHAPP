@@ -190,17 +190,19 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
               className="bg-white rounded-[20px] p-5 shadow-card hover:scale-[0.99] transition-transform duration-200 cursor-pointer flex flex-col gap-3"
             >
               <div className="flex justify-between items-start">
-                <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-[12px] font-bold text-gray-900 tracking-tight">
+                <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
+                   <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-[12px] font-bold text-gray-900 tracking-tight flex-shrink-0">
                       {getInitials(inv.clientName)}
                    </div>
-                   <div>
-                      <h3 className="text-[15px] font-bold text-primary tracking-tight leading-none mb-1">{inv.jobTitle}</h3>
-                      <p className="text-[13px] text-secondary">{inv.clientName}</p>
+                   <div className="flex-1 min-w-0">
+                      <h3 className="text-[15px] font-bold text-primary tracking-tight leading-none mb-1 truncate">{inv.jobTitle}</h3>
+                      <p className="text-[13px] text-secondary truncate">{inv.clientName}</p>
                       <p className="text-[11px] text-tertiary mt-0.5">Invoice #{inv.invoiceNumber}</p>
                    </div>
                 </div>
-                <StatusDot status={inv.status} />
+                <div className="flex-shrink-0">
+                  <StatusDot status={inv.status} />
+                </div>
               </div>
 
               <div className="h-px bg-gray-50 w-full" />

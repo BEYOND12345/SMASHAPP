@@ -187,11 +187,13 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
                       className="bg-white rounded-[16px] p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer border border-gray-50"
                     >
                       <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 pr-3">
                           <h3 className="text-[15px] font-bold text-primary tracking-tight leading-tight mb-1 truncate">{quote.jobTitle}</h3>
                           <p className="text-[12px] text-tertiary font-medium">Quote</p>
                         </div>
-                        <StatusPill status={quote.status} />
+                        <div className="flex-shrink-0">
+                          <StatusPill status={quote.status} />
+                        </div>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-[13px] text-tertiary font-medium">{quote.date}</span>
@@ -208,11 +210,13 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
                       className="bg-white rounded-[16px] p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer border border-gray-50"
                     >
                       <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 pr-3">
                           <h3 className="text-[15px] font-bold text-primary tracking-tight leading-tight mb-1 truncate">{invoice.jobTitle}</h3>
                           <p className="text-[12px] text-tertiary font-medium">Invoice #{invoice.invoiceNumber}</p>
                         </div>
-                        <StatusPill status={invoice.status} />
+                        <div className="flex-shrink-0">
+                          <StatusPill status={invoice.status} />
+                        </div>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-[13px] text-tertiary font-medium">{invoice.date}</span>
