@@ -32,9 +32,9 @@ export const PublicQuoteView: React.FC<PublicQuoteViewProps> = ({ estimate, onAp
       <div className="px-6 flex flex-col gap-6 mt-2">
         <Card>
           <div className="flex flex-col gap-2 mb-5">
-            <h2 className="text-[24px] font-bold text-primary tracking-tighter leading-tight">{estimate.jobTitle}</h2>
-            <p className="text-[16px] font-medium text-secondary">{estimate.clientName}</p>
-            {estimate.clientAddress && <p className="text-[14px] text-tertiary">{estimate.clientAddress}</p>}
+            <h2 className="text-[24px] font-bold text-primary tracking-tighter leading-tight line-clamp-2">{estimate.jobTitle}</h2>
+            <p className="text-[16px] font-medium text-secondary truncate">{estimate.clientName}</p>
+            {estimate.clientAddress && <p className="text-[14px] text-tertiary line-clamp-2">{estimate.clientAddress}</p>}
           </div>
           <div className="flex items-center gap-2 px-4 py-2.5 bg-surface rounded-xl w-fit border border-border/50">
             <Calendar size={16} className="text-brand" />

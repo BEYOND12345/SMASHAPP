@@ -76,15 +76,17 @@ export const JobCard: React.FC<JobCardProps> = ({
       <div className="px-6 flex flex-col gap-8 pb-40">
         
         {/* Minimal Hero */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center w-full">
            <div className="w-20 h-20 rounded-full flex items-center justify-center shrink-0 text-[24px] font-bold tracking-tight mb-5 bg-white border border-border text-brand shadow-sm">
               {getInitials(estimate.clientName)}
            </div>
-           <h1 className="text-[28px] font-bold text-primary tracking-tighter text-center leading-tight mb-2">{estimate.jobTitle}</h1>
-           <div className="flex items-center gap-3">
-             <span className="text-secondary text-[15px] font-medium">{estimate.clientName}</span>
-             <span className="w-1 h-1 rounded-full bg-tertiary" />
-             <Pill status={estimate.status} />
+           <h1 className="text-[28px] font-bold text-primary tracking-tighter text-center leading-tight mb-2 w-full px-4 line-clamp-2">{estimate.jobTitle}</h1>
+           <div className="flex items-center gap-3 max-w-full px-4">
+             <span className="text-secondary text-[15px] font-medium truncate">{estimate.clientName}</span>
+             <span className="w-1 h-1 rounded-full bg-tertiary flex-shrink-0" />
+             <div className="flex-shrink-0">
+               <Pill status={estimate.status} />
+             </div>
            </div>
         </div>
 

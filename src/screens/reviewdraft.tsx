@@ -290,9 +290,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                     key={item.id}
                     className="pb-3 border-b border-border last:border-0 last:pb-0"
                   >
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="font-medium text-primary">{item.description}</span>
-                      <span className="font-semibold text-primary">
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                      <span className="font-semibold text-primary flex-shrink-0">
                         {formatCents(item.line_total_cents)}
                       </span>
                     </div>
@@ -325,9 +325,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                     key={item.id}
                     className="pb-3 border-b border-border last:border-0 last:pb-0"
                   >
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="font-medium text-primary">{item.description}</span>
-                      <span className="font-semibold text-primary">
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                      <span className="font-semibold text-primary flex-shrink-0">
                         {formatCents(item.line_total_cents)}
                       </span>
                     </div>
@@ -361,9 +361,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                     key={item.id}
                     className="pb-3 border-b border-border last:border-0 last:pb-0"
                   >
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="font-medium text-primary">{item.description}</span>
-                      <span className="font-semibold text-primary">
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                      <span className="font-semibold text-primary flex-shrink-0">
                         {formatCents(item.line_total_cents)}
                       </span>
                     </div>

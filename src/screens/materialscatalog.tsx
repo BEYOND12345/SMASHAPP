@@ -336,7 +336,7 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
                         <span className="text-tertiary">per {material.unit}</span>
                       </div>
                       {material.supplier_name && (
-                        <div className="text-[11px] text-tertiary mt-1">
+                        <div className="text-[11px] text-tertiary mt-1 truncate">
                           {material.supplier_name}
                         </div>
                       )}

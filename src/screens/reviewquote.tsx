@@ -1104,9 +1104,11 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
 
                 return (
                   <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex items-start justify-between mb-3">
-                      <p className="font-medium text-gray-900">{item.description}</p>
-                      {priceSourceBadge}
+                    <div className="flex items-start justify-between mb-3 gap-3">
+                      <p className="font-medium text-gray-900 flex-1 min-w-0 truncate">{item.description}</p>
+                      <div className="flex-shrink-0">
+                        {priceSourceBadge}
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
