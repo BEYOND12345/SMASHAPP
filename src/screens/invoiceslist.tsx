@@ -101,7 +101,7 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
       />
 
       <div className="px-5 mt-4">
-        <div className="flex gap-2">
+        <div className="flex gap-2 relative">
           <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
@@ -112,77 +112,68 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
               className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
             />
           </div>
-          <button
-            onClick={() => setShowFilterModal(true)}
-            className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${
-              statusFilter !== 'all'
-                ? 'bg-accent text-white shadow-md'
-                : 'bg-white text-secondary border border-gray-100'
-            }`}
-          >
-            <Filter size={20} />
-          </button>
-        </div>
-      </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterModal(!showFilterModal)}
+              className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${
+                statusFilter !== 'all'
+                  ? 'bg-accent text-white shadow-md'
+                  : 'bg-white text-secondary border border-gray-100'
+              }`}
+            >
+              <Filter size={20} />
+            </button>
 
-      {/* Filter Modal */}
-      {showFilterModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end" onClick={() => setShowFilterModal(false)}>
-          <div
-            className="bg-white w-full rounded-t-3xl p-6 animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-[20px] font-bold text-primary">Filter Invoices</h2>
-              <button
-                onClick={() => setShowFilterModal(false)}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
+            {/* Filter Dropdown */}
+            {showFilterModal && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowFilterModal(false)}
+                />
+                <div className="absolute right-0 top-14 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50">
+                  {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceStatusFilter[]).map((status) => {
+                    const count = getFilterCount(status);
+                    const isActive = statusFilter === status;
+                    const labels = {
+                      all: 'All Invoices',
+                      draft: 'Draft',
+                      sent: 'Sent',
+                      paid: 'Paid',
+                      overdue: 'Overdue'
+                    };
 
-            <div className="flex flex-col gap-2">
-              {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceStatusFilter[]).map((status) => {
-                const count = getFilterCount(status);
-                const isActive = statusFilter === status;
-                const labels = {
-                  all: 'All Invoices',
-                  draft: 'Draft',
-                  sent: 'Sent',
-                  paid: 'Paid',
-                  overdue: 'Overdue'
-                };
-
-                return (
-                  <button
-                    key={status}
-                    onClick={() => {
-                      setStatusFilter(status);
-                      setShowFilterModal(false);
-                    }}
-                    className={`
-                      flex items-center justify-between px-4 py-4 rounded-2xl text-[15px] font-semibold transition-all
-                      ${isActive
-                        ? 'bg-accent/10 text-accent border-2 border-accent'
-                        : 'bg-gray-50 text-secondary border-2 border-transparent hover:bg-gray-100'
-                      }
-                    `}
-                  >
-                    <span>{labels[status]}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[13px] font-bold ${isActive ? 'text-accent' : 'text-tertiary'}`}>
-                        {count}
-                      </span>
-                      {isActive && <Check size={20} className="text-accent" />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                    return (
+                      <button
+                        key={status}
+                        onClick={() => {
+                          setStatusFilter(status);
+                          setShowFilterModal(false);
+                        }}
+                        className={`
+                          w-full flex items-center justify-between px-4 py-3 text-[14px] font-medium transition-all
+                          ${isActive
+                            ? 'bg-accent/10 text-accent'
+                            : 'text-secondary hover:bg-gray-50'
+                          }
+                        `}
+                      >
+                        <span>{labels[status]}</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[12px] font-bold ${isActive ? 'text-accent' : 'text-tertiary'}`}>
+                            {count}
+                          </span>
+                          {isActive && <Check size={16} className="text-accent" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       <div className="px-5 flex flex-col gap-3 mt-4">
         {filteredInvoices.length === 0 ? (
