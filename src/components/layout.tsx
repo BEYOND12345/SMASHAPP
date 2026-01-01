@@ -7,14 +7,16 @@ interface LayoutProps {
   activeTab?: 'estimates' | 'invoices';
   onTabChange?: (tab: 'estimates' | 'invoices') => void;
   className?: string;
+  fab?: React.ReactNode;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ 
-  children, 
-  showNav = true, 
-  activeTab = 'estimates', 
+export const Layout: React.FC<LayoutProps> = ({
+  children,
+  showNav = true,
+  activeTab = 'estimates',
   onTabChange,
-  className = ''
+  className = '',
+  fab
 }) => {
   return (
     <div className="min-h-screen w-full flex justify-center bg-[#f1f5f9] font-sans text-primary">
@@ -22,10 +24,16 @@ export const Layout: React.FC<LayoutProps> = ({
         <main className={`flex-1 overflow-y-auto no-scrollbar ${className}`}>
           {children}
         </main>
-        
+
+        {fab && (
+          <div className="absolute bottom-[112px] right-6 z-40">
+            {fab}
+          </div>
+        )}
+
         {showNav && (
           <nav className="h-[96px] bg-white border-t border-gray-50 flex items-start pt-5 justify-center gap-20 shrink-0 z-50 absolute bottom-0 w-full left-0 rounded-t-[32px] shadow-[0_-5px_20px_rgba(0,0,0,0.02)]">
-            <button 
+            <button
               onClick={() => onTabChange?.('estimates')}
               className={`group flex flex-col items-center gap-1.5 w-16 transition-all duration-300 ${activeTab === 'estimates' ? 'text-primary' : 'text-tertiary hover:text-secondary'}`}
             >
@@ -34,7 +42,7 @@ export const Layout: React.FC<LayoutProps> = ({
               </div>
               <span className={`text-[10px] font-bold tracking-wide transition-colors ${activeTab === 'estimates' ? 'text-primary' : 'text-tertiary'}`}>Estimates</span>
             </button>
-            <button 
+            <button
               onClick={() => onTabChange?.('invoices')}
               className={`group flex flex-col items-center gap-1.5 w-16 transition-all duration-300 ${activeTab === 'invoices' ? 'text-primary' : 'text-tertiary hover:text-secondary'}`}
             >

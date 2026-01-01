@@ -56,7 +56,12 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
   }
 
   return (
-    <Layout activeTab={activeTab} onTabChange={onTabChange} className="bg-[#FAFAFA] relative pb-32">
+    <Layout
+      activeTab={activeTab}
+      onTabChange={onTabChange}
+      className="bg-[#FAFAFA] relative pb-32"
+      fab={<FAB onClick={onNewEstimate} />}
+    >
       <Header
         title="SMASH"
         right={
@@ -90,9 +95,9 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
            </div>
         ) : (
           filteredEstimates.map(est => (
-            <div 
-              key={est.id} 
-              onClick={() => onSelectEstimate(est.id)} 
+            <div
+              key={est.id}
+              onClick={() => onSelectEstimate(est.id)}
               className="bg-white rounded-[20px] p-5 shadow-card hover:scale-[0.99] transition-transform duration-200 cursor-pointer flex flex-col gap-3"
             >
               <div className="flex justify-between items-start">
@@ -109,7 +114,7 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
               </div>
 
               <div className="h-px bg-gray-50 w-full" />
-              
+
               <div className="flex justify-between items-center">
                 <span className="text-[12px] font-medium text-tertiary">{est.date}</span>
                 <span className="text-[15px] font-bold text-primary tracking-tight">{formatCurrency(calculateEstimateTotals(est).total)}</span>
@@ -118,8 +123,6 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
           ))
         )}
       </div>
-
-      <FAB onClick={onNewEstimate} />
     </Layout>
   );
 };

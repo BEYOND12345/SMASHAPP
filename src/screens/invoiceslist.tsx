@@ -58,7 +58,12 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
   }
 
   return (
-    <Layout activeTab={activeTab} onTabChange={onTabChange} className="bg-[#FAFAFA] relative pb-32">
+    <Layout
+      activeTab={activeTab}
+      onTabChange={onTabChange}
+      className="bg-[#FAFAFA] relative pb-32"
+      fab={<FAB onClick={onNewEstimate} />}
+    >
       <Header
         title="SMASH"
         right={
@@ -121,8 +126,6 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
           ))
         )}
       </div>
-
-      <FAB onClick={onNewEstimate} />
     </Layout>
   );
 };
