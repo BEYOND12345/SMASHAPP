@@ -18,7 +18,7 @@ const STATUS_MESSAGES = [
   'Understanding the job',
   'Matching materials',
   'Checking prices',
-  'Locking totals',
+  'Preparing job details',
 ];
 
 const SkeletonLine = ({ width = '100%' }: { width?: string }) => (
@@ -232,7 +232,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     <Layout showNav={false} className="bg-surface">
       <Header
         transparent
-        title="Draft Quote"
+        title="Review Job Details"
         left={
           <button
             onClick={onBack}
@@ -244,8 +244,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       />
 
       <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+        <div className="text-center py-2">
+          <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
+        </div>
         {isStillProcessing && (
-          <div className="text-center py-2">
+          <div className="text-center py-1">
             <p className="text-sm text-secondary font-medium">{statusMessage}</p>
           </div>
         )}
@@ -376,46 +379,46 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           )}
         </Card>
 
-        <Card>
-          <h3 className="font-semibold text-primary mb-3">Totals</h3>
+        <div className="pt-4 pb-2 border-t border-border/50">
+          <p className="text-xs text-tertiary mb-3 text-center">Estimated totals</p>
           {!hasLineItems ? (
-            <div className="space-y-2">
+            <div className="space-y-2 px-2">
               <div className="flex justify-between">
-                <span className="text-secondary text-sm">Subtotal:</span>
-                <span className="text-sm text-secondary">Calculating...</span>
+                <span className="text-tertiary text-xs">Subtotal:</span>
+                <span className="text-xs text-tertiary">Calculating...</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-secondary text-sm">Tax:</span>
-                <span className="text-sm text-secondary">Calculating...</span>
+                <span className="text-tertiary text-xs">Tax:</span>
+                <span className="text-xs text-tertiary">Calculating...</span>
               </div>
-              <div className="flex justify-between text-lg font-bold">
-                <span className="text-primary">Total:</span>
-                <span className="text-brand">Calculating...</span>
+              <div className="flex justify-between text-sm">
+                <span className="text-secondary">Total:</span>
+                <span className="text-secondary">Calculating...</span>
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-secondary">Subtotal:</span>
-                <span className="font-medium text-primary">
+            <div className="space-y-2 px-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-tertiary">Subtotal:</span>
+                <span className="text-secondary">
                   {formatCents(quote.subtotal_cents || 0)}
                 </span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-secondary">Tax:</span>
-                <span className="font-medium text-primary">
+              <div className="flex justify-between text-xs">
+                <span className="text-tertiary">Tax:</span>
+                <span className="text-secondary">
                   {formatCents(quote.tax_cents || 0)}
                 </span>
               </div>
-              <div className="flex justify-between text-lg font-bold">
-                <span className="text-primary">Total:</span>
-                <span className="text-brand">
+              <div className="flex justify-between text-sm font-medium">
+                <span className="text-secondary">Total:</span>
+                <span className="text-primary">
                   {formatCents(quote.grand_total_cents || 0)}
                 </span>
               </div>
             </div>
           )}
-        </Card>
+        </div>
       </div>
 
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-6 border-t border-border bg-white pb-safe">
@@ -428,7 +431,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             className="flex-1"
             disabled={!hasLineItems}
           >
-            {hasLineItems ? 'Continue to Edit' : 'Building quote...'}
+            {hasLineItems ? 'Confirm Job and Build Quote' : 'Preparing details...'}
           </Button>
         </div>
       </div>

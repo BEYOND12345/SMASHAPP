@@ -489,7 +489,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       case 'uploading': return 'Uploading...';
       case 'transcribing': return 'Transcribing audio...';
       case 'extracting': return 'Analyzing details...';
-      case 'success': return 'Quote ready!';
+      case 'success': return 'Job captured!';
       case 'error': return 'Error occurred';
     }
   };
@@ -500,8 +500,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       case 'recording': return 'Speak clearly about the job';
       case 'uploading': return 'Saving your recording...';
       case 'transcribing': return 'Converting speech to text...';
-      case 'extracting': return 'Extracting quote details...';
-      case 'success': return 'Creating your quote draft';
+      case 'extracting': return 'Extracting job details...';
+      case 'success': return 'Preparing job details';
       case 'error': return error || 'Something went wrong';
     }
   };
@@ -528,9 +528,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         {state === 'idle' && (
           <div className="flex flex-col items-center space-y-8 w-full max-w-md flex-1 justify-center">
             <div className="text-center space-y-3">
-              <h1 className="text-[28px] font-bold text-primary tracking-tight">Record a Quote</h1>
+              <h1 className="text-[28px] font-bold text-primary tracking-tight">Record Job Details</h1>
               <p className="text-[15px] text-secondary">
-                Speak naturally and we'll create your quote
+                Speak naturally. We will capture the job and build your quote next.
               </p>
             </div>
 
@@ -658,10 +658,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             </div>
             <div className="text-center space-y-2">
               <h2 className="text-[22px] font-bold text-green-600">
-                Quote Ready!
+                Job Captured!
               </h2>
               <p className="text-[14px] text-secondary">
-                Creating your quote draft
+                Preparing job details
               </p>
             </div>
           </div>

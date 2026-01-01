@@ -289,6 +289,11 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
 
         {/* Total Section */}
         <Section title="Total Quote">
+          {!isPublic && (
+            <div className="px-1 pb-2">
+              <p className="text-xs text-tertiary text-center">Totals locked</p>
+            </div>
+          )}
           <Card className="!p-0 border-2 border-surface shadow-none ring-1 ring-black/5 overflow-hidden">
             <div className="p-6 bg-white">
               <div className="flex flex-col gap-3">

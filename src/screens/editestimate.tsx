@@ -91,6 +91,10 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
         }
       />
 
+      <div className="px-6 pt-2 pb-1">
+        <p className="text-xs text-tertiary text-center">Prices and totals are finalised here. Nothing is sent until you choose to send.</p>
+      </div>
+
       <div className="flex flex-col gap-1 mt-2">
         <Section title="Job Details">
           <Card>
