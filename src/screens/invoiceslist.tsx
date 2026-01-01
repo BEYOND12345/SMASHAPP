@@ -113,7 +113,7 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
       </div>
 
       <div className="px-5 mt-4 -mb-1 overflow-x-auto hide-scrollbar">
-        <div className="flex gap-2 pb-1">
+        <div className="flex gap-1.5 pb-1">
           {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceStatusFilter[]).map((status) => {
             const count = getFilterCount(status);
             const isActive = statusFilter === status;
@@ -130,7 +130,7 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
                 key={status}
                 onClick={() => setStatusFilter(status)}
                 className={`
-                  flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap transition-all
+                  flex items-center gap-1.5 px-3 py-2 rounded-full text-[12px] font-semibold whitespace-nowrap transition-all
                   ${isActive
                     ? 'bg-accent text-white shadow-md'
                     : 'bg-white text-secondary border border-gray-100 hover:border-gray-200'
