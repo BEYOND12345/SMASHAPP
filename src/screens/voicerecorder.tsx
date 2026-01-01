@@ -455,7 +455,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const isProcessing = ['uploading', 'transcribing', 'extracting'].includes(state);
 
   return (
-    <Layout showNav={false} className="bg-surface flex flex-col items-center justify-between h-full pb-10">
+    <Layout showNav={false} className="bg-surface">
       <Header
         transparent
         left={
@@ -469,8 +469,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         }
       />
 
-      <div className="flex-1 flex flex-col items-center justify-center w-full px-6 gap-12">
-        <div className="h-40 flex items-center justify-center gap-1.5 w-full">
+      <div className="flex flex-col items-center px-6 pt-4 pb-8 space-y-8">
+        {/* Waveform Visualization */}
+        <div className="h-32 flex items-center justify-center gap-1.5 w-full max-w-[280px]">
           {bars.map((height, i) => (
             <div
               key={i}
@@ -489,8 +490,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           ))}
         </div>
 
+        {/* Status Text */}
         <div className="text-center space-y-2">
-          <h2 className={`text-[24px] font-bold tracking-tight transition-colors duration-300 ${
+          <h2 className={`text-[22px] font-bold tracking-tight transition-colors duration-300 ${
             state === 'recording' ? 'text-brand' :
             state === 'success' ? 'text-green-600' :
             state === 'error' ? 'text-red-600' :
@@ -498,89 +500,106 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           }`}>
             {getStatusText()}
           </h2>
-          <p className="text-[15px] font-medium text-secondary">
+          <p className="text-[14px] font-medium text-secondary">
             {getStatusDescription()}
           </p>
           {state === 'recording' && (
-            <p className="text-[18px] font-mono text-brand mt-4">
+            <p className="text-[16px] font-mono text-brand mt-3 font-semibold">
               {formatTime(recordingTime)}
             </p>
           )}
         </div>
 
-        {(state === 'idle' || state === 'recording') && (
-          <div className="bg-white border border-divider rounded-2xl p-6 max-w-md w-full shadow-sm">
-            <h3 className="text-[16px] font-semibold text-primary mb-3">What to say:</h3>
-            <ul className="space-y-2 text-[14px] text-secondary">
-              <li className="flex items-start gap-2">
-                <span className="text-brand mt-0.5">•</span>
-                <span>Describe the job and what needs to be done</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-brand mt-0.5">•</span>
-                <span>List materials needed and quantities</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-brand mt-0.5">•</span>
-                <span><strong>Include rough time</strong> like "2 hours" or "1 day"</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-brand mt-0.5">•</span>
-                <span>Mention any travel or special requirements</span>
-              </li>
-            </ul>
-          </div>
-        )}
-      </div>
-
-      <div className="mb-12 relative">
-        {state === 'recording' && (
-          <>
-            <div className="absolute inset-0 rounded-full bg-brand/20 animate-ping" />
-            <div className="absolute inset-0 rounded-full bg-brand/10 animate-[ping_1.5s_ease-in-out_infinite_0.5s]" />
-          </>
-        )}
-
+        {/* Compact Tips - Only show when idle */}
         {state === 'idle' && (
-          <button
-            onClick={startRecording}
-            className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float transition-all duration-300 transform bg-brand hover:bg-brandDark hover:scale-105"
-            aria-label="Start recording"
-          >
-            <Mic size={40} className="text-white drop-shadow-sm" strokeWidth={2.5} />
-          </button>
+          <div className="bg-white/80 backdrop-blur-sm border border-border rounded-2xl p-5 max-w-md w-full">
+            <p className="text-[13px] text-secondary leading-relaxed">
+              Describe the job, materials needed, quantities, and <strong className="text-primary">estimated time</strong> (e.g., "2 hours" or "1 day")
+            </p>
+          </div>
         )}
 
+        {/* Recording Tips - Show during recording */}
         {state === 'recording' && (
-          <button
-            onClick={stopRecording}
-            className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float transition-all duration-300 transform bg-brandDark scale-105"
-            aria-label="Stop recording"
-          >
-            <div className="w-8 h-8 bg-white rounded-sm" />
-          </button>
-        )}
-
-        {isProcessing && (
-          <div className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float bg-brand">
-            <Loader2 size={40} className="text-white animate-spin" strokeWidth={2.5} />
+          <div className="bg-brand/5 border border-brand/20 rounded-2xl p-4 max-w-md w-full">
+            <p className="text-[12px] text-secondary text-center">
+              Speak naturally and include all job details
+            </p>
           </div>
         )}
 
-        {state === 'success' && (
-          <div className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float bg-green-500">
-            <Check size={40} className="text-white" strokeWidth={2.5} />
-          </div>
-        )}
+        {/* Record Button */}
+        <div className="pt-8 relative">
+          {state === 'recording' && (
+            <>
+              <div className="absolute inset-0 rounded-full bg-brand/20 animate-ping" />
+              <div className="absolute inset-0 rounded-full bg-brand/10 animate-[ping_1.5s_ease-in-out_infinite_0.5s]" />
+            </>
+          )}
 
-        {state === 'error' && (
-          <button
-            onClick={resetAndRetry}
-            className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-float bg-red-500 hover:bg-red-600 transition-colors"
-            aria-label="Try again"
-          >
-            <AlertCircle size={40} className="text-white" strokeWidth={2.5} />
-          </button>
+          {state === 'idle' && (
+            <button
+              onClick={startRecording}
+              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-brand hover:bg-brandDark hover:scale-105"
+              aria-label="Start recording"
+            >
+              <Mic size={32} className="text-white drop-shadow-sm" strokeWidth={2.5} />
+            </button>
+          )}
+
+          {state === 'recording' && (
+            <button
+              onClick={stopRecording}
+              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-brandDark scale-105"
+              aria-label="Stop recording"
+            >
+              <div className="w-7 h-7 bg-white rounded-sm" />
+            </button>
+          )}
+
+          {isProcessing && (
+            <div className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-brand">
+              <Loader2 size={32} className="text-white animate-spin" strokeWidth={2.5} />
+            </div>
+          )}
+
+          {state === 'success' && (
+            <div className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-green-500">
+              <Check size={32} className="text-white" strokeWidth={2.5} />
+            </div>
+          )}
+
+          {state === 'error' && (
+            <button
+              onClick={resetAndRetry}
+              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-red-500 hover:bg-red-600 transition-colors"
+              aria-label="Try again"
+            >
+              <AlertCircle size={32} className="text-white" strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
+
+        {/* Expanded Tips - Below button when idle */}
+        {state === 'idle' && (
+          <div className="space-y-2 max-w-md w-full pt-4">
+            <div className="flex items-start gap-3 text-[13px]">
+              <span className="text-brand text-[10px] mt-1">●</span>
+              <span className="text-secondary">Job description and scope</span>
+            </div>
+            <div className="flex items-start gap-3 text-[13px]">
+              <span className="text-brand text-[10px] mt-1">●</span>
+              <span className="text-secondary">Materials and quantities</span>
+            </div>
+            <div className="flex items-start gap-3 text-[13px]">
+              <span className="text-brand text-[10px] mt-1">●</span>
+              <span className="text-secondary">Estimated time for completion</span>
+            </div>
+            <div className="flex items-start gap-3 text-[13px]">
+              <span className="text-brand text-[10px] mt-1">●</span>
+              <span className="text-secondary">Any special requirements</span>
+            </div>
+          </div>
         )}
       </div>
 
