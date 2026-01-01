@@ -187,7 +187,23 @@ const App: React.FC = () => {
         return;
       }
 
-      const invoices: Invoice[] = invoicesData.map((invoiceData: any) => ({
+      const invoices: Invoice[] = invoicesData.map((invoiceData: any) => {
+        // Calculate if invoice is overdue
+        const dbStatus = invoiceData.status as 'draft' | 'issued' | 'sent' | 'paid' | 'overdue';
+        let displayStatus = dbStatus;
+
+        // If invoice is issued/sent and has a past due date, mark as overdue
+        if ((dbStatus === 'issued' || dbStatus === 'sent') && invoiceData.due_date) {
+          const dueDate = new Date(invoiceData.due_date);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          if (dueDate < today) {
+            displayStatus = 'overdue';
+          }
+        }
+
+        return {
         id: invoiceData.id,
         invoiceNumber: invoiceData.invoice_number || invoiceData.id.substring(0, 8),
         jobTitle: invoiceData.quote?.title || 'Invoice',
@@ -195,7 +211,7 @@ const App: React.FC = () => {
         clientAddress: '',
         clientEmail: invoiceData.quote?.customer?.email || '',
         clientPhone: invoiceData.quote?.customer?.phone || '',
-        status: invoiceData.status as 'draft' | 'issued' | 'sent' | 'paid' | 'overdue',
+        status: displayStatus,
         date: new Date(invoiceData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
         dueDate: invoiceData.due_date ? new Date(invoiceData.due_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : undefined,
         materials: invoiceData.line_items
@@ -216,7 +232,8 @@ const App: React.FC = () => {
         },
         gstRate: invoiceData.default_tax_rate || 0.10,
         quoteId: invoiceData.source_quote_id || undefined,
-      }));
+        };
+      });
 
       console.log('[App] Converted invoices:', invoices.length);
 
