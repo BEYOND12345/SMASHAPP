@@ -616,7 +616,15 @@ const App: React.FC = () => {
     const estimateId = state.selectedEstimateId;
     if (!estimateId) return;
 
-    // Update database
+    // Optimistic UI update - update local state immediately
+    setState(prev => ({
+      ...prev,
+      estimates: prev.estimates.map(e =>
+        e.id === estimateId ? { ...e, status: newStatus } : e
+      )
+    }));
+
+    // Update database in background
     try {
       // Map frontend status to database status
       let dbStatus = newStatus.toLowerCase();
@@ -634,12 +642,19 @@ const App: React.FC = () => {
       if (fetchError) {
         console.error('[App] Failed to fetch quote:', fetchError);
         alert(`Failed to fetch quote: ${fetchError.message}`);
+        // Revert optimistic update on error
+        if (state.user?.id) {
+          await loadQuotesFromDatabase(state.user.id);
+        }
         return;
       }
 
       if (!quoteData) {
         console.error('[App] Quote not found');
         alert('Quote not found. Please try again.');
+        if (state.user?.id) {
+          await loadQuotesFromDatabase(state.user.id);
+        }
         return;
       }
 
@@ -669,6 +684,9 @@ const App: React.FC = () => {
         if (sendError) {
           console.error('[App] Failed to mark quote as sent:', sendError);
           alert(`Failed to prepare quote: ${sendError.message}`);
+          if (state.user?.id) {
+            await loadQuotesFromDatabase(state.user.id);
+          }
           return;
         }
       }
@@ -699,6 +717,10 @@ const App: React.FC = () => {
       if (error) {
         console.error('[App] Failed to update quote status:', error);
         alert(`Failed to update status: ${error.message}`);
+        // Revert optimistic update on error
+        if (state.user?.id) {
+          await loadQuotesFromDatabase(state.user.id);
+        }
         return;
       }
 
@@ -724,12 +746,11 @@ const App: React.FC = () => {
             const errorMsg = invoiceError.message || 'Unknown error';
             alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${errorMsg}\n\nThe invoice can be created later from the job card.`);
 
-            // Reload estimates from database to ensure sync
+            // Only reload on error
             if (state.user?.id) {
               await loadQuotesFromDatabase(state.user.id);
             }
 
-            // Update local state and stay on job card
             setState(prev => ({
               ...prev,
               currentScreen: 'JobCard'
@@ -738,12 +759,7 @@ const App: React.FC = () => {
           } else {
             console.log('[App] Invoice created successfully:', invoiceId);
 
-            // Reload estimates from database to ensure sync
-            if (state.user?.id) {
-              await loadQuotesFromDatabase(state.user.id);
-            }
-
-            // Success - update state and navigate to invoice
+            // Success - navigate to invoice (no reload needed, data already fresh)
             setState(prev => ({
               ...prev,
               currentScreen: 'InvoicePreview'
@@ -755,7 +771,7 @@ const App: React.FC = () => {
           const errorMsg = invoiceErr instanceof Error ? invoiceErr.message : 'Unknown error';
           alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${errorMsg}\n\nThe invoice can be created later from the job card.`);
 
-          // Reload estimates from database to ensure sync
+          // Only reload on error
           if (state.user?.id) {
             await loadQuotesFromDatabase(state.user.id);
           }
@@ -770,15 +786,14 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('[App] Error updating status:', err);
       alert('Failed to update status. Please try again.');
+      // Revert optimistic update on error
+      if (state.user?.id) {
+        await loadQuotesFromDatabase(state.user.id);
+      }
       return;
     }
 
-    // Reload estimates from database to ensure sync
-    if (state.user?.id) {
-      await loadQuotesFromDatabase(state.user.id);
-    }
-
-    // Update local state (for non-approved status changes)
+    // Update local state (for non-approved status changes) - no database reload needed
     setState(prev => ({
       ...prev,
       currentScreen: newStatus === JobStatus.APPROVED ? 'JobCard' : prev.currentScreen
@@ -885,10 +900,7 @@ const App: React.FC = () => {
 
       console.log('[App] Invoice created successfully:', invoiceId);
 
-      if (state.user?.id) {
-        await loadQuotesFromDatabase(state.user.id);
-      }
-
+      // Navigate without reload - data is fresh
       setState(prev => ({
         ...prev,
         currentScreen: 'SendEstimate',
@@ -1184,8 +1196,17 @@ const App: React.FC = () => {
             // Update status based on what we sent
             const newStatus = state.sendingType === 'invoice' ? JobStatus.PAID : JobStatus.SENT;
 
-            // Save to database
+            // Optimistic UI update
             if (state.selectedEstimateId) {
+              setState(prev => ({
+                ...prev,
+                estimates: prev.estimates.map(e =>
+                  e.id === state.selectedEstimateId ? { ...e, status: newStatus } : e
+                ),
+                currentScreen: 'JobCard'
+              }));
+
+              // Save to database in background
               const dbStatus = newStatus === JobStatus.SENT ? 'sent' : 'paid';
 
               const { error } = await supabase
@@ -1199,19 +1220,18 @@ const App: React.FC = () => {
               if (error) {
                 console.error('[App] Failed to update quote status:', error);
                 alert('Failed to mark as sent. Please try again.');
+                // Revert on error
+                if (state.user?.id) {
+                  await loadQuotesFromDatabase(state.user.id);
+                }
                 return;
               }
-
-              // Reload estimates from database to ensure sync
-              if (state.user?.id) {
-                await loadQuotesFromDatabase(state.user.id);
-              }
+            } else {
+              setState(prev => ({
+                ...prev,
+                currentScreen: 'JobCard'
+              }));
             }
-
-            setState(prev => ({
-              ...prev,
-              currentScreen: 'JobCard'
-            }));
           }}
         />;
 
