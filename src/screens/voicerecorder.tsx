@@ -22,6 +22,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const [error, setError] = useState<string>('');
   const [bars, setBars] = useState<number[]>(new Array(16).fill(10));
   const [recordingTime, setRecordingTime] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState<string>('');
+  const [interimTranscript, setInterimTranscript] = useState<string>('');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -31,6 +33,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const analyserRef = useRef<AnalyserNode | null>(null);
   const recordedMimeTypeRef = useRef<string>('audio/webm');
   const recordingStartTimeRef = useRef<number>(0);
+  const recognitionRef = useRef<any>(null);
+  const transcriptBoxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (state === 'recording') {
@@ -45,6 +49,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [state]);
+
+  useEffect(() => {
+    if (transcriptBoxRef.current && state === 'recording') {
+      transcriptBoxRef.current.scrollTop = transcriptBoxRef.current.scrollHeight;
+    }
+  }, [liveTranscript, interimTranscript, state]);
 
   useEffect(() => {
     if (state === 'recording' && analyserRef.current) {
@@ -126,8 +136,52 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         if (audioContextRef.current) {
           audioContextRef.current.close();
         }
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+        }
         await processRecording();
       };
+
+      setLiveTranscript('');
+      setInterimTranscript('');
+
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-AU';
+
+          recognition.onresult = (event: any) => {
+            let interim = '';
+            let final = '';
+
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const transcript = event.results[i][0].transcript;
+              if (event.results[i].isFinal) {
+                final += transcript + ' ';
+              } else {
+                interim += transcript;
+              }
+            }
+
+            if (final) {
+              setLiveTranscript(prev => prev + final);
+            }
+            setInterimTranscript(interim);
+          };
+
+          recognition.onerror = (event: any) => {
+            console.warn('[SPEECH_RECOGNITION] Error:', event.error);
+          };
+
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch (err) {
+          console.warn('[SPEECH_RECOGNITION] Failed to start:', err);
+        }
+      }
 
       recordingStartTimeRef.current = Date.now();
       mediaRecorder.start(1000);
@@ -469,150 +523,177 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         }
       />
 
-      <div className="flex flex-col items-center px-6 pt-4 pb-8 space-y-8">
-        {/* Waveform Visualization */}
-        <div className="h-32 flex items-center justify-center gap-1.5 w-full max-w-[280px]">
-          {bars.map((height, i) => (
-            <div
-              key={i}
-              className={`w-[6px] rounded-full transition-all duration-300 ease-in-out ${
-                state === 'recording' ? 'bg-brand' :
-                isProcessing ? 'bg-brand/40' :
-                state === 'success' ? 'bg-green-500' :
-                state === 'error' ? 'bg-red-500' :
-                'bg-tertiary/40'
-              }`}
-              style={{
-                height: `${height}%`,
-                transform: state === 'recording' ? 'scaleY(1)' : 'scaleY(0.5)'
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Status Text */}
-        <div className="text-center space-y-2">
-          <h2 className={`text-[22px] font-bold tracking-tight transition-colors duration-300 ${
-            state === 'recording' ? 'text-brand' :
-            state === 'success' ? 'text-green-600' :
-            state === 'error' ? 'text-red-600' :
-            'text-primary'
-          }`}>
-            {getStatusText()}
-          </h2>
-          <p className="text-[14px] font-medium text-secondary">
-            {getStatusDescription()}
-          </p>
-          {state === 'recording' && (
-            <p className="text-[16px] font-mono text-brand mt-3 font-semibold">
-              {formatTime(recordingTime)}
-            </p>
-          )}
-        </div>
-
-        {/* Compact Tips - Only show when idle */}
+      <div className="flex flex-col items-center px-6 pt-4 pb-8 min-h-[calc(100vh-80px)]">
+        {/* Idle State - Clear Hierarchy */}
         {state === 'idle' && (
-          <div className="bg-white/80 backdrop-blur-sm border border-border rounded-2xl p-5 max-w-md w-full">
-            <p className="text-[13px] text-secondary leading-relaxed">
-              Describe the job, materials needed, quantities, and <strong className="text-primary">estimated time</strong> (e.g., "2 hours" or "1 day")
-            </p>
-          </div>
-        )}
+          <div className="flex flex-col items-center space-y-8 w-full max-w-md flex-1 justify-center">
+            <div className="text-center space-y-3">
+              <h1 className="text-[28px] font-bold text-primary tracking-tight">Record a Quote</h1>
+              <p className="text-[15px] text-secondary">
+                Speak naturally and we'll create your quote
+              </p>
+            </div>
 
-        {/* Recording Tips - Show during recording */}
-        {state === 'recording' && (
-          <div className="bg-brand/5 border border-brand/20 rounded-2xl p-4 max-w-md w-full">
-            <p className="text-[12px] text-secondary text-center">
-              Speak naturally and include all job details
-            </p>
-          </div>
-        )}
+            <div className="bg-white border border-border rounded-2xl p-6 w-full space-y-4">
+              <p className="text-[14px] text-secondary leading-relaxed">
+                Include the following information:
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                  <span className="text-[14px] text-primary">Job description and scope</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                  <span className="text-[14px] text-primary">Materials and quantities</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                  <span className="text-[14px] text-primary">
+                    <strong>Estimated time</strong> (e.g., "2 hours" or "1 day")
+                  </span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                  <span className="text-[14px] text-primary">Any special requirements</span>
+                </div>
+              </div>
+            </div>
 
-        {/* Record Button */}
-        <div className="pt-8 relative">
-          {state === 'recording' && (
-            <>
-              <div className="absolute inset-0 rounded-full bg-brand/20 animate-ping" />
-              <div className="absolute inset-0 rounded-full bg-brand/10 animate-[ping_1.5s_ease-in-out_infinite_0.5s]" />
-            </>
-          )}
-
-          {state === 'idle' && (
             <button
               onClick={startRecording}
-              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-brand hover:bg-brandDark hover:scale-105"
+              className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 transform bg-brand hover:bg-brandDark hover:scale-105 active:scale-95"
               aria-label="Start recording"
             >
-              <Mic size={32} className="text-white drop-shadow-sm" strokeWidth={2.5} />
+              <Mic size={40} className="text-white drop-shadow-sm" strokeWidth={2.5} />
             </button>
-          )}
 
-          {state === 'recording' && (
+            <p className="text-[13px] text-tertiary">Tap to start recording</p>
+          </div>
+        )}
+
+        {/* Recording State - Live Feedback */}
+        {state === 'recording' && (
+          <div className="flex flex-col items-center w-full max-w-md flex-1 space-y-6">
+            <div className="flex items-center gap-3 pt-4">
+              <div className="relative flex items-center justify-center">
+                <div className="absolute w-3 h-3 rounded-full bg-red-500 animate-ping" />
+                <div className="w-3 h-3 rounded-full bg-red-500" />
+              </div>
+              <p className="text-[18px] font-semibold text-primary">Recording</p>
+              <p className="text-[18px] font-mono text-brand font-semibold">
+                {formatTime(recordingTime)}
+              </p>
+            </div>
+
+            <div className="h-24 flex items-center justify-center gap-1.5 w-full max-w-[280px]">
+              {bars.map((height, i) => (
+                <div
+                  key={i}
+                  className="w-[6px] rounded-full transition-all duration-150 ease-in-out bg-brand"
+                  style={{
+                    height: `${height}%`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {(liveTranscript || interimTranscript) ? (
+              <div className="flex-1 w-full bg-white border border-border rounded-2xl p-5 overflow-hidden flex flex-col">
+                <p className="text-[12px] font-semibold text-tertiary uppercase tracking-wide mb-3">
+                  Live Transcript
+                </p>
+                <div
+                  ref={transcriptBoxRef}
+                  className="flex-1 overflow-y-auto text-[15px] text-primary leading-relaxed"
+                >
+                  {liveTranscript}
+                  {interimTranscript && (
+                    <span className="text-secondary italic">{interimTranscript}</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 w-full bg-brand/5 border border-brand/20 rounded-2xl p-6 flex items-center justify-center">
+                <p className="text-[14px] text-secondary text-center">
+                  Start speaking to see your words appear here...
+                </p>
+              </div>
+            )}
+
             <button
               onClick={stopRecording}
-              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-brandDark scale-105"
+              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-red-500 hover:bg-red-600 active:scale-95"
               aria-label="Stop recording"
             >
               <div className="w-7 h-7 bg-white rounded-sm" />
             </button>
-          )}
 
-          {isProcessing && (
+            <p className="text-[13px] text-tertiary">Tap to stop recording</p>
+          </div>
+        )}
+
+        {/* Processing State */}
+        {isProcessing && (
+          <div className="flex flex-col items-center space-y-6 w-full max-w-md flex-1 justify-center">
             <div className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-brand">
-              <Loader2 size={32} className="text-white animate-spin" strokeWidth={2.5} />
+              <Loader2 size={36} className="text-white animate-spin" strokeWidth={2.5} />
             </div>
-          )}
+            <div className="text-center space-y-2">
+              <h2 className="text-[22px] font-bold text-primary">
+                {getStatusText()}
+              </h2>
+              <p className="text-[14px] text-secondary">
+                {getStatusDescription()}
+              </p>
+            </div>
+          </div>
+        )}
 
-          {state === 'success' && (
+        {/* Success State */}
+        {state === 'success' && (
+          <div className="flex flex-col items-center space-y-6 w-full max-w-md flex-1 justify-center">
             <div className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-green-500">
-              <Check size={32} className="text-white" strokeWidth={2.5} />
+              <Check size={36} className="text-white" strokeWidth={2.5} />
             </div>
-          )}
+            <div className="text-center space-y-2">
+              <h2 className="text-[22px] font-bold text-green-600">
+                Quote Ready!
+              </h2>
+              <p className="text-[14px] text-secondary">
+                Creating your quote draft
+              </p>
+            </div>
+          </div>
+        )}
 
-          {state === 'error' && (
+        {/* Error State */}
+        {state === 'error' && (
+          <div className="flex flex-col items-center space-y-6 w-full max-w-md flex-1 justify-center">
             <button
               onClick={resetAndRetry}
               className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-red-500 hover:bg-red-600 transition-colors"
               aria-label="Try again"
             >
-              <AlertCircle size={32} className="text-white" strokeWidth={2.5} />
+              <AlertCircle size={36} className="text-white" strokeWidth={2.5} />
             </button>
-          )}
-        </div>
-
-        {/* Expanded Tips - Below button when idle */}
-        {state === 'idle' && (
-          <div className="space-y-2 max-w-md w-full pt-4">
-            <div className="flex items-start gap-3 text-[13px]">
-              <span className="text-brand text-[10px] mt-1">●</span>
-              <span className="text-secondary">Job description and scope</span>
+            <div className="text-center space-y-2">
+              <h2 className="text-[22px] font-bold text-red-600">
+                Error Occurred
+              </h2>
+              <p className="text-[14px] text-secondary px-6">
+                {error || 'Something went wrong'}
+              </p>
             </div>
-            <div className="flex items-start gap-3 text-[13px]">
-              <span className="text-brand text-[10px] mt-1">●</span>
-              <span className="text-secondary">Materials and quantities</span>
-            </div>
-            <div className="flex items-start gap-3 text-[13px]">
-              <span className="text-brand text-[10px] mt-1">●</span>
-              <span className="text-secondary">Estimated time for completion</span>
-            </div>
-            <div className="flex items-start gap-3 text-[13px]">
-              <span className="text-brand text-[10px] mt-1">●</span>
-              <span className="text-secondary">Any special requirements</span>
-            </div>
+            <button
+              onClick={resetAndRetry}
+              className="bg-brand hover:bg-brandDark text-white px-8 py-3 rounded-full font-semibold text-[15px] shadow-lg transition-all transform hover:scale-105 active:scale-95"
+            >
+              Try Again
+            </button>
           </div>
         )}
       </div>
-
-      {state === 'error' && (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 w-full max-w-[390px] flex justify-center px-6">
-          <button
-            onClick={resetAndRetry}
-            className="bg-brand hover:bg-brandDark text-white px-8 py-3 rounded-full font-semibold text-[15px] shadow-lg transition-all transform hover:scale-105"
-          >
-            Try Again
-          </button>
-        </div>
-      )}
     </Layout>
   );
 };
