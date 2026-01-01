@@ -14,17 +14,10 @@ interface EstimatesListProps {
   onProfileClick?: () => void;
 }
 
-// Simplified status indicator (just a dot)
+// Minimal status indicator
 const StatusDot: React.FC<{ status: JobStatus }> = ({ status }) => {
-  const colors = {
-    [JobStatus.DRAFT]: "bg-gray-300",
-    [JobStatus.SENT]: "bg-gray-400",
-    [JobStatus.APPROVED]: "bg-accent",
-    [JobStatus.PAID]: "bg-accent",
-  };
   return (
-    <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-full">
-      <div className={`w-1.5 h-1.5 rounded-full ${colors[status]}`} />
+    <div className="bg-gray-50 px-2 py-1 rounded-full">
       <span className="text-[11px] font-semibold text-secondary">{status}</span>
     </div>
   );

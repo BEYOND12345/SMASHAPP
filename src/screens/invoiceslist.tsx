@@ -15,13 +15,6 @@ interface InvoicesListProps {
 }
 
 const StatusDot: React.FC<{ status: 'draft' | 'issued' | 'sent' | 'paid' | 'overdue' }> = ({ status }) => {
-  const colors = {
-    draft: "bg-gray-300",
-    issued: "bg-blue-400",
-    sent: "bg-gray-400",
-    paid: "bg-accent",
-    overdue: "bg-red-500"
-  };
   const labels = {
     draft: "Draft",
     issued: "Issued",
@@ -30,8 +23,7 @@ const StatusDot: React.FC<{ status: 'draft' | 'issued' | 'sent' | 'paid' | 'over
     overdue: "Overdue"
   };
   return (
-    <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-full">
-      <div className={`w-1.5 h-1.5 rounded-full ${colors[status]}`} />
+    <div className="bg-gray-50 px-2 py-1 rounded-full">
       <span className="text-[11px] font-semibold text-secondary">{labels[status]}</span>
     </div>
   );
