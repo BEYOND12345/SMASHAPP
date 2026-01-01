@@ -393,7 +393,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               <span>Copy Link</span>
             </div>
             <div className="flex gap-2">
-              <div className="bg-surface border-none ring-1 ring-gray-100 rounded-2xl px-4 py-4 text-sm text-secondary truncate flex-1 font-medium">
+              <div className="bg-surface border-none ring-1 ring-gray-100 rounded-2xl px-4 py-4 text-sm text-secondary flex-1 min-w-0 truncate font-medium">
                 {loading ? 'Loading share link...' : shareUrl || 'No link available'}
               </div>
               <Button
