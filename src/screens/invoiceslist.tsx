@@ -14,15 +14,17 @@ interface InvoicesListProps {
   onProfileClick?: () => void;
 }
 
-const StatusDot: React.FC<{ status: 'draft' | 'sent' | 'paid' | 'overdue' }> = ({ status }) => {
+const StatusDot: React.FC<{ status: 'draft' | 'issued' | 'sent' | 'paid' | 'overdue' }> = ({ status }) => {
   const colors = {
     draft: "bg-gray-300",
+    issued: "bg-blue-400",
     sent: "bg-gray-400",
     paid: "bg-accent",
-    overdue: "bg-red-500",
+    overdue: "bg-red-500"
   };
   const labels = {
     draft: "Draft",
+    issued: "Issued",
     sent: "Sent",
     paid: "Paid",
     overdue: "Overdue"
@@ -52,7 +54,11 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
 
   // Apply status filter
   if (statusFilter !== 'all') {
-    filteredInvoices = filteredInvoices.filter(inv => inv.status === statusFilter);
+    filteredInvoices = filteredInvoices.filter(inv => {
+      // Map 'issued' to 'sent' for filtering purposes
+      const mappedStatus = inv.status === 'issued' ? 'sent' : inv.status;
+      return mappedStatus === statusFilter;
+    });
   }
 
   // Apply search filter
@@ -68,7 +74,11 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
 
   const getFilterCount = (status: InvoiceStatusFilter): number => {
     if (status === 'all') return invoices.length;
-    return invoices.filter(inv => inv.status === status).length;
+    return invoices.filter(inv => {
+      // Map 'issued' to 'sent' for counting purposes
+      const mappedStatus = inv.status === 'issued' ? 'sent' : inv.status;
+      return mappedStatus === status;
+    }).length;
   };
 
   return (

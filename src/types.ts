@@ -64,7 +64,7 @@ export interface Invoice {
   clientAddress?: string;
   clientEmail?: string;
   clientPhone?: string;
-  status: 'draft' | 'sent' | 'paid' | 'overdue';
+  status: 'draft' | 'issued' | 'sent' | 'paid' | 'overdue';
   date: string;
   dueDate?: string;
   materials: MaterialItem[];

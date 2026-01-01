@@ -195,7 +195,7 @@ const App: React.FC = () => {
         clientAddress: '',
         clientEmail: invoiceData.quote?.customer?.email || '',
         clientPhone: invoiceData.quote?.customer?.phone || '',
-        status: invoiceData.status as 'draft' | 'sent' | 'paid' | 'overdue',
+        status: invoiceData.status as 'draft' | 'issued' | 'sent' | 'paid' | 'overdue',
         date: new Date(invoiceData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
         dueDate: invoiceData.due_date ? new Date(invoiceData.due_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : undefined,
         materials: invoiceData.line_items
