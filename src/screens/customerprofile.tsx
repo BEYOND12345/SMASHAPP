@@ -116,21 +116,21 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
       <div className="px-6 flex flex-col gap-6 pb-6">
 
         {/* Customer Header */}
-        <div className="flex flex-col items-center text-center pt-2">
+        <div className="flex flex-col items-center pt-2">
           <div className="w-24 h-24 rounded-full flex items-center justify-center shrink-0 text-[28px] font-bold tracking-tight mb-5 bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-200 text-gray-700 shadow-sm">
             {getInitials(customer.name)}
           </div>
-          <h1 className="text-[28px] font-bold text-primary tracking-tight leading-none mb-2 w-full px-4 truncate">{customer.name}</h1>
+          <h1 className="text-[28px] font-bold text-primary tracking-tight leading-none mb-2 w-full px-4 text-center line-clamp-2">{customer.name}</h1>
           {customer.company_name && (
-            <p className="text-[15px] text-secondary font-medium w-full px-4 truncate">{customer.company_name}</p>
+            <p className="text-[15px] text-secondary font-medium w-full px-4 text-center line-clamp-1">{customer.company_name}</p>
           )}
           {hasContactInfo && (
             <div className="flex flex-col items-center gap-1 mt-3 w-full px-4">
               {customer.email && (
-                <p className="text-[13px] text-tertiary truncate w-full">{customer.email}</p>
+                <p className="text-[13px] text-tertiary text-center line-clamp-1 w-full">{customer.email}</p>
               )}
               {customer.phone && (
-                <p className="text-[13px] text-tertiary">{customer.phone}</p>
+                <p className="text-[13px] text-tertiary text-center">{customer.phone}</p>
               )}
             </div>
           )}
