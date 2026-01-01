@@ -137,18 +137,18 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
         </div>
 
         {/* Stats */}
-        <div className="bg-white rounded-[20px] p-6 shadow-sm">
-          <div className="grid grid-cols-3 gap-6">
+        <div className="bg-white rounded-[20px] p-5 shadow-sm">
+          <div className="grid grid-cols-3 gap-4">
             <div className="text-center">
-              <p className="text-[32px] font-bold text-primary tracking-tight leading-none">{totalJobs}</p>
+              <p className="text-[28px] font-bold text-primary tracking-tight leading-none">{totalJobs}</p>
               <p className="text-[11px] text-tertiary font-semibold uppercase tracking-wider mt-2">Jobs</p>
             </div>
-            <div className="text-center border-x border-gray-100">
-              <p className="text-[20px] font-bold text-primary tracking-tight leading-none">{formatCurrency(totalRevenue)}</p>
+            <div className="text-center border-x border-gray-100 px-2">
+              <p className="text-[17px] font-bold text-primary tracking-tight leading-none break-all">{formatCurrency(totalRevenue)}</p>
               <p className="text-[11px] text-tertiary font-semibold uppercase tracking-wider mt-2">Revenue</p>
             </div>
             <div className="text-center">
-              <p className="text-[15px] font-bold text-primary tracking-tight leading-none">{lastActivityDate || '—'}</p>
+              <p className="text-[13px] font-bold text-primary tracking-tight leading-tight whitespace-nowrap">{lastActivityDate || '—'}</p>
               <p className="text-[11px] text-tertiary font-semibold uppercase tracking-wider mt-2">Last Job</p>
             </div>
           </div>
