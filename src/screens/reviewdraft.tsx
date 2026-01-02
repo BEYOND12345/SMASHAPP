@@ -470,6 +470,22 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         <div className="text-center py-2">
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
+
+        {hasLineItems && quote.line_items.some((item: any) => item.notes?.includes('Placeholder')) && (
+          <Card className="bg-amber-50 border-amber-200">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 w-1 h-full bg-amber-400 rounded-full"></div>
+              <div className="flex-1 py-1">
+                <p className="text-sm font-medium text-amber-900 mb-1">
+                  Incomplete extraction
+                </p>
+                <p className="text-xs text-amber-700">
+                  We could not confidently extract all details. Review the placeholder items below and update them with accurate information.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
         {processingTimeout && (
           <Card className="bg-yellow-50 border-yellow-200">
             <div className="text-center space-y-3">
@@ -594,22 +610,30 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             <div className="space-y-3">
               {quote.line_items
                 .filter((item: any) => item.item_type === 'labour')
-                .map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="pb-3 border-b border-border last:border-0 last:pb-0"
-                  >
-                    <div className="flex justify-between items-start mb-1 gap-3">
-                      <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
-                      <span className="font-semibold text-primary flex-shrink-0">
-                        {formatCents(item.line_total_cents)}
-                      </span>
+                .map((item: any) => {
+                  const isPlaceholder = item.notes?.includes('Placeholder');
+                  return (
+                    <div
+                      key={item.id}
+                      className={`pb-3 border-b border-border last:border-0 last:pb-0 ${isPlaceholder ? 'bg-amber-50 -mx-4 px-4 py-3 rounded' : ''}`}
+                    >
+                      <div className="flex justify-between items-start mb-1 gap-3">
+                        <span className={`font-medium flex-1 min-w-0 truncate ${isPlaceholder ? 'text-amber-900' : 'text-primary'}`}>
+                          {item.description}
+                        </span>
+                        <span className={`font-semibold flex-shrink-0 ${isPlaceholder ? 'text-amber-700' : 'text-primary'}`}>
+                          {formatCents(item.line_total_cents)}
+                        </span>
+                      </div>
+                      <div className={`text-sm ${isPlaceholder ? 'text-amber-600' : 'text-secondary'}`}>
+                        {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
+                      </div>
+                      {isPlaceholder && (
+                        <p className="mt-1 text-xs text-amber-700 font-medium">Needs estimation</p>
+                      )}
                     </div>
-                    <div className="text-sm text-secondary">
-                      {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               {quote.line_items.filter((item: any) => item.item_type === 'labour').length === 0 && (
                 <p className="text-sm text-tertiary">No labour items</p>
               )}
@@ -658,25 +682,32 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             <div className="space-y-3">
               {quote.line_items
                 .filter((item: any) => item.item_type === 'materials')
-                .map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="pb-3 border-b border-border last:border-0 last:pb-0"
-                  >
-                    <div className="flex justify-between items-start mb-1 gap-3">
-                      <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
-                      <span className="font-semibold text-primary flex-shrink-0">
-                        {formatCents(item.line_total_cents)}
-                      </span>
+                .map((item: any) => {
+                  const isPlaceholder = item.notes?.includes('Placeholder');
+                  return (
+                    <div
+                      key={item.id}
+                      className={`pb-3 border-b border-border last:border-0 last:pb-0 ${isPlaceholder ? 'bg-amber-50 -mx-4 px-4 py-3 rounded' : ''}`}
+                    >
+                      <div className="flex justify-between items-start mb-1 gap-3">
+                        <span className={`font-medium flex-1 min-w-0 truncate ${isPlaceholder ? 'text-amber-900' : 'text-primary'}`}>
+                          {item.description}
+                        </span>
+                        <span className={`font-semibold flex-shrink-0 ${isPlaceholder ? 'text-amber-700' : 'text-primary'}`}>
+                          {formatCents(item.line_total_cents)}
+                        </span>
+                      </div>
+                      <div className={`text-sm ${isPlaceholder ? 'text-amber-600' : 'text-secondary'}`}>
+                        {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
+                      </div>
+                      {isPlaceholder ? (
+                        <p className="mt-1 text-xs text-amber-700 font-medium">Needs pricing</p>
+                      ) : item.notes ? (
+                        <p className="mt-1 text-xs text-secondary italic">{item.notes}</p>
+                      ) : null}
                     </div>
-                    <div className="text-sm text-secondary">
-                      {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
-                    </div>
-                    {item.notes && (
-                      <p className="mt-1 text-xs text-secondary italic">{item.notes}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               {quote.line_items.filter((item: any) => item.item_type === 'materials').length === 0 && (
                 <p className="text-sm text-tertiary">No materials</p>
               )}
