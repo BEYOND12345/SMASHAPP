@@ -20,7 +20,7 @@ interface VoiceRecorderProps {
 type RecordingState = 'idle' | 'recording' | 'uploading' | 'transcribing' | 'extracting' | 'success' | 'error';
 
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSuccess, customerId: initialCustomerId, autoStart = false }) => {
-  const [state, setState] = useState<RecordingState>('idle');
+  const [state, setState] = useState<RecordingState>(autoStart ? 'recording' : 'idle');
   const [currentCustomerId, setCurrentCustomerId] = useState<string | undefined>(initialCustomerId);
   const [customerName, setCustomerName] = useState<string>('');
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
@@ -40,6 +40,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const recordingStartTimeRef = useRef<number>(0);
   const recognitionRef = useRef<any>(null);
   const transcriptBoxRef = useRef<HTMLDivElement>(null);
+  const hasStartedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (state === 'recording') {
@@ -84,11 +85,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   }, [currentCustomerId]);
 
   useEffect(() => {
-    if (autoStart && state === 'idle') {
-      const timer = setTimeout(() => {
-        startRecording();
-      }, 300);
-      return () => clearTimeout(timer);
+    if (autoStart && !hasStartedRef.current) {
+      hasStartedRef.current = true;
+      startRecording();
     }
   }, [autoStart]);
 
