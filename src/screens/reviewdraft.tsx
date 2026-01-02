@@ -6,6 +6,7 @@ import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { formatCents } from '../lib/utils/calculations';
 import { ProgressChecklist, ChecklistItem } from '../components/progresschecklist';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface ReviewDraftProps {
   quoteId: string;
@@ -46,6 +47,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   onContinue,
 }) => {
   const [quote, setQuote] = useState<any | null>(null);
+  const [intake, setIntake] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(true);
   const [statusMessage, setStatusMessage] = useState(STATUS_MESSAGES[0]);
@@ -60,12 +62,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklistFadingOut, setChecklistFadingOut] = useState(false);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const quoteChannelRef = useRef<RealtimeChannel | null>(null);
+  const intakeChannelRef = useRef<RealtimeChannel | null>(null);
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIndexRef = useRef(0);
   const traceIdRef = useRef<string>('');
   const mountTimeRef = useRef<number>(0);
-  const pollCountRef = useRef(0);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -79,21 +81,18 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
     console.warn(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} total_ms=${renderTime}`);
 
-    loadData();
-    startPolling();
+    loadInitialData();
+    setupRealtimeSubscriptions();
     startStatusRotation();
 
     return () => {
-      stopPolling();
+      cleanupSubscriptions();
       stopStatusRotation();
     };
   }, [quoteId, intakeId]);
 
-  const loadData = async () => {
+  const loadInitialData = async () => {
     try {
-      pollCountRef.current += 1;
-      const pollNum = pollCountRef.current;
-
       const quoteResult = await supabase
         .from('quotes')
         .select(`
@@ -122,84 +121,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         .eq('id', intakeId)
         .maybeSingle();
 
-      const extractionData = intakeResult.data?.extraction_json;
-      const hasLineItems = quoteResult.data.line_items && quoteResult.data.line_items.length > 0;
-
-      setChecklistItems((prev) => {
-        const updated = [...prev];
-
-        const jobItem = updated.find(i => i.id === 'job');
-        if (jobItem && (extractionData?.job?.location || extractionData?.job?.title)) {
-          jobItem.state = 'complete';
-        }
-
-        const materialsItem = updated.find(i => i.id === 'materials');
-        if (materialsItem && extractionData?.materials?.items && extractionData.materials.items.length > 0) {
-          materialsItem.state = 'complete';
-        }
-
-        const labourItem = updated.find(i => i.id === 'labour');
-        if (labourItem && extractionData?.time?.labour_entries && extractionData.time.labour_entries.length > 0) {
-          labourItem.state = 'complete';
-        }
-
-        const totalsItem = updated.find(i => i.id === 'totals');
-        if (totalsItem) {
-          if (totalsItem.state === 'waiting') {
-            totalsItem.state = 'in_progress';
-          }
-          if (hasLineItems && totalsItem.state === 'in_progress') {
-            totalsItem.state = 'complete';
-          }
-        }
-
-        return updated;
-      });
-
-      const allComplete = checklistItems.every(item => item.state === 'complete');
-      if (allComplete && !checklistFadingOut) {
-        setChecklistFadingOut(true);
-        setTimeout(() => {
-          setShowChecklist(false);
-        }, 500);
-      }
-
       setQuote(quoteResult.data);
+      setIntake(intakeResult.data);
+      updateChecklistFromData(quoteResult.data, intakeResult.data);
       setLoading(false);
-      const elapsedMs = Date.now() - mountTimeRef.current;
-
-      console.log(`[POLL] #${pollNum} elapsed_ms=${elapsedMs} has_items=${hasLineItems} items_count=${quoteResult.data.line_items?.length || 0}`);
-
-      if (hasLineItems) {
-        setIsProcessing(false);
-        stopPolling();
-        stopStatusRotation();
-        setStatusMessage('Quote ready');
-
-        if (!firstRenderWithItemsLogged) {
-          const now = Date.now();
-          const urlParams = new URLSearchParams(window.location.search);
-          const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
-          const totalTimeMs = recordStopTime > 0 ? now - recordStopTime : 0;
-
-          console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${quoteResult.data.line_items.length} total_ms=${totalTimeMs}`);
-          setFirstRenderWithItemsLogged(true);
-        }
-      } else if (pollNum >= 5) {
-        const { data: intakeData } = await supabase
-          .from('voice_intakes')
-          .select('status')
-          .eq('id', intakeId)
-          .maybeSingle();
-
-        if (intakeData?.status === 'quote_created') {
-          console.warn('[ReviewDraft] Quote created but has 0 line items - transcript had no work content');
-          setIsProcessing(false);
-          stopPolling();
-          stopStatusRotation();
-          setError('No work items were detected in your recording. Please try again and describe the job details, materials needed, and estimated hours.');
-        }
-      }
     } catch (err) {
       console.error('[ReviewDraft] Load error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -207,24 +132,126 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
   };
 
-  const startPolling = () => {
-    pollIntervalRef.current = setInterval(() => {
-      loadData();
-    }, 1000);
+  const updateChecklistFromData = (quoteData: any, intakeData: any) => {
+    const extractionData = intakeData?.extraction_json;
+    const hasLineItems = quoteData?.line_items && quoteData.line_items.length > 0;
 
-    setTimeout(() => {
-      if (pollIntervalRef.current) {
-        console.log('[ReviewDraft] Polling timeout after 60s');
-        stopPolling();
-        setError('Quote creation took too long. Please refresh or try again.');
+    setChecklistItems((prev) => {
+      const updated = [...prev];
+
+      const jobItem = updated.find(i => i.id === 'job');
+      if (jobItem && (extractionData?.job?.title || quoteData.title !== 'Processing job')) {
+        jobItem.state = 'complete';
       }
-    }, 60000);
+
+      const materialsItem = updated.find(i => i.id === 'materials');
+      if (materialsItem && extractionData?.materials?.items && extractionData.materials.items.length > 0) {
+        materialsItem.state = 'complete';
+      }
+
+      const labourItem = updated.find(i => i.id === 'labour');
+      if (labourItem && extractionData?.time?.labour_entries && extractionData.time.labour_entries.length > 0) {
+        labourItem.state = 'complete';
+      }
+
+      const totalsItem = updated.find(i => i.id === 'totals');
+      if (totalsItem) {
+        if (totalsItem.state === 'waiting' && (extractionData?.materials?.items || extractionData?.time?.labour_entries)) {
+          totalsItem.state = 'in_progress';
+        }
+        if (hasLineItems && totalsItem.state === 'in_progress') {
+          totalsItem.state = 'complete';
+        }
+      }
+
+      return updated;
+    });
+
+    if (hasLineItems) {
+      setIsProcessing(false);
+      stopStatusRotation();
+      setStatusMessage('Quote ready');
+
+      if (!firstRenderWithItemsLogged) {
+        const now = Date.now();
+        const urlParams = new URLSearchParams(window.location.search);
+        const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
+        const totalTimeMs = recordStopTime > 0 ? now - recordStopTime : 0;
+
+        console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${quoteData.line_items.length} total_ms=${totalTimeMs}`);
+        setFirstRenderWithItemsLogged(true);
+      }
+    }
   };
 
-  const stopPolling = () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
+  const setupRealtimeSubscriptions = () => {
+    quoteChannelRef.current = supabase
+      .channel(`quote:${quoteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'quotes',
+          filter: `id=eq.${quoteId}`
+        },
+        async (payload) => {
+          console.log('[REALTIME] Quote updated:', payload.new);
+
+          const { data: updatedQuote } = await supabase
+            .from('quotes')
+            .select(`
+              *,
+              customer:customers!customer_id(*),
+              line_items:quote_line_items(*)
+            `)
+            .eq('id', quoteId)
+            .maybeSingle();
+
+          if (updatedQuote) {
+            setQuote(updatedQuote);
+            updateChecklistFromData(updatedQuote, intake);
+          }
+        }
+      )
+      .subscribe();
+
+    intakeChannelRef.current = supabase
+      .channel(`intake:${intakeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'voice_intakes',
+          filter: `id=eq.${intakeId}`
+        },
+        async (payload) => {
+          console.log('[REALTIME] Intake updated:', payload.new);
+
+          const { data: updatedIntake } = await supabase
+            .from('voice_intakes')
+            .select('extraction_json, status')
+            .eq('id', intakeId)
+            .maybeSingle();
+
+          if (updatedIntake) {
+            setIntake(updatedIntake);
+            updateChecklistFromData(quote, updatedIntake);
+          }
+        }
+      )
+      .subscribe();
+  };
+
+  const cleanupSubscriptions = () => {
+    if (quoteChannelRef.current) {
+      supabase.removeChannel(quoteChannelRef.current);
+      quoteChannelRef.current = null;
+    }
+    if (intakeChannelRef.current) {
+      supabase.removeChannel(intakeChannelRef.current);
+      intakeChannelRef.current = null;
     }
   };
 
@@ -282,6 +309,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const customerName = quote?.customer?.name || null;
   const quoteTitle = quote?.title || 'Processing job';
   const isStillProcessing = isProcessing || quoteTitle === 'Processing job';
+  const extractionData = intake?.extraction_json;
+  const scopeOfWork = quote?.scope_of_work || [];
 
   return (
     <Layout showNav={false} className="bg-surface">
@@ -332,14 +361,58 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           </div>
         </Card>
 
+        {scopeOfWork.length > 0 && (
+          <Card>
+            <h3 className="font-semibold text-primary mb-3">Scope of Work</h3>
+            <ul className="space-y-2">
+              {scopeOfWork.map((item: string, idx: number) => (
+                <li key={idx} className="flex items-start gap-2 text-sm">
+                  <span className="text-brand mt-1">•</span>
+                  <span className="text-secondary flex-1">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
         <Card>
           <h3 className="font-semibold text-primary mb-3">Labour</h3>
-          {!hasLineItems ? (
+          {!hasLineItems && !extractionData?.time?.labour_entries ? (
             <div className="space-y-3">
               <SkeletonRow />
               <SkeletonRow />
             </div>
-          ) : (
+          ) : !hasLineItems && extractionData?.time?.labour_entries ? (
+            <div className="space-y-3">
+              {extractionData.time.labour_entries.map((entry: any, idx: number) => {
+                const hours = entry.hours?.value || entry.hours;
+                const days = entry.days?.value || entry.days;
+                const people = entry.people?.value || entry.people || 1;
+
+                let timeDescription = '';
+                if (hours) {
+                  timeDescription = `${hours * people} hours`;
+                } else if (days) {
+                  timeDescription = `${days * people} days`;
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    className="pb-3 border-b border-border last:border-0 last:pb-0"
+                  >
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className="font-medium text-primary flex-1 min-w-0">{entry.description}</span>
+                      <span className="text-sm text-tertiary flex-shrink-0 italic">Pricing...</span>
+                    </div>
+                    {timeDescription && (
+                      <div className="text-sm text-secondary">{timeDescription}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : hasLineItems ? (
             <div className="space-y-3">
               {quote.line_items
                 .filter((item: any) => item.item_type === 'labour')
@@ -363,18 +436,47 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                 <p className="text-sm text-tertiary">No labour items</p>
               )}
             </div>
+          ) : (
+            <p className="text-sm text-tertiary">No labour items</p>
           )}
         </Card>
 
         <Card>
           <h3 className="font-semibold text-primary mb-3">Materials</h3>
-          {!hasLineItems ? (
+          {!hasLineItems && !extractionData?.materials?.items ? (
             <div className="space-y-3">
               <SkeletonRow />
               <SkeletonRow />
               <SkeletonRow />
             </div>
-          ) : (
+          ) : !hasLineItems && extractionData?.materials?.items ? (
+            <div className="space-y-3">
+              {extractionData.materials.items.map((item: any, idx: number) => {
+                const quantity = item.quantity?.value || item.quantity;
+                const unit = item.unit?.value || item.unit;
+
+                return (
+                  <div
+                    key={idx}
+                    className="pb-3 border-b border-border last:border-0 last:pb-0"
+                  >
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className="font-medium text-primary flex-1 min-w-0">{item.description}</span>
+                      <span className="text-sm text-tertiary flex-shrink-0 italic">Pricing...</span>
+                    </div>
+                    {(quantity || unit) && (
+                      <div className="text-sm text-secondary">
+                        {quantity && `${quantity} `}{unit && unit}
+                      </div>
+                    )}
+                    {item.notes && (
+                      <p className="mt-1 text-xs text-secondary italic">{item.notes}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : hasLineItems ? (
             <div className="space-y-3">
               {quote.line_items
                 .filter((item: any) => item.item_type === 'materials')
@@ -401,6 +503,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                 <p className="text-sm text-tertiary">No materials</p>
               )}
             </div>
+          ) : (
+            <p className="text-sm text-tertiary">No materials</p>
           )}
         </Card>
 

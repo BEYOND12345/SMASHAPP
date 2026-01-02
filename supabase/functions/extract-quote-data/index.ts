@@ -783,6 +783,78 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to update intake: ${updateError.message}`);
     }
 
+    console.log("[PROGRESSIVE_UPDATE] Updating quote record with extracted data");
+
+    const { data: quoteData } = await supabase
+      .from("quotes")
+      .select("id, customer_id, org_id")
+      .eq("id", intake.created_quote_id)
+      .maybeSingle();
+
+    if (quoteData) {
+      let finalCustomerId = quoteData.customer_id;
+
+      if (!existingCustomer && extractedData.customer?.name) {
+        console.log("[PROGRESSIVE_UPDATE] Attempting to match/create customer from extracted name");
+
+        const { data: matchedCustomer } = await supabase
+          .from("customers")
+          .select("id, name")
+          .eq("org_id", quoteData.org_id)
+          .or(`name.ilike.%${extractedData.customer.name}%,email.eq.${extractedData.customer.email || ''}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (matchedCustomer) {
+          console.log("[PROGRESSIVE_UPDATE] Matched existing customer:", matchedCustomer.name);
+          finalCustomerId = matchedCustomer.id;
+        } else if (extractedData.customer.name) {
+          console.log("[PROGRESSIVE_UPDATE] Creating new customer:", extractedData.customer.name);
+          const { data: newCustomer, error: customerCreateError } = await supabase
+            .from("customers")
+            .insert({
+              org_id: quoteData.org_id,
+              name: extractedData.customer.name,
+              email: extractedData.customer.email || null,
+              phone: extractedData.customer.phone || null,
+            })
+            .select("id")
+            .single();
+
+          if (!customerCreateError && newCustomer) {
+            finalCustomerId = newCustomer.id;
+            console.log("[PROGRESSIVE_UPDATE] New customer created:", finalCustomerId);
+
+            await supabase
+              .from("voice_intakes")
+              .update({ customer_id: newCustomer.id })
+              .eq("id", intake_id);
+          }
+        }
+      }
+
+      const quoteUpdateData: any = {
+        title: extractedData.job?.title || "Processing job",
+        description: extractedData.job?.summary || "",
+        scope_of_work: extractedData.job?.scope_of_work || [],
+      };
+
+      if (finalCustomerId !== quoteData.customer_id) {
+        quoteUpdateData.customer_id = finalCustomerId;
+      }
+
+      const { error: quoteUpdateError } = await supabase
+        .from("quotes")
+        .update(quoteUpdateData)
+        .eq("id", intake.created_quote_id);
+
+      if (quoteUpdateError) {
+        console.error("[PROGRESSIVE_UPDATE] Failed to update quote:", quoteUpdateError);
+      } else {
+        console.log("[PROGRESSIVE_UPDATE] Quote updated successfully with extracted data");
+      }
+    }
+
     const totalDuration = Date.now() - startTime;
     console.log(`[PERF] trace_id=${trace_id || 'none'} step=extract_complete intake_id=${intake_id} ms=${totalDuration} status=${finalStatus}`);
 
