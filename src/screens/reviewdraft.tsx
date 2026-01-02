@@ -699,7 +699,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
               <div className="flex justify-between text-xs">
                 <span className="text-tertiary">Tax:</span>
                 <span className="text-secondary">
-                  {formatCents(quote.tax_cents || 0)}
+                  {formatCents(quote.tax_total_cents || 0)}
                 </span>
               </div>
               <div className="flex justify-between text-sm font-medium">
