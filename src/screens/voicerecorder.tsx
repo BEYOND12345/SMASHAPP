@@ -566,72 +566,87 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       />
 
       <div className="flex flex-col items-center px-6 pt-4 pb-8 min-h-[calc(100vh-80px)]">
-        {/* Customer Chip - Visible during idle and recording */}
-        {(state === 'idle' || state === 'recording') && (
-          <button
-            onClick={() => setShowCustomerPicker(true)}
-            className="mb-4 px-4 py-2 rounded-full bg-white border border-divider hover:border-brand transition-colors flex items-center gap-2"
-          >
-            <User size={16} className="text-secondary" />
-            <span className="text-[14px] text-primary">
-              {currentCustomerId && customerName ? customerName : 'No customer'}
-            </span>
-            <span className="text-[12px] text-tertiary">• Tap to change</span>
-          </button>
-        )}
-
-        {/* Idle State - Clear Hierarchy */}
+        {/* Idle State - Unified Design */}
         {state === 'idle' && (
-          <div className="flex flex-col items-center space-y-8 w-full max-w-md flex-1 justify-center">
-            <div className="text-center space-y-3">
-              <h1 className="text-[28px] font-bold text-primary tracking-tight">Record Job Details</h1>
-              <p className="text-[15px] text-secondary">
-                Speak naturally. We will capture the job and build your quote next.
-              </p>
-            </div>
-
-            <div className="bg-white border border-border rounded-2xl p-6 w-full space-y-4">
-              <p className="text-[14px] text-secondary leading-relaxed">
-                Include the following information:
-              </p>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
-                  <span className="text-[14px] text-primary">Job description and scope</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
-                  <span className="text-[14px] text-primary">Materials and quantities</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
-                  <span className="text-[14px] text-primary">
-                    <strong>Estimated time</strong> (e.g., "2 hours" or "1 day")
-                  </span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
-                  <span className="text-[14px] text-primary">Any special requirements</span>
-                </div>
-              </div>
-            </div>
-
+          <div className="flex flex-col items-center w-full max-w-md flex-1 justify-center space-y-6">
+            {/* Customer Selection - Integrated */}
             <button
-              onClick={startRecording}
-              className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 transform bg-brand hover:bg-brandDark hover:scale-105 active:scale-95"
-              aria-label="Start recording"
+              onClick={() => setShowCustomerPicker(true)}
+              className="px-4 py-2.5 rounded-full bg-white border border-divider hover:border-brand transition-colors flex items-center gap-2 shadow-sm"
             >
-              <Mic size={40} className="text-white drop-shadow-sm" strokeWidth={2.5} />
+              <User size={16} className="text-secondary" />
+              <span className="text-[14px] text-primary font-medium">
+                {currentCustomerId && customerName ? customerName : 'No customer'}
+              </span>
+              <span className="text-[12px] text-tertiary">• Tap to change</span>
             </button>
 
-            <p className="text-[13px] text-tertiary">Tap to start recording</p>
+            {/* Main Content Card */}
+            <div className="bg-white border border-border rounded-3xl p-8 w-full shadow-sm space-y-6">
+              <div className="text-center space-y-2">
+                <h1 className="text-[28px] font-bold text-primary tracking-tight">Record Job Details</h1>
+                <p className="text-[15px] text-secondary leading-relaxed">
+                  Speak naturally. We'll capture the job and build your quote next.
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <p className="text-[13px] font-semibold text-tertiary uppercase tracking-wide">
+                  Include the following:
+                </p>
+                <div className="space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                    <span className="text-[14px] text-primary">Job description and scope</span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                    <span className="text-[14px] text-primary">Materials and quantities</span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                    <span className="text-[14px] text-primary">
+                      Estimated time (e.g., "2 hours" or "1 day")
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand mt-2 flex-shrink-0" />
+                    <span className="text-[14px] text-primary">Any special requirements</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center pt-4">
+                <button
+                  onClick={startRecording}
+                  className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 transform bg-brand hover:bg-brandDark hover:scale-105 active:scale-95"
+                  aria-label="Start recording"
+                >
+                  <Mic size={40} className="text-white drop-shadow-sm" strokeWidth={2.5} />
+                </button>
+                <p className="text-[13px] text-tertiary mt-4">Tap to start recording</p>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Recording State - Live Feedback */}
         {state === 'recording' && (
-          <div className="flex flex-col items-center w-full max-w-md flex-1 space-y-6">
-            <div className="flex items-center gap-3 pt-4">
+          <div className="flex flex-col items-center w-full max-w-md flex-1 justify-center space-y-6">
+            {/* Customer Selection - Integrated */}
+            <button
+              onClick={() => setShowCustomerPicker(true)}
+              className="px-4 py-2.5 rounded-full bg-white border border-divider hover:border-brand transition-colors flex items-center gap-2 shadow-sm"
+            >
+              <User size={16} className="text-secondary" />
+              <span className="text-[14px] text-primary font-medium">
+                {currentCustomerId && customerName ? customerName : 'No customer'}
+              </span>
+              <span className="text-[12px] text-tertiary">• Tap to change</span>
+            </button>
+
+            {/* Recording Indicator */}
+            <div className="flex items-center gap-3">
               <div className="relative flex items-center justify-center">
                 <div className="absolute w-3 h-3 rounded-full bg-brand animate-ping" />
                 <div className="w-3 h-3 rounded-full bg-brand" />
