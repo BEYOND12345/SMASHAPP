@@ -192,7 +192,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       <Layout showNav={false} className="bg-surface">
         <Header
           transparent
-          title="Draft Quote"
+          title="Review Job Details"
           left={
             <button
               onClick={onBack}

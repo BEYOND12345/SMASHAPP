@@ -134,7 +134,7 @@ export const NewEstimate: React.FC<NewEstimateProps> = ({ onBack, onStartRecordi
             <ChevronLeft size={24} />
           </button>
         }
-        title="New Estimate"
+        title="Record Job"
       />
 
       <form onSubmit={handleSubmit} className="flex flex-col flex-1">
