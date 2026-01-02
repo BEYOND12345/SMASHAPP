@@ -604,7 +604,14 @@ const App: React.FC = () => {
   };
 
   // Actions
-  const handleNewEstimate = () => navigate('NewEstimate');
+  const handleNewEstimate = () => {
+    setState(prev => ({
+      ...prev,
+      voiceCustomerId: undefined,
+      autoStartRecording: false,
+      currentScreen: 'VoiceRecorder'
+    }));
+  };
 
   const handleQuickRecord = () => {
     setState(prev => ({
