@@ -633,8 +633,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           <div className="flex flex-col items-center w-full max-w-md flex-1 space-y-6">
             <div className="flex items-center gap-3 pt-4">
               <div className="relative flex items-center justify-center">
-                <div className="absolute w-3 h-3 rounded-full bg-red-500 animate-ping" />
-                <div className="w-3 h-3 rounded-full bg-red-500" />
+                <div className="absolute w-3 h-3 rounded-full bg-brand animate-ping" />
+                <div className="w-3 h-3 rounded-full bg-brand" />
               </div>
               <p className="text-[18px] font-semibold text-primary">Recording</p>
               <p className="text-[18px] font-mono text-brand font-semibold">
@@ -679,7 +679,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
             <button
               onClick={stopRecording}
-              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-red-500 hover:bg-red-600 active:scale-95"
+              className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 transform bg-brand hover:bg-brandDark active:scale-95"
               aria-label="Stop recording"
             >
               <div className="w-7 h-7 bg-white rounded-sm" />
