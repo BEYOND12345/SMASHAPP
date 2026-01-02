@@ -496,7 +496,33 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       }
 
       (async () => {
+        const updateStage = async (stage: string, error?: string) => {
+          try {
+            await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-intake-stage`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  intake_id: intakeId,
+                  stage,
+                  trace_id: traceId,
+                  last_error: error || null,
+                }),
+              }
+            );
+          } catch (e) {
+            console.error('[STAGE_UPDATE] Failed to update stage:', stage, e);
+          }
+        };
+
         try {
+          await updateStage('recorder_started');
+          console.log(`[VOICE_FLOW_DIAGNOSTIC] background_block_started intake_id=${intakeId} quote_id=${quoteId} trace_id=${traceId}`);
+
           // Upload audio and create intake record in background
           const uploadStartTime = Date.now();
           console.warn(`[BACKGROUND_PROCESSING] Starting upload for intake ${intakeId}`);
@@ -526,14 +552,19 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               audio_storage_path: storagePath,
               status: 'captured',
               created_quote_id: quoteId,
+              stage: 'recorder_started',
+              trace_id: traceId,
             });
 
           if (intakeError) {
             console.error('[BACKGROUND_PROCESSING] Failed to create intake', { error: intakeError });
+            await updateStage('failed', `Intake creation failed: ${intakeError.message}`);
             throw intakeError;
           }
 
           console.warn(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
+
+          await updateStage('transcribe_started');
 
           // Now start transcription
           const transcribeStartTime = Date.now();
@@ -553,10 +584,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               }
             );
           } catch (fetchError) {
-            console.error('[BACKGROUND_PROCESSING] Transcription network error:', fetchError);
+            const errorMsg = `Transcription network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
+            console.error('[BACKGROUND_PROCESSING]', errorMsg);
             console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
+            await updateStage('failed', errorMsg);
             return;
           }
+
+          console.log(`[VOICE_FLOW_DIAGNOSTIC] transcribe_returned status=${transcribeResponse.status} ok=${transcribeResponse.ok}`);
 
           if (!transcribeResponse.ok) {
             let errorText = 'No error body';
@@ -569,6 +604,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             console.error('  Status:', transcribeResponse.status);
             console.error('  Status Text:', transcribeResponse.statusText);
             console.error('  Error Body:', errorText);
+            await updateStage('failed', `Transcription failed: ${transcribeResponse.status} ${errorText}`);
             return;
           }
 
@@ -577,6 +613,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const transcribeTotalMs = Date.now() - recordStopTime;
           console.warn(`[PERF] trace_id=${traceId} step=transcription_complete intake_id=${intakeId} ms=${transcribeElapsed} total_ms=${transcribeTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Transcription result:', transcribeResult);
+
+          await updateStage('transcribe_done');
+          await updateStage('extract_started');
 
           const extractStartTime = Date.now();
 
@@ -595,10 +634,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               }
             );
           } catch (fetchError) {
-            console.error('[BACKGROUND_PROCESSING] Extraction network error:', fetchError);
+            const errorMsg = `Extraction network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
+            console.error('[BACKGROUND_PROCESSING]', errorMsg);
             console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
+            await updateStage('failed', errorMsg);
             return;
           }
+
+          console.log(`[VOICE_FLOW_DIAGNOSTIC] extract_returned status=${extractResponse.status} ok=${extractResponse.ok}`);
 
           if (!extractResponse.ok) {
             let errorText = 'No error body';
@@ -611,6 +654,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             console.error('  Status:', extractResponse.status);
             console.error('  Status Text:', extractResponse.statusText);
             console.error('  Error Body:', errorText);
+            await updateStage('failed', `Extraction failed: ${extractResponse.status} ${errorText}`);
             return;
           }
 
@@ -619,6 +663,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const extractTotalMs = Date.now() - recordStopTime;
           console.warn(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${extractElapsed} total_ms=${extractTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Extraction result:', extractResult);
+
+          await updateStage('extract_done');
+          await updateStage('draft_started');
 
           const createQuoteStartTime = Date.now();
 
@@ -637,10 +684,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               }
             );
           } catch (fetchError) {
-            console.error('[BACKGROUND_PROCESSING] Quote creation network error:', fetchError);
+            const errorMsg = `Quote creation network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
+            console.error('[BACKGROUND_PROCESSING]', errorMsg);
             console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
+            await updateStage('failed', errorMsg);
             return;
           }
+
+          console.log(`[VOICE_FLOW_DIAGNOSTIC] create_draft_returned status=${createResponse.status} ok=${createResponse.ok}`);
 
           if (!createResponse.ok) {
             let errorText = 'No error body';
@@ -655,6 +706,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             console.error('  Error Body:', errorText);
             console.error('  URL:', createResponse.url);
             console.error('  Headers:', Object.fromEntries(createResponse.headers.entries()));
+            await updateStage('failed', `Quote creation failed: ${createResponse.status} ${errorText}`);
             return;
           }
 
@@ -663,6 +715,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const createTotalMs = Date.now() - recordStopTime;
           console.warn(`[PERF] trace_id=${traceId} step=quote_creation_complete intake_id=${intakeId} quote_id=${quoteId} ms=${createElapsed} total_ms=${createTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Quote creation result:', createResult);
+
+          await updateStage('draft_done');
         } catch (err) {
           console.error('[BACKGROUND_PROCESSING] Exception:', err);
           console.error('[BACKGROUND_PROCESSING] Error details:', {
@@ -670,6 +724,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             message: err instanceof Error ? err.message : String(err),
             stack: err instanceof Error ? err.stack : undefined
           });
+          await updateStage('failed', `Exception: ${err instanceof Error ? err.message : String(err)}`);
         }
       })();
 

@@ -146,6 +146,7 @@ Deno.serve(async (req: Request) => {
             idempotent_replay: true,
             requires_review: intake.status === "needs_user_review",
             line_items_count: lineItemsCount || 0,
+            readable_items_count: lineItemsCount || 0,
             warnings: ["Quote already created from this voice intake"],
             pricing_used: pricingSnapshot,
           }),
@@ -550,7 +551,7 @@ Deno.serve(async (req: Request) => {
 
         if (quantity === null || quantity === undefined || isNaN(quantity)) {
           quantity = 1;
-          warnings.push(`Material \"${material.description}\" had no quantity, defaulted to 1`);
+          warnings.push(`Material "${material.description}" had no quantity, defaulted to 1`);
         }
 
         let unitPriceCents = 0;
@@ -599,7 +600,7 @@ Deno.serve(async (req: Request) => {
         } else if (material.needs_pricing) {
           unitPriceCents = 0;
           notes = `Needs pricing${notes ? ` - ${notes}` : ''}`;
-          warnings.push(`Material \"${material.description}\" needs pricing`);
+          warnings.push(`Material "${material.description}" needs pricing`);
         }
 
         if (catalogItemId && matchConfidence) {
@@ -722,7 +723,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // EMERGENCY PATCH: Always create at least one line item to prevent UI deadlock
     if (lineItems.length === 0) {
       console.log("[QUOTE_CREATE] EMERGENCY: No line items extracted, creating placeholders");
 
@@ -763,15 +763,47 @@ Deno.serve(async (req: Request) => {
     }
 
     if (lineItems.length > 0) {
-      const { error: lineItemsError } = await supabase
+      console.log(`[QUOTE_CREATE] Inserting ${lineItems.length} line items for quote ${quote.id}`);
+
+      const { data: insertedItems, error: lineItemsError } = await supabase
         .from("quote_line_items")
-        .insert(lineItems);
+        .insert(lineItems)
+        .select("id, org_id, quote_id");
 
       if (lineItemsError) {
+        console.error("[QUOTE_CREATE] Line items insert failed:", lineItemsError);
         throw new Error(`Failed to create line items: ${lineItemsError.message}`);
       }
+
+      console.log(`[QUOTE_CREATE] Insert returned ${insertedItems?.length || 0} items`);
+
+      const { count: readableCount, error: countError } = await supabase
+        .from("quote_line_items")
+        .select("*", { count: "exact", head: true })
+        .eq("quote_id", quote.id);
+
+      console.log(`[QUOTE_CREATE] Readable line items count: ${readableCount}, insert count: ${lineItems.length}`);
+
+      if (countError) {
+        console.error("[QUOTE_CREATE] POSTCONDITION_CHECK_FAILED:", countError);
+      } else if (readableCount === 0 && lineItems.length > 0) {
+        console.error("[QUOTE_CREATE] RLS_BLOCKING_READS: Inserted items but count is zero");
+        console.error("[QUOTE_CREATE] Diagnostic:", {
+          quote_id: quote.id,
+          quote_org_id: quote.org_id,
+          user_id: user.id,
+          attempted_inserts: lineItems.length,
+          readable_count: readableCount,
+        });
+      } else if (readableCount !== lineItems.length) {
+        console.warn("[QUOTE_CREATE] COUNT_MISMATCH:", {
+          inserted: lineItems.length,
+          readable: readableCount,
+        });
+      } else {
+        console.log("[QUOTE_CREATE] POSTCONDITION_PASSED: All items readable");
+      }
     } else {
-      // This should never happen now, but keep as safety net
       console.error("[QUOTE_CREATE] CRITICAL: Still no line items after placeholder creation");
       throw new Error("Failed to create any line items for quote");
     }
@@ -796,6 +828,11 @@ Deno.serve(async (req: Request) => {
     const totalDuration = Date.now() - startTime;
     console.log(`[PERF] trace_id=${trace_id || 'none'} step=create_draft_complete intake_id=${intake_id} quote_id=${quote.id} ms=${totalDuration} line_items_count=${lineItems.length}`);
 
+    const { count: finalCount } = await supabase
+      .from("quote_line_items")
+      .select("*", { count: "exact", head: true })
+      .eq("quote_id", quote.id);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -804,6 +841,8 @@ Deno.serve(async (req: Request) => {
         idempotent_replay: false,
         requires_review: needsReview,
         line_items_count: lineItems.length,
+        readable_items_count: finalCount || 0,
+        org_id: quote.org_id,
         warnings,
         pricing_used: {
           hourly_rate: `$${(profile.hourly_rate_cents / 100).toFixed(2)}`,
