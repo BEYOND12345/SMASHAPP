@@ -210,7 +210,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
           if (updatedQuote) {
             setQuote(updatedQuote);
-            updateChecklistFromData(updatedQuote, intake);
+            setIntake(currentIntake => {
+              updateChecklistFromData(updatedQuote, currentIntake);
+              return currentIntake;
+            });
           }
         }
       )
@@ -237,7 +240,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
           if (updatedIntake) {
             setIntake(updatedIntake);
-            updateChecklistFromData(quote, updatedIntake);
+            setQuote(currentQuote => {
+              updateChecklistFromData(currentQuote, updatedIntake);
+              return currentQuote;
+            });
           }
         }
       )
