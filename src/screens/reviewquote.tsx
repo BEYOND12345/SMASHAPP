@@ -704,7 +704,7 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading quote details...</p>
+          <p className="text-gray-600">Loading job details...</p>
         </div>
       </div>
     );
@@ -747,8 +747,8 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h1 className="text-lg font-semibold text-gray-900">Review Quote Details</h1>
-              <p className="text-sm text-gray-600">Quick check before creating your quote</p>
+              <h1 className="text-lg font-semibold text-gray-900">Review Job Details</h1>
+              <p className="text-sm text-gray-600">Quick check - we\'ll build your quote next</p>
             </div>
           </div>
         </div>
@@ -773,8 +773,8 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
             <div className="flex-1">
               <h2 className="font-semibold text-gray-900 mb-2">
                 {getRemainingIssuesCount() === 0
-                  ? 'Please confirm the details below before we create your quote'
-                  : 'We need a quick check before creating your quote'}
+                  ? 'Please confirm the job details below - we\'ll build your quote next'
+                  : 'We need a quick check of the job details before building your quote'}
               </h2>
 
               {/* Confidence Bar */}
@@ -796,13 +796,13 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
                   />
                 </div>
                 <p className="text-xs text-gray-600 mt-1">
-                  {getConfidenceColor(overallConfidence) === 'green' && 'High confidence - details look clear and accurate'}
-                  {getConfidenceColor(overallConfidence) === 'amber' && 'Moderate confidence - please review the values below'}
+                  {getConfidenceColor(overallConfidence) === 'green' && 'High confidence - job details look clear and accurate'}
+                  {getConfidenceColor(overallConfidence) === 'amber' && 'Moderate confidence - please review the job details below'}
                   {getConfidenceColor(overallConfidence) === 'red' && (
                     <>
                       {getRemainingIssuesCount() === 0
-                        ? 'Low overall confidence but all fields are captured - please confirm to proceed'
-                        : 'Low confidence - some values may need adjustment'}
+                        ? 'Low overall confidence but all job details are captured - please confirm to proceed'
+                        : 'Low confidence - some job details may need adjustment'}
                     </>
                   )}
                 </p>
@@ -1280,7 +1280,7 @@ export function ReviewQuote({ intakeId, onBack, onConfirmed }: ReviewQuoteProps)
                 Processing...
               </>
             ) : (
-              getRemainingIssuesCount() === 0 ? 'Confirm & Create Quote' : 'Confirm & Continue'
+              getRemainingIssuesCount() === 0 ? 'Confirm Job and Build Quote' : 'Confirm & Continue'
             )}
           </Button>
           <div className="grid grid-cols-2 gap-3">
