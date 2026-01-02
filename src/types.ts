@@ -41,7 +41,6 @@ export type ScreenName =
   | 'Settings'
   | 'MaterialsCatalog'
   | 'EstimatesList'
-  | 'NewEstimate'
   | 'EditEstimate'
   | 'VoiceRecorder'
   | 'EditTranscript'

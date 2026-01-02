@@ -7,7 +7,6 @@ import { EstimatesList } from './screens/estimateslist';
 import { InvoicesList } from './screens/invoiceslist';
 import { CustomersList } from './screens/customerslist';
 import { CustomerProfile } from './screens/customerprofile';
-import { NewEstimate } from './screens/newestimate';
 import { EditEstimate } from './screens/editestimate';
 import { VoiceRecorder } from './screens/voicerecorder';
 import { EditTranscript } from './screens/edittranscript';
@@ -1187,12 +1186,6 @@ const App: React.FC = () => {
           />
         ) : null;
       
-      case 'NewEstimate':
-        return <NewEstimate
-          onBack={() => navigate('EstimatesList')}
-          onStartRecording={handleStartRecording}
-        />;
-
       case 'EditEstimate':
         return selectedEstimate ? (
           <EditEstimate
@@ -1215,7 +1208,7 @@ const App: React.FC = () => {
         return state.voiceIntakeId ? (
           <EditTranscript
             intakeId={state.voiceIntakeId}
-            onCancel={() => navigate('NewEstimate')}
+            onCancel={() => navigate('EstimatesList')}
             onContinue={handleTranscriptContinue}
           />
         ) : null;
@@ -1232,7 +1225,7 @@ const App: React.FC = () => {
         return state.voiceIntakeId ? (
           <ReviewQuote
             intakeId={state.voiceIntakeId}
-            onBack={() => navigate('NewEstimate')}
+            onBack={() => navigate('EstimatesList')}
             onConfirmed={handleReviewQuoteConfirmed}
           />
         ) : null;
