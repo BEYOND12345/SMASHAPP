@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
+const DRAFT_VERSION = "v2-2026-01-02-0815";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -141,6 +143,7 @@ Deno.serve(async (req: Request) => {
         return new Response(
           JSON.stringify({
             success: true,
+            draft_version: DRAFT_VERSION,
             quote_id: existingQuote.id,
             intake_id: intake.id,
             idempotent_replay: true,
@@ -925,6 +928,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: true,
+        draft_version: DRAFT_VERSION,
         quote_id: quote.id,
         intake_id,
         idempotent_replay: false,
