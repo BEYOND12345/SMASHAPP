@@ -12,6 +12,7 @@ interface EstimatesListProps {
   activeTab: 'estimates' | 'invoices';
   onTabChange: (tab: 'estimates' | 'invoices') => void;
   onProfileClick?: () => void;
+  onQuickRecord?: () => void;
 }
 
 // Minimal status indicator
@@ -31,7 +32,8 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
   onSelectEstimate,
   activeTab,
   onTabChange,
-  onProfileClick
+  onProfileClick,
+  onQuickRecord
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<EstimateStatusFilter>('all');
@@ -85,7 +87,7 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
       activeTab={activeTab}
       onTabChange={onTabChange}
       className="bg-[#FAFAFA] relative pb-32"
-      fab={<FAB onClick={onNewEstimate} />}
+      fab={<FAB onClick={onQuickRecord || onNewEstimate} />}
     >
       <Header
         title="SMASH"

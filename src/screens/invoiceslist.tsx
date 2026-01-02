@@ -12,6 +12,7 @@ interface InvoicesListProps {
   activeTab: 'estimates' | 'invoices';
   onTabChange: (tab: 'estimates' | 'invoices') => void;
   onProfileClick?: () => void;
+  onQuickRecord?: () => void;
 }
 
 const StatusDot: React.FC<{ status: 'draft' | 'issued' | 'sent' | 'paid' | 'overdue' }> = ({ status }) => {
@@ -37,7 +38,8 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
   onSelectInvoice,
   activeTab,
   onTabChange,
-  onProfileClick
+  onProfileClick,
+  onQuickRecord
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>('all');
@@ -79,7 +81,7 @@ export const InvoicesList: React.FC<InvoicesListProps> = ({
       activeTab={activeTab}
       onTabChange={onTabChange}
       className="bg-[#FAFAFA] relative pb-32"
-      fab={<FAB onClick={onNewEstimate} />}
+      fab={<FAB onClick={onQuickRecord || onNewEstimate} />}
     >
       <Header
         title="SMASH"

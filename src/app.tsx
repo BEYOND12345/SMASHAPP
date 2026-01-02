@@ -53,7 +53,7 @@ const MOCK_ESTIMATES: Estimate[] = [
 ];
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices' | 'customers'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string }>({
+  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices' | 'customers'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string; autoStartRecording?: boolean }>({
     currentScreen: 'Login',
     selectedEstimateId: null,
     selectedInvoiceId: null,
@@ -69,7 +69,8 @@ const App: React.FC = () => {
     loading: true,
     voiceQuoteId: undefined,
     voiceIntakeId: undefined,
-    voiceCustomerId: undefined
+    voiceCustomerId: undefined,
+    autoStartRecording: false
   });
 
   // Load quotes from database
@@ -388,7 +389,8 @@ const App: React.FC = () => {
           loading: false,
           voiceQuoteId: undefined,
           voiceIntakeId: undefined,
-          voiceCustomerId: undefined
+          voiceCustomerId: undefined,
+          autoStartRecording: false
         });
       }
     });
@@ -596,17 +598,28 @@ const App: React.FC = () => {
       loading: false,
       voiceQuoteId: undefined,
       voiceIntakeId: undefined,
-      voiceCustomerId: undefined
+      voiceCustomerId: undefined,
+      autoStartRecording: false
     });
   };
 
   // Actions
   const handleNewEstimate = () => navigate('NewEstimate');
 
+  const handleQuickRecord = () => {
+    setState(prev => ({
+      ...prev,
+      voiceCustomerId: undefined,
+      autoStartRecording: true,
+      currentScreen: 'VoiceRecorder'
+    }));
+  };
+
   const handleStartRecording = (clientName: string, _address: string, customerId?: string) => {
     setState(prev => ({
       ...prev,
       voiceCustomerId: customerId,
+      autoStartRecording: false,
       currentScreen: 'VoiceRecorder'
     }));
   };
@@ -1128,6 +1141,7 @@ const App: React.FC = () => {
             activeTab={state.activeTab}
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
+            onQuickRecord={handleQuickRecord}
           />
         ) : state.activeTab === 'invoices' ? (
           <InvoicesList
@@ -1137,6 +1151,7 @@ const App: React.FC = () => {
             activeTab={state.activeTab}
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
+            onQuickRecord={handleQuickRecord}
           />
         ) : (
           <CustomersList
@@ -1182,9 +1197,10 @@ const App: React.FC = () => {
 
       case 'VoiceRecorder':
         return <VoiceRecorder
-          onCancel={() => navigate('NewEstimate')}
+          onCancel={() => navigate('EstimatesList')}
           onSuccess={handleRecordingFinished}
           customerId={state.voiceCustomerId}
+          autoStart={state.autoStartRecording}
         />;
 
       case 'EditTranscript':

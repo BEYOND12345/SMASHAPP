@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layout, Header } from '../components/layout';
-import { Mic, X, Loader2, Check, AlertCircle } from 'lucide-react';
+import { Mic, X, Loader2, Check, AlertCircle, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { CustomerPickerSheet } from '../components/customerpickersheet';
 
 interface ExtractionMetadata {
   overall_confidence: number;
@@ -13,12 +14,16 @@ interface VoiceRecorderProps {
   onCancel: () => void;
   onSuccess: (intakeId: string, quoteId: string, traceId: string, recordStopTime: number) => void;
   customerId?: string;
+  autoStart?: boolean;
 }
 
 type RecordingState = 'idle' | 'recording' | 'uploading' | 'transcribing' | 'extracting' | 'success' | 'error';
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSuccess, customerId }) => {
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSuccess, customerId: initialCustomerId, autoStart = false }) => {
   const [state, setState] = useState<RecordingState>('idle');
+  const [currentCustomerId, setCurrentCustomerId] = useState<string | undefined>(initialCustomerId);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [error, setError] = useState<string>('');
   const [bars, setBars] = useState<number[]>(new Array(16).fill(10));
   const [recordingTime, setRecordingTime] = useState(0);
@@ -55,6 +60,37 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       transcriptBoxRef.current.scrollTop = transcriptBoxRef.current.scrollHeight;
     }
   }, [liveTranscript, interimTranscript, state]);
+
+  useEffect(() => {
+    const loadCustomerName = async () => {
+      if (currentCustomerId) {
+        try {
+          const { data } = await supabase
+            .from('customers')
+            .select('name')
+            .eq('id', currentCustomerId)
+            .maybeSingle();
+
+          if (data?.name) {
+            setCustomerName(data.name);
+          }
+        } catch (err) {
+          console.error('[VoiceRecorder] Failed to load customer name:', err);
+        }
+      }
+    };
+
+    loadCustomerName();
+  }, [currentCustomerId]);
+
+  useEffect(() => {
+    if (autoStart && state === 'idle') {
+      const timer = setTimeout(() => {
+        startRecording();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [autoStart]);
 
   useEffect(() => {
     if (state === 'recording' && analyserRef.current) {
@@ -204,6 +240,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     audioChunksRef.current = [];
   };
 
+  const handleCustomerSelect = (customerId: string, name: string) => {
+    setCurrentCustomerId(customerId || undefined);
+    setCustomerName(name);
+    setShowCustomerPicker(false);
+  };
+
   const processRecording = async () => {
     const traceId = crypto.randomUUID();
     const recordStopTime = Date.now();
@@ -269,7 +311,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       // Create quote shell IMMEDIATELY (before upload)
       const quoteShellStartTime = Date.now();
 
-      let customerId_for_quote = customerId;
+      let customerId_for_quote = currentCustomerId;
 
       if (!customerId_for_quote) {
         const { data: placeholderCustomer } = await supabase
@@ -363,7 +405,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               id: intakeId,
               org_id: profile.org_id,
               user_id: user.id,
-              customer_id: customerId || null,
+              customer_id: currentCustomerId || null,
               source: 'web',
               audio_storage_path: storagePath,
               status: 'captured',
@@ -524,6 +566,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       />
 
       <div className="flex flex-col items-center px-6 pt-4 pb-8 min-h-[calc(100vh-80px)]">
+        {/* Customer Chip - Visible during idle and recording */}
+        {(state === 'idle' || state === 'recording') && (
+          <button
+            onClick={() => setShowCustomerPicker(true)}
+            className="mb-4 px-4 py-2 rounded-full bg-white border border-divider hover:border-brand transition-colors flex items-center gap-2"
+          >
+            <User size={16} className="text-secondary" />
+            <span className="text-[14px] text-primary">
+              {currentCustomerId && customerName ? customerName : 'No customer'}
+            </span>
+            <span className="text-[12px] text-tertiary">• Tap to change</span>
+          </button>
+        )}
+
         {/* Idle State - Clear Hierarchy */}
         {state === 'idle' && (
           <div className="flex flex-col items-center space-y-8 w-full max-w-md flex-1 justify-center">
@@ -694,6 +750,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           </div>
         )}
       </div>
+
+      <CustomerPickerSheet
+        isOpen={showCustomerPicker}
+        onClose={() => setShowCustomerPicker(false)}
+        onSelectCustomer={handleCustomerSelect}
+        currentCustomerId={currentCustomerId}
+      />
     </Layout>
   );
 };
