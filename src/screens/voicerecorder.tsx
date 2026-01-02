@@ -539,21 +539,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const transcribeStartTime = Date.now();
           console.warn(`[BACKGROUND_PROCESSING] Starting transcription for intake ${intakeId}`);
 
-          const transcribeResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
-            }
-          );
+          let transcribeResponse;
+          try {
+            transcribeResponse = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-voice-intake`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+              }
+            );
+          } catch (fetchError) {
+            console.error('[BACKGROUND_PROCESSING] Transcription network error:', fetchError);
+            console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
+            return;
+          }
 
           if (!transcribeResponse.ok) {
-            const errorText = await transcribeResponse.text();
-            console.error('[BACKGROUND_PROCESSING] Transcription failed:', transcribeResponse.status, errorText);
+            let errorText = 'No error body';
+            try {
+              errorText = await transcribeResponse.text();
+            } catch (e) {
+              errorText = 'Failed to read error response';
+            }
+            console.error('[BACKGROUND_PROCESSING] Transcription failed:');
+            console.error('  Status:', transcribeResponse.status);
+            console.error('  Status Text:', transcribeResponse.statusText);
+            console.error('  Error Body:', errorText);
             return;
           }
 
@@ -566,26 +581,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const extractStartTime = Date.now();
 
           console.warn(`[BACKGROUND_PROCESSING] Starting extraction for intake ${intakeId}`);
-          const extractResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
-            }
-          );
+          let extractResponse;
+          try {
+            extractResponse = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+              }
+            );
+          } catch (fetchError) {
+            console.error('[BACKGROUND_PROCESSING] Extraction network error:', fetchError);
+            console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
+            return;
+          }
 
           if (!extractResponse.ok) {
-            const errorText = await extractResponse.text();
-            console.error('[BACKGROUND_PROCESSING] Extraction failed:', {
-              status: extractResponse.status,
-              statusText: extractResponse.statusText,
-              error: errorText,
-              url: extractResponse.url
-            });
+            let errorText = 'No error body';
+            try {
+              errorText = await extractResponse.text();
+            } catch (e) {
+              errorText = 'Failed to read error response';
+            }
+            console.error('[BACKGROUND_PROCESSING] Extraction failed:');
+            console.error('  Status:', extractResponse.status);
+            console.error('  Status Text:', extractResponse.statusText);
+            console.error('  Error Body:', errorText);
             return;
           }
 
@@ -598,26 +623,38 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const createQuoteStartTime = Date.now();
 
           console.warn(`[BACKGROUND_PROCESSING] Starting quote creation for intake ${intakeId}`);
-          const createResponse = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
-            }
-          );
+          let createResponse;
+          try {
+            createResponse = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
+              }
+            );
+          } catch (fetchError) {
+            console.error('[BACKGROUND_PROCESSING] Quote creation network error:', fetchError);
+            console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
+            return;
+          }
 
           if (!createResponse.ok) {
-            const errorText = await createResponse.text();
-            console.error('[BACKGROUND_PROCESSING] Quote creation failed:', {
-              status: createResponse.status,
-              statusText: createResponse.statusText,
-              error: errorText,
-              url: createResponse.url
-            });
+            let errorText = 'No error body';
+            try {
+              errorText = await createResponse.text();
+            } catch (e) {
+              errorText = 'Failed to read error response';
+            }
+            console.error('[BACKGROUND_PROCESSING] Quote creation failed:');
+            console.error('  Status:', createResponse.status);
+            console.error('  Status Text:', createResponse.statusText);
+            console.error('  Error Body:', errorText);
+            console.error('  URL:', createResponse.url);
+            console.error('  Headers:', Object.fromEntries(createResponse.headers.entries()));
             return;
           }
 
