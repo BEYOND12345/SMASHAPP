@@ -219,7 +219,7 @@ const App: React.FC = () => {
         date: new Date(invoiceData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
         dueDate: invoiceData.due_date ? new Date(invoiceData.due_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : undefined,
         materials: invoiceData.line_items
-          ?.filter((item: any) => item.item_type === 'materials')
+          ?.filter((item: any) => item.item_type === 'material' || item.item_type === 'materials')
           .map((item: any) => ({
             id: item.id,
             name: item.description,
