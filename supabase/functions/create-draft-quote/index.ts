@@ -42,6 +42,7 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -60,6 +61,16 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log("[AUTH] User authenticated", { user_id: user.id });
+
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
+    console.log("[AUTH] User-scoped client created for RLS operations");
 
     const { data: rateLimitResult, error: rateLimitError } = await supabase
       .rpc("check_rate_limit", {
@@ -95,7 +106,7 @@ Deno.serve(async (req: Request) => {
       throw new Error("Missing intake_id");
     }
 
-    const { data: intakeRows, error: lockError } = await supabase.rpc(
+    const { data: intakeRows, error: lockError } = await supabaseUser.rpc(
       "lock_voice_intake_for_quote_creation",
       {
         p_intake_id: intake_id,
@@ -106,9 +117,12 @@ Deno.serve(async (req: Request) => {
     if (lockError || !intakeRows || intakeRows.length === 0) {
       console.error("[REVIEW_FLOW] Failed to lock intake", {
         intake_id,
-        error: lockError?.message
+        user_id: user.id,
+        error: lockError?.message,
+        error_details: lockError?.details,
+        error_hint: lockError?.hint,
       });
-      throw new Error("Voice intake not found or could not be locked");
+      throw new Error(`Voice intake not found or could not be locked: ${lockError?.message || 'Unknown error'}`);
     }
 
     const intake = intakeRows[0];
