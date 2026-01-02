@@ -734,26 +734,44 @@ Deno.serve(async (req: Request) => {
           if (!description) continue;
 
           const lowerDesc = description.toLowerCase();
-          const hasTimeKeywords = /\b(hours?|days?|weeks?|time|labour|labor)\b/i.test(lowerDesc);
 
-          if (hasTimeKeywords) {
-            const conservativeHours = 4;
-            const lineTotalCents = Math.round(conservativeHours * profile.hourly_rate_cents);
+          const hoursMatch = lowerDesc.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b/i);
+          const daysMatch = lowerDesc.match(/(\d+(?:\.\d+)?)\s*(?:days?)\b/i);
+          const weeksMatch = lowerDesc.match(/(\d+(?:\.\d+)?)\s*(?:weeks?|wks?)\b/i);
+
+          let extractedHours = null;
+          let timeUnit = null;
+
+          if (hoursMatch) {
+            extractedHours = parseFloat(hoursMatch[1]);
+            timeUnit = "hours";
+          } else if (daysMatch) {
+            const days = parseFloat(daysMatch[1]);
+            extractedHours = days * profile.workday_hours_default;
+            timeUnit = "days";
+          } else if (weeksMatch) {
+            const weeks = parseFloat(weeksMatch[1]);
+            extractedHours = weeks * 5 * profile.workday_hours_default;
+            timeUnit = "weeks";
+          }
+
+          if (extractedHours && extractedHours > 0) {
+            const lineTotalCents = Math.round(extractedHours * profile.hourly_rate_cents);
 
             lineItems.push({
               org_id: profile.org_id,
               quote_id: quote.id,
               item_type: "labour",
               description: description,
-              quantity: conservativeHours,
+              quantity: extractedHours,
               unit: "hours",
               unit_price_cents: profile.hourly_rate_cents,
               line_total_cents: lineTotalCents,
               position: position++,
-              notes: "Needs review - estimated from scope",
+              notes: `Needs review - extracted ${hoursMatch ? hoursMatch[1] + ' ' + timeUnit : daysMatch ? daysMatch[1] + ' ' + timeUnit : weeksMatch[1] + ' ' + timeUnit} from scope`,
             });
 
-            warnings.push(`Created labour item from scope: "${description}" with conservative 4hr estimate`);
+            warnings.push(`Created labour item from scope: "${description}" with ${extractedHours}hrs extracted from text`);
           } else {
             lineItems.push({
               org_id: profile.org_id,
@@ -768,7 +786,7 @@ Deno.serve(async (req: Request) => {
               notes: "Needs review - from scope, pricing required",
             });
 
-            warnings.push(`Created material item from scope: "${description}" - pricing required`);
+            warnings.push(`Created material/scope item from scope: "${description}" - pricing required`);
           }
         }
       }
