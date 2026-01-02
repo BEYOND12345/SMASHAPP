@@ -48,7 +48,8 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
       if (hasExtraction) {
         console.log('[Processing] Extraction already complete, checking if review is needed or quote created');
 
-        // If quote already created, skip to success
+        // CRITICAL: Check for created_quote_id FIRST before checking status
+        // A quote might be created even if status is needs_user_review
         if (intakeData.created_quote_id) {
           console.log('[Processing] Quote already created:', intakeData.created_quote_id);
           setStep('success');
@@ -58,7 +59,7 @@ export const Processing: React.FC<ProcessingProps> = ({ intakeId, onComplete }) 
           return;
         }
 
-        // If status is needs_user_review, redirect to review screen
+        // If status is needs_user_review AND no quote created yet, redirect to review screen
         if (intakeData.status === 'needs_user_review') {
           console.log('[Processing] Extraction requires user review, redirecting to review screen');
           onComplete('', intakeId);
