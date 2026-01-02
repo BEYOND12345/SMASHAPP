@@ -980,11 +980,18 @@ const App: React.FC = () => {
 
       console.log('[App] Invoice created successfully:', invoiceId);
 
-      // Navigate without reload - data is fresh
+      // Reload invoice data to ensure it's available
+      if (state.user?.id) {
+        await loadInvoicesFromDatabase(state.user.id);
+        await loadQuotesFromDatabase(state.user.id);
+      }
+
+      // Navigate to SendEstimate
       setState(prev => ({
         ...prev,
         currentScreen: 'SendEstimate',
-        sendingType: 'invoice'
+        sendingType: 'invoice',
+        selectedInvoiceId: invoiceId
       }));
     } catch (err) {
       console.error('[App] Exception in handleConvertToInvoiceDirectly:', err);
