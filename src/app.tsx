@@ -1050,11 +1050,12 @@ const App: React.FC = () => {
   };
 
   const handleNewQuoteForCustomer = (customerId: string) => {
-    // Store the customer ID for use in voice recorder
+    // Go directly to voice recorder with customer pre-selected
     setState(prev => ({
       ...prev,
       voiceCustomerId: customerId,
-      currentScreen: 'NewEstimate'
+      autoStartRecording: false,
+      currentScreen: 'VoiceRecorder'
     }));
   };
 
