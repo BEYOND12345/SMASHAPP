@@ -590,6 +590,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           console.warn(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${extractElapsed} total_ms=${extractTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Extraction result:', extractResult);
 
+          console.log(`[PROGRESSIVE_LOADING] Waiting 2.5s before creating line items to show progressive updates...`);
+          await new Promise(resolve => setTimeout(resolve, 2500));
+
           const createQuoteStartTime = Date.now();
 
           console.warn(`[BACKGROUND_PROCESSING] Starting quote creation for intake ${intakeId}`);
