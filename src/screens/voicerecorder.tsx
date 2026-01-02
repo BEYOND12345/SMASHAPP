@@ -694,19 +694,42 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           console.log(`[VOICE_FLOW_DIAGNOSTIC] create_draft_returned status=${createResponse.status} ok=${createResponse.ok}`);
 
           if (!createResponse.ok) {
-            let errorText = 'No error body';
+            console.error('[BACKGROUND_PROCESSING] ==================== QUOTE CREATION FAILED ====================');
+            console.error('[BACKGROUND_PROCESSING] Response Status:', createResponse.status);
+            console.error('[BACKGROUND_PROCESSING] Response Status Text:', createResponse.statusText);
+            console.error('[BACKGROUND_PROCESSING] Response URL:', createResponse.url);
+            console.error('[BACKGROUND_PROCESSING] Response Headers:', Object.fromEntries(createResponse.headers.entries()));
+
+            let errorData = null;
+            let errorText = null;
+
             try {
-              errorText = await createResponse.text();
+              const responseText = await createResponse.text();
+              errorText = responseText;
+              console.error('[BACKGROUND_PROCESSING] Raw Response Body:', responseText);
+
+              try {
+                errorData = JSON.parse(responseText);
+                console.error('[BACKGROUND_PROCESSING] Parsed Error Data:', errorData);
+                console.error('[BACKGROUND_PROCESSING] Error Data (JSON stringified):', JSON.stringify(errorData, null, 2));
+
+                if (errorData.error) {
+                  console.error('[BACKGROUND_PROCESSING] error.message:', errorData.error.message || errorData.error);
+                  console.error('[BACKGROUND_PROCESSING] error.context:', errorData.error.context);
+                  console.error('[BACKGROUND_PROCESSING] error.details:', errorData.error.details);
+                  console.error('[BACKGROUND_PROCESSING] error.stack:', errorData.error.stack);
+                  console.error('[BACKGROUND_PROCESSING] Full error object properties:', JSON.stringify(errorData.error, Object.getOwnPropertyNames(errorData.error), 2));
+                }
+              } catch (jsonError) {
+                console.error('[BACKGROUND_PROCESSING] Response is not JSON, body is:', responseText);
+              }
             } catch (e) {
-              errorText = 'Failed to read error response';
+              console.error('[BACKGROUND_PROCESSING] Failed to read response body:', e);
             }
-            console.error('[BACKGROUND_PROCESSING] Quote creation failed:');
-            console.error('  Status:', createResponse.status);
-            console.error('  Status Text:', createResponse.statusText);
-            console.error('  Error Body:', errorText);
-            console.error('  URL:', createResponse.url);
-            console.error('  Headers:', Object.fromEntries(createResponse.headers.entries()));
-            await updateStage('failed', `Quote creation failed: ${createResponse.status} ${errorText}`);
+
+            console.error('[BACKGROUND_PROCESSING] ==================== END ERROR DUMP ====================');
+
+            await updateStage('failed', `Quote creation failed: ${createResponse.status} ${errorText || 'No response body'}`);
             return;
           }
 
