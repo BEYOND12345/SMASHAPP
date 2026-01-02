@@ -724,41 +724,92 @@ Deno.serve(async (req: Request) => {
     }
 
     if (lineItems.length === 0) {
-      console.log("[QUOTE_CREATE] EMERGENCY: No line items extracted, creating placeholders");
+      console.log("[QUOTE_CREATE] No line items from extraction, checking scope_of_work");
 
-      const hasNoLabour = !extracted.time?.labour_entries || extracted.time.labour_entries.length === 0;
-      const hasNoMaterials = !extracted.materials?.items || extracted.materials.items.length === 0;
+      if (scopeOfWork && scopeOfWork.length > 0) {
+        console.log(`[QUOTE_CREATE] Creating ${scopeOfWork.length} structured items from scope_of_work`);
 
-      if (hasNoLabour) {
-        lineItems.push({
-          org_id: profile.org_id,
-          quote_id: quote.id,
-          item_type: "labour",
-          description: "Labour (needs estimation)",
-          quantity: 1,
-          unit: "hours",
-          unit_price_cents: profile.hourly_rate_cents,
-          line_total_cents: profile.hourly_rate_cents,
-          position: position++,
-          notes: "Placeholder - please update with actual labour estimate",
-        });
-        warnings.push("Created placeholder labour item - extraction confidence was too low");
+        for (const scopeItem of scopeOfWork) {
+          const description = String(scopeItem).trim();
+          if (!description) continue;
+
+          const lowerDesc = description.toLowerCase();
+          const hasTimeKeywords = /\b(hours?|days?|weeks?|time|labour|labor)\b/i.test(lowerDesc);
+
+          if (hasTimeKeywords) {
+            const conservativeHours = 4;
+            const lineTotalCents = Math.round(conservativeHours * profile.hourly_rate_cents);
+
+            lineItems.push({
+              org_id: profile.org_id,
+              quote_id: quote.id,
+              item_type: "labour",
+              description: description,
+              quantity: conservativeHours,
+              unit: "hours",
+              unit_price_cents: profile.hourly_rate_cents,
+              line_total_cents: lineTotalCents,
+              position: position++,
+              notes: "Needs review - estimated from scope",
+            });
+
+            warnings.push(`Created labour item from scope: "${description}" with conservative 4hr estimate`);
+          } else {
+            lineItems.push({
+              org_id: profile.org_id,
+              quote_id: quote.id,
+              item_type: "materials",
+              description: description,
+              quantity: 1,
+              unit: "item",
+              unit_price_cents: 0,
+              line_total_cents: 0,
+              position: position++,
+              notes: "Needs review - from scope, pricing required",
+            });
+
+            warnings.push(`Created material item from scope: "${description}" - pricing required`);
+          }
+        }
       }
 
-      if (hasNoMaterials) {
-        lineItems.push({
-          org_id: profile.org_id,
-          quote_id: quote.id,
-          item_type: "materials",
-          description: "Materials (needs pricing)",
-          quantity: 1,
-          unit: "item",
-          unit_price_cents: 0,
-          line_total_cents: 0,
-          position: position++,
-          notes: "Placeholder - please add actual materials and pricing",
-        });
-        warnings.push("Created placeholder materials item - extraction confidence was too low");
+      if (lineItems.length === 0) {
+        console.log("[QUOTE_CREATE] EMERGENCY: No scope_of_work, creating generic placeholders");
+
+        const hasNoLabour = !extracted.time?.labour_entries || extracted.time.labour_entries.length === 0;
+        const hasNoMaterials = !extracted.materials?.items || extracted.materials.items.length === 0;
+
+        if (hasNoLabour) {
+          lineItems.push({
+            org_id: profile.org_id,
+            quote_id: quote.id,
+            item_type: "labour",
+            description: "Labour (needs estimation)",
+            quantity: 1,
+            unit: "hours",
+            unit_price_cents: profile.hourly_rate_cents,
+            line_total_cents: profile.hourly_rate_cents,
+            position: position++,
+            notes: "Placeholder - please update with actual labour estimate",
+          });
+          warnings.push("Created placeholder labour item - extraction confidence was too low");
+        }
+
+        if (hasNoMaterials) {
+          lineItems.push({
+            org_id: profile.org_id,
+            quote_id: quote.id,
+            item_type: "materials",
+            description: "Materials (needs pricing)",
+            quantity: 1,
+            unit: "item",
+            unit_price_cents: 0,
+            line_total_cents: 0,
+            position: position++,
+            notes: "Placeholder - please add actual materials and pricing",
+          });
+          warnings.push("Created placeholder materials item - extraction confidence was too low");
+        }
       }
     }
 
