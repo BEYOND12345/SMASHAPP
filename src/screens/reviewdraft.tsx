@@ -61,6 +61,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   ]);
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklistFadingOut, setChecklistFadingOut] = useState(false);
+  const [processingTimeout, setProcessingTimeout] = useState(false);
 
   const quoteChannelRef = useRef<RealtimeChannel | null>(null);
   const intakeChannelRef = useRef<RealtimeChannel | null>(null);
@@ -68,6 +69,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const statusIndexRef = useRef(0);
   const traceIdRef = useRef<string>('');
   const mountTimeRef = useRef<number>(0);
+  const timeoutTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -84,10 +86,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     loadInitialData();
     setupRealtimeSubscriptions();
     startStatusRotation();
+    startTimeoutCheck();
 
     return () => {
       cleanupSubscriptions();
       stopStatusRotation();
+      stopTimeoutCheck();
     };
   }, [quoteId, intakeId]);
 
@@ -170,6 +174,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     if (hasLineItems) {
       setIsProcessing(false);
       stopStatusRotation();
+      stopTimeoutCheck();
       setStatusMessage('Quote ready');
 
       if (!firstRenderWithItemsLogged) {
@@ -275,6 +280,24 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
   };
 
+  const startTimeoutCheck = () => {
+    timeoutTimerRef.current = setTimeout(() => {
+      if (isProcessing && !quote?.line_items?.length) {
+        console.warn('[ReviewDraft] Processing timeout detected after 30 seconds');
+        setProcessingTimeout(true);
+        setIsProcessing(false);
+        stopStatusRotation();
+      }
+    }, 30000);
+  };
+
+  const stopTimeoutCheck = () => {
+    if (timeoutTimerRef.current) {
+      clearTimeout(timeoutTimerRef.current);
+      timeoutTimerRef.current = null;
+    }
+  };
+
   if (loading && !quote) {
     return (
       <Layout showNav={false} className="bg-surface">
@@ -337,7 +360,24 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         <div className="text-center py-2">
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
-        {isStillProcessing && showChecklist && (
+        {processingTimeout && (
+          <Card className="bg-yellow-50 border-yellow-200">
+            <div className="text-center space-y-2">
+              <p className="text-sm font-medium text-yellow-900">Processing is taking longer than expected</p>
+              <p className="text-xs text-yellow-700">
+                This can happen with longer recordings or complex jobs. Check the browser console for details.
+              </p>
+              <Button
+                variant="secondary"
+                onClick={() => window.location.reload()}
+                className="mt-2"
+              >
+                Refresh Page
+              </Button>
+            </div>
+          </Card>
+        )}
+        {isStillProcessing && showChecklist && !processingTimeout && (
           <div className={`py-2 ${checklistFadingOut ? 'animate-fade-slide-out' : ''}`}>
             <ProgressChecklist items={checklistItems} className="max-w-xs mx-auto" />
           </div>

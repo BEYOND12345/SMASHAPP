@@ -580,7 +580,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
           if (!extractResponse.ok) {
             const errorText = await extractResponse.text();
-            console.error('[BACKGROUND_PROCESSING] Extraction failed:', extractResponse.status, errorText);
+            console.error('[BACKGROUND_PROCESSING] Extraction failed:', {
+              status: extractResponse.status,
+              statusText: extractResponse.statusText,
+              error: errorText,
+              url: extractResponse.url
+            });
             return;
           }
 
@@ -589,9 +594,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const extractTotalMs = Date.now() - recordStopTime;
           console.warn(`[PERF] trace_id=${traceId} step=extraction_complete intake_id=${intakeId} ms=${extractElapsed} total_ms=${extractTotalMs}`);
           console.log('[BACKGROUND_PROCESSING] Extraction result:', extractResult);
-
-          console.log(`[PROGRESSIVE_LOADING] Waiting 2.5s before creating line items to show progressive updates...`);
-          await new Promise(resolve => setTimeout(resolve, 2500));
 
           const createQuoteStartTime = Date.now();
 
@@ -610,7 +612,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
           if (!createResponse.ok) {
             const errorText = await createResponse.text();
-            console.error('[BACKGROUND_PROCESSING] Quote creation failed:', createResponse.status, errorText);
+            console.error('[BACKGROUND_PROCESSING] Quote creation failed:', {
+              status: createResponse.status,
+              statusText: createResponse.statusText,
+              error: errorText,
+              url: createResponse.url
+            });
             return;
           }
 
