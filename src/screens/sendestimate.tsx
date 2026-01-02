@@ -50,7 +50,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
                 scope_of_work
               )
             `)
-            .eq('source_quote_id', estimateId)
+            .eq('id', estimateId)
             .maybeSingle();
 
           if (invoiceError) {

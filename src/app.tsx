@@ -1345,7 +1345,7 @@ const App: React.FC = () => {
           onBack={() => navigate('JobCard')}
           type={state.sendingType}
           onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
-          estimateId={state.selectedEstimateId || undefined}
+          estimateId={state.sendingType === 'invoice' ? state.selectedInvoiceId || undefined : state.selectedEstimateId || undefined}
           onSent={async () => {
             // Update status based on what we sent
             const newStatus = state.sendingType === 'invoice' ? JobStatus.PAID : JobStatus.SENT;
