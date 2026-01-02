@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test Quote Creation</title>
+</head>
+<body>
+  <h1>Test Quote Creation from Stuck Intake</h1>
+  <button id="testBtn">Create Quote for Intake: 343dab8b-830a-4a14-ad95-4dde9290930e</button>
+  <pre id="output"></pre>
+  
+  <script type="module">
+    const output = document.getElementById('output');
+    const btn = document.getElementById('testBtn');
+    
+    btn.onclick = async () => {
+      output.textContent = 'Starting...\n';
+      
+      // Get session token (you'll need to be logged in)
+      const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+      const token = 'YOUR_AUTH_TOKEN';
+      
+      try {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/create-draft-quote`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            intake_id: '343dab8b-830a-4a14-ad95-4dde9290930e',
+            trace_id: 'manual-test'
+          })
+        });
+        
+        const result = await response.json();
+        output.textContent += '\nResponse:\n' + JSON.stringify(result, null, 2);
+        
+      } catch (err) {
+        output.textContent += '\nError: ' + err.message;
+      }
+    };
+  </script>
+</body>
+</html>

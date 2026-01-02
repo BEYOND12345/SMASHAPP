@@ -345,9 +345,54 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   const startTimeoutCheck = () => {
-    timeoutTimerRef.current = setTimeout(() => {
+    timeoutTimerRef.current = setTimeout(async () => {
       if (isProcessing && !quote?.line_items?.length) {
-        console.warn('[ReviewDraft] Processing timeout detected after 10 seconds - likely missing line items');
+        console.warn('[ReviewDraft] Processing timeout detected after 10 seconds - checking if retry needed');
+
+        const { data: intakeData } = await supabase
+          .from('voice_intakes')
+          .select('status, extraction_json')
+          .eq('id', intakeId)
+          .maybeSingle();
+
+        if (intakeData?.status === 'extracted' && intakeData?.extraction_json) {
+          console.log('[ReviewDraft] Intake is extracted but quote has no line items - retrying create-draft-quote');
+
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+
+            if (token) {
+              const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    intake_id: intakeId,
+                    trace_id: `${traceIdRef.current}-retry`
+                  }),
+                }
+              );
+
+              if (response.ok) {
+                const result = await response.json();
+                console.log('[ReviewDraft] Retry successful:', result);
+                await loadInitialData();
+                return;
+              } else {
+                const errorText = await response.text();
+                console.error('[ReviewDraft] Retry failed:', errorText);
+              }
+            }
+          } catch (retryErr) {
+            console.error('[ReviewDraft] Exception during retry:', retryErr);
+          }
+        }
+
         setProcessingTimeout(true);
         setIsProcessing(false);
         stopStatusRotation();
