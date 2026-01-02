@@ -310,7 +310,7 @@ Deno.serve(async (req: Request) => {
       }
 
       if (extracted.quality?.requires_user_confirmation) {
-        console.log("[QUOTE_CREATE] Blocked: user review required", {
+        console.log("[QUOTE_CREATE] Low confidence detected - will create placeholder items", {
           intake_id,
           overall_confidence: extracted.quality?.overall_confidence,
           missing_fields_count: missingFields.length,
@@ -324,28 +324,17 @@ Deno.serve(async (req: Request) => {
             extraction_json: extracted,
           })
           .eq("id", intake_id);
-
-        return new Response(
-          JSON.stringify({
-            success: true,
-            requires_review: true,
-            intake_id,
-            message: "Extraction complete - user review required before quote creation",
-            missing_fields: missingFields,
-            assumptions: assumptions,
-          }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
       }
 
-      console.log("[QUOTE_CREATE] All quality guards passed", { intake_id });
+      console.log("[QUOTE_CREATE] Quality checks complete", { intake_id });
     }
+
+    const needsReview = !userConfirmed && extracted.quality?.requires_user_confirmation;
 
     console.log("[QUOTE_CREATE] Proceeding with quote creation", {
       intake_id,
       user_confirmed: userConfirmed,
+      needs_review: needsReview,
     });
 
     const { data: profileData, error: profileError } = await supabase
@@ -733,6 +722,46 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // EMERGENCY PATCH: Always create at least one line item to prevent UI deadlock
+    if (lineItems.length === 0) {
+      console.log("[QUOTE_CREATE] EMERGENCY: No line items extracted, creating placeholders");
+
+      const hasNoLabour = !extracted.time?.labour_entries || extracted.time.labour_entries.length === 0;
+      const hasNoMaterials = !extracted.materials?.items || extracted.materials.items.length === 0;
+
+      if (hasNoLabour) {
+        lineItems.push({
+          org_id: profile.org_id,
+          quote_id: quote.id,
+          item_type: "labour",
+          description: "Labour (needs estimation)",
+          quantity: 1,
+          unit: "hours",
+          unit_price_cents: profile.hourly_rate_cents,
+          line_total_cents: profile.hourly_rate_cents,
+          position: position++,
+          notes: "Placeholder - please update with actual labour estimate",
+        });
+        warnings.push("Created placeholder labour item - extraction confidence was too low");
+      }
+
+      if (hasNoMaterials) {
+        lineItems.push({
+          org_id: profile.org_id,
+          quote_id: quote.id,
+          item_type: "materials",
+          description: "Materials (needs pricing)",
+          quantity: 1,
+          unit: "item",
+          unit_price_cents: 0,
+          line_total_cents: 0,
+          position: position++,
+          notes: "Placeholder - please add actual materials and pricing",
+        });
+        warnings.push("Created placeholder materials item - extraction confidence was too low");
+      }
+    }
+
     if (lineItems.length > 0) {
       const { error: lineItemsError } = await supabase
         .from("quote_line_items")
@@ -741,6 +770,10 @@ Deno.serve(async (req: Request) => {
       if (lineItemsError) {
         throw new Error(`Failed to create line items: ${lineItemsError.message}`);
       }
+    } else {
+      // This should never happen now, but keep as safety net
+      console.error("[QUOTE_CREATE] CRITICAL: Still no line items after placeholder creation");
+      throw new Error("Failed to create any line items for quote");
     }
 
     const updatedExtractionJson = {
@@ -748,12 +781,14 @@ Deno.serve(async (req: Request) => {
       pricing_used: pricingSnapshot,
     };
 
+    const finalIntakeStatus = needsReview ? "needs_user_review" : "quote_created";
+
     await supabase
       .from("voice_intakes")
       .update({
         created_quote_id: quote.id,
         customer_id: customerId,
-        status: "quote_created",
+        status: finalIntakeStatus,
         extraction_json: updatedExtractionJson,
       })
       .eq("id", intake_id);
@@ -767,7 +802,7 @@ Deno.serve(async (req: Request) => {
         quote_id: quote.id,
         intake_id,
         idempotent_replay: false,
-        requires_review: false,
+        requires_review: needsReview,
         line_items_count: lineItems.length,
         warnings,
         pricing_used: {

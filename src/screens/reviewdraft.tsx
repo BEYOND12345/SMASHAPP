@@ -125,6 +125,70 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         .eq('id', intakeId)
         .maybeSingle();
 
+      // REPAIR: If quote has zero line items and title is not "Processing job", repair it
+      const hasNoLineItems = !quoteResult.data.line_items || quoteResult.data.line_items.length === 0;
+      const hasBeenProcessed = quoteResult.data.title && quoteResult.data.title !== 'Processing job';
+
+      if (hasNoLineItems && hasBeenProcessed) {
+        console.warn('[ReviewDraft] REPAIR: Quote has no line items but has been processed. Creating placeholders.');
+
+        // Get org_id from quote
+        const orgId = quoteResult.data.org_id;
+
+        // Create placeholder line items
+        const placeholderItems = [
+          {
+            org_id: orgId,
+            quote_id: quoteId,
+            item_type: 'labour',
+            description: 'Labour (needs estimation)',
+            quantity: 1,
+            unit: 'hours',
+            unit_price_cents: 8500, // Default $85/hr
+            line_total_cents: 8500,
+            position: 0,
+            notes: 'Auto-repair: Placeholder created due to extraction failure',
+          },
+          {
+            org_id: orgId,
+            quote_id: quoteId,
+            item_type: 'materials',
+            description: 'Materials (needs pricing)',
+            quantity: 1,
+            unit: 'item',
+            unit_price_cents: 0,
+            line_total_cents: 0,
+            position: 1,
+            notes: 'Auto-repair: Placeholder created due to extraction failure',
+          },
+        ];
+
+        const { error: repairError } = await supabase
+          .from('quote_line_items')
+          .insert(placeholderItems);
+
+        if (repairError) {
+          console.error('[ReviewDraft] Failed to repair quote:', repairError);
+        } else {
+          console.log('[ReviewDraft] Successfully repaired quote with placeholder items');
+
+          // Reload quote with new line items
+          const reloadedQuote = await supabase
+            .from('quotes')
+            .select(`
+              *,
+              customer:customers!customer_id(*),
+              line_items:quote_line_items(*)
+            `)
+            .eq('id', quoteId)
+            .maybeSingle();
+
+          if (reloadedQuote.data) {
+            quoteResult.data = reloadedQuote.data;
+          }
+        }
+      }
+
       setQuote(quoteResult.data);
       setIntake(intakeResult.data);
       updateChecklistFromData(quoteResult.data, intakeResult.data);
@@ -283,12 +347,13 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const startTimeoutCheck = () => {
     timeoutTimerRef.current = setTimeout(() => {
       if (isProcessing && !quote?.line_items?.length) {
-        console.warn('[ReviewDraft] Processing timeout detected after 30 seconds');
+        console.warn('[ReviewDraft] Processing timeout detected after 10 seconds - likely missing line items');
         setProcessingTimeout(true);
         setIsProcessing(false);
         stopStatusRotation();
+        setError('Could not extract job details with confidence. Please review and complete manually.');
       }
-    }, 30000);
+    }, 10000);
   };
 
   const stopTimeoutCheck = () => {
@@ -362,18 +427,40 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         </div>
         {processingTimeout && (
           <Card className="bg-yellow-50 border-yellow-200">
-            <div className="text-center space-y-2">
-              <p className="text-sm font-medium text-yellow-900">Processing is taking longer than expected</p>
-              <p className="text-xs text-yellow-700">
-                This can happen with longer recordings or complex jobs. Check the browser console for details.
+            <div className="text-center space-y-3">
+              <p className="text-sm font-medium text-yellow-900">
+                {hasLineItems ? 'Processing is taking longer than expected' : 'Unable to extract details automatically'}
               </p>
-              <Button
-                variant="secondary"
-                onClick={() => window.location.reload()}
-                className="mt-2"
-              >
-                Refresh Page
-              </Button>
+              <p className="text-xs text-yellow-700">
+                {hasLineItems
+                  ? 'This can happen with longer recordings or complex jobs. Check the browser console for details.'
+                  : 'The recording quality or content prevented automatic extraction. You can still create the quote manually.'}
+              </p>
+              <div className="flex gap-2 justify-center">
+                {hasLineItems ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => window.location.reload()}
+                    className="mt-2"
+                  >
+                    Refresh Page
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={onBack}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => onContinue(quoteId)}
+                    >
+                      Continue to Edit
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           </Card>
         )}
