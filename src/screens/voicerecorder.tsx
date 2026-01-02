@@ -102,53 +102,62 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   useEffect(() => {
     if (state !== 'recording' || !liveTranscript) return;
 
-    const transcriptLower = (liveTranscript + ' ' + interimTranscript).toLowerCase();
-    const transcriptLength = liveTranscript.split(' ').filter(w => w.length > 0).length;
+    const fullTranscript = (liveTranscript + ' ' + interimTranscript).toLowerCase();
+    const wordCount = liveTranscript.split(' ').filter(w => w.length > 0).length;
 
-    const locationKeywords = /\b(\d+\s+\w+\s+(street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|court|ct|place|pl|boulevard|blvd|terrace|crescent|close)|at\s+\d+|address|located|location|site|property)\b/;
-    const jobNameKeywords = /\b(install|repair|fix|build|replace|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen|remodel|addition|extension)\b/;
-    const materialKeywords = /\b(timber|wood|lumber|paint|sheet|plywood|concrete|cement|brick|tile|insulation|drywall|gyprock|screw|nail|bolt|pipe|wire|cable|material|supply|board|panel)\b|\b(\d+)\s*(sheets?|boards?|litres?|liters?|meters?|metres?|tonnes?|tons?|pieces?|units?|bags?)\b/;
-    const labourKeywords = /\b(\d+)\s*(hour|hours|hr|hrs|day|days|week|weeks|minute|minutes|min|mins)\b/;
+    const locationPattern = /\b(\d+\s+\w+\s+(street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|court|ct|place|pl|boulevard|blvd|terrace|crescent|close)|at\s+(number\s+)?\d+|address|located|location|site)\b/;
+    const jobPattern = /\b(install|repair|fix|build|replace|replacement|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen|remodel|window|door|wall|floor|ceiling)\b/;
+    const materialPattern = /\b(timber|wood|lumber|paint|sheet|sheets|plywood|concrete|cement|brick|tile|insulation|drywall|gyprock|screw|nail|bolt|pipe|wire|cable|material|supply|board|panel|window|windows)\b|\b(\d+)\s*(sheets?|boards?|windows?|doors?|litres?|liters?|meters?|metres?|tonnes?|tons?|pieces?|units?|bags?)\b/;
+    const labourPattern = /\b(\d+)\s*(hour|hours|hr|hrs|day|days|week|weeks)\b/;
+    const namePattern = /\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/;
 
-    const hasLocation = locationKeywords.test(transcriptLower);
-    const hasJobType = jobNameKeywords.test(transcriptLower);
-    const materialMatches = transcriptLower.match(new RegExp(materialKeywords, 'g'));
-    const hasMaterials = materialMatches && materialMatches.length >= 1;
-    const hasMultipleMaterials = materialMatches && materialMatches.length >= 3;
-    const hasSpecificDuration = labourKeywords.test(transcriptLower);
-
-    const jobConfident = (hasLocation || hasJobType) && transcriptLength >= 20;
-    const materialsConfident = hasMultipleMaterials && transcriptLength >= 30;
-    const labourConfident = hasSpecificDuration;
+    const hasLocation = locationPattern.test(fullTranscript);
+    const hasJobName = jobPattern.test(fullTranscript);
+    const hasMaterials = materialPattern.test(fullTranscript);
+    const hasLabour = labourPattern.test(fullTranscript);
+    const hasCustomerName = namePattern.test(liveTranscript);
 
     setChecklistItems((prev) => {
       const updated = [...prev];
 
-      const jobItem = updated.find(i => i.id === 'job');
-      if (jobItem) {
-        if (jobItem.state === 'waiting' && (hasLocation || hasJobType) && transcriptLength >= 15) {
-          jobItem.state = 'in_progress';
-        }
-        if (jobItem.state === 'in_progress' && jobConfident) {
+      const locationItem = updated.find(i => i.id === 'location');
+      if (locationItem && hasLocation) {
+        if (locationItem.state === 'waiting') {
+          locationItem.state = 'in_progress';
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
-              const job = copy.find(i => i.id === 'job');
+              const loc = copy.find(i => i.id === 'location');
+              if (loc && loc.state === 'in_progress') {
+                loc.state = 'complete';
+              }
+              return copy;
+            });
+          }, 800);
+        }
+      }
+
+      const jobnameItem = updated.find(i => i.id === 'jobname');
+      if (jobnameItem && hasJobName) {
+        if (jobnameItem.state === 'waiting') {
+          jobnameItem.state = 'in_progress';
+          setTimeout(() => {
+            setChecklistItems((current) => {
+              const copy = [...current];
+              const job = copy.find(i => i.id === 'jobname');
               if (job && job.state === 'in_progress') {
                 job.state = 'complete';
               }
               return copy;
             });
-          }, 2500);
+          }, 800);
         }
       }
 
       const materialsItem = updated.find(i => i.id === 'materials');
-      if (materialsItem) {
-        if (materialsItem.state === 'waiting' && hasMaterials) {
+      if (materialsItem && hasMaterials) {
+        if (materialsItem.state === 'waiting') {
           materialsItem.state = 'in_progress';
-        }
-        if (materialsItem.state === 'in_progress' && materialsConfident) {
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
@@ -158,26 +167,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               }
               return copy;
             });
-          }, 2500);
+          }, 800);
         }
       }
 
       const labourItem = updated.find(i => i.id === 'labour');
-      if (labourItem) {
-        if (labourItem.state === 'waiting' && hasSpecificDuration) {
+      if (labourItem && hasLabour) {
+        if (labourItem.state === 'waiting') {
           labourItem.state = 'in_progress';
-          if (labourConfident) {
-            setTimeout(() => {
-              setChecklistItems((current) => {
-                const copy = [...current];
-                const lab = copy.find(i => i.id === 'labour');
-                if (lab && lab.state === 'in_progress') {
-                  lab.state = 'complete';
-                }
-                return copy;
-              });
-            }, 2500);
-          }
+          setTimeout(() => {
+            setChecklistItems((current) => {
+              const copy = [...current];
+              const lab = copy.find(i => i.id === 'labour');
+              if (lab && lab.state === 'in_progress') {
+                lab.state = 'complete';
+              }
+              return copy;
+            });
+          }, 800);
         }
       }
 
