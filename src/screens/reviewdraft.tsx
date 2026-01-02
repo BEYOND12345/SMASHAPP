@@ -52,10 +52,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [error, setError] = useState('');
   const [firstRenderWithItemsLogged, setFirstRenderWithItemsLogged] = useState(false);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
-    { id: 'job', label: 'Job identified', state: 'waiting' },
-    { id: 'materials', label: 'Materials detected', state: 'waiting' },
-    { id: 'labour', label: 'Labour detected', state: 'waiting' },
-    { id: 'totals', label: 'Totals ready', state: 'waiting' },
+    { id: 'location', label: 'Job location', state: 'waiting' },
+    { id: 'jobname', label: 'Job name', state: 'waiting' },
+    { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
+    { id: 'labour', label: 'Labour & time', state: 'waiting' },
+    { id: 'fees', label: 'Additional fees', state: 'waiting' },
   ]);
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklistFadingOut, setChecklistFadingOut] = useState(false);
@@ -127,9 +128,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       setChecklistItems((prev) => {
         const updated = [...prev];
 
-        const jobItem = updated.find(i => i.id === 'job');
-        if (jobItem && extractionData?.job?.title) {
-          jobItem.state = 'complete';
+        const locationItem = updated.find(i => i.id === 'location');
+        if (locationItem && extractionData?.job?.location) {
+          locationItem.state = 'complete';
+        }
+
+        const jobNameItem = updated.find(i => i.id === 'jobname');
+        if (jobNameItem && extractionData?.job?.title) {
+          jobNameItem.state = 'complete';
         }
 
         const materialsItem = updated.find(i => i.id === 'materials');
@@ -142,9 +148,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           labourItem.state = 'complete';
         }
 
-        const totalsItem = updated.find(i => i.id === 'totals');
-        if (totalsItem && quoteResult.data.line_items && quoteResult.data.line_items.length > 0) {
-          totalsItem.state = 'complete';
+        const feesItem = updated.find(i => i.id === 'fees');
+        if (feesItem && extractionData?.fees?.items && extractionData.fees.items.length > 0) {
+          feesItem.state = 'complete';
+        } else if (feesItem && feesItem.state === 'waiting') {
+          feesItem.state = 'complete';
         }
 
         return updated;

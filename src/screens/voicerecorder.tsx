@@ -31,10 +31,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
-    { id: 'job', label: 'Job identified', state: 'waiting' },
-    { id: 'materials', label: 'Materials detected', state: 'waiting' },
-    { id: 'labour', label: 'Labour detected', state: 'waiting' },
-    { id: 'totals', label: 'Totals ready', state: 'waiting' },
+    { id: 'location', label: 'Job location', state: 'waiting' },
+    { id: 'jobname', label: 'Job name', state: 'waiting' },
+    { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
+    { id: 'labour', label: 'Labour & time', state: 'waiting' },
+    { id: 'fees', label: 'Additional fees', state: 'waiting' },
   ]);
   const [showChecklist, setShowChecklist] = useState(false);
 
@@ -105,39 +106,58 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     const transcriptLower = (liveTranscript + ' ' + interimTranscript).toLowerCase();
     const transcriptLength = liveTranscript.split(' ').filter(w => w.length > 0).length;
 
-    const jobKeywords = /\b(install|repair|fix|build|replace|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen)\b/;
-    const materialKeywords = /\b(timber|wood|paint|sheet|plywood|concrete|cement|brick|tile|insulation|drywall|screw|nail|bolt|pipe|wire|cable|material|supply|purchase|buy)\b/;
-    const labourKeywords = /\b(hour|hours|day|days|week|weeks|minute|minutes|time|labor|labour)\b/;
+    const locationKeywords = /\b(\d+\s+\w+\s+(street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|court|ct|place|pl|boulevard|blvd|terrace|crescent|close)|at\s+\d+|address|located|location|site|property)\b/;
+    const jobNameKeywords = /\b(install|repair|fix|build|replace|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen|remodel)\b/;
+    const materialKeywords = /\b(timber|wood|paint|sheet|plywood|concrete|cement|brick|tile|insulation|drywall|screw|nail|bolt|pipe|wire|cable|material|supply)\b|\b(\d+)\s*(sheets?|boards?|litres?|meters?|tonnes?|pieces?|units?)\b/;
+    const labourKeywords = /\b(\d+)\s*(hour|hours|day|days|week|weeks|minute|minutes)\b|\b(labor|labour|time|work)\b/;
+    const feesKeywords = /\b(fee|fees|charge|charges|disposal|permit|delivery|callout|call-out|travel|surcharge|extra)\b|\b(\$|dollar|dollars)\s*\d+/;
 
-    const hasJobContent = jobKeywords.test(transcriptLower) && transcriptLength >= 10;
-    const hasMaterialMentions = materialKeywords.test(transcriptLower);
+    const hasLocation = locationKeywords.test(transcriptLower) && transcriptLength >= 5;
+    const hasJobName = jobNameKeywords.test(transcriptLower) && transcriptLength >= 10;
+    const hasMaterials = materialKeywords.test(transcriptLower);
     const materialMatches = transcriptLower.match(materialKeywords);
-    const hasTwoMaterials = materialMatches && materialMatches.length >= 2;
-    const hasLabourMention = labourKeywords.test(transcriptLower);
+    const hasMultipleMaterials = materialMatches && materialMatches.length >= 2;
+    const hasLabour = labourKeywords.test(transcriptLower);
     const hasSpecificDuration = /\b(\d+)\s*(hour|hours|day|days|week|weeks)\b/.test(transcriptLower);
+    const hasFees = feesKeywords.test(transcriptLower);
 
     setChecklistItems((prev) => {
       const updated = [...prev];
 
-      const jobItem = updated.find(i => i.id === 'job');
-      if (jobItem && jobItem.state === 'waiting' && hasJobContent) {
-        jobItem.state = 'in_progress';
+      const locationItem = updated.find(i => i.id === 'location');
+      if (locationItem && locationItem.state === 'waiting' && hasLocation) {
+        locationItem.state = 'in_progress';
         setTimeout(() => {
           setChecklistItems((current) => {
             const copy = [...current];
-            const job = copy.find(i => i.id === 'job');
+            const loc = copy.find(i => i.id === 'location');
+            if (loc && loc.state === 'in_progress') {
+              loc.state = 'complete';
+            }
+            return copy;
+          });
+        }, 2000);
+      }
+
+      const jobNameItem = updated.find(i => i.id === 'jobname');
+      if (jobNameItem && jobNameItem.state === 'waiting' && hasJobName) {
+        jobNameItem.state = 'in_progress';
+        setTimeout(() => {
+          setChecklistItems((current) => {
+            const copy = [...current];
+            const job = copy.find(i => i.id === 'jobname');
             if (job && job.state === 'in_progress') {
               job.state = 'complete';
             }
             return copy;
           });
-        }, 3000);
+        }, 2500);
       }
 
       const materialsItem = updated.find(i => i.id === 'materials');
-      if (materialsItem && materialsItem.state === 'waiting' && hasMaterialMentions) {
+      if (materialsItem && materialsItem.state === 'waiting' && hasMaterials) {
         materialsItem.state = 'in_progress';
-        if (hasTwoMaterials) {
+        if (hasMultipleMaterials) {
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
@@ -152,7 +172,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       }
 
       const labourItem = updated.find(i => i.id === 'labour');
-      if (labourItem && labourItem.state === 'waiting' && hasLabourMention) {
+      if (labourItem && labourItem.state === 'waiting' && hasLabour) {
         labourItem.state = 'in_progress';
         if (hasSpecificDuration) {
           setTimeout(() => {
@@ -166,6 +186,21 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
             });
           }, 2000);
         }
+      }
+
+      const feesItem = updated.find(i => i.id === 'fees');
+      if (feesItem && feesItem.state === 'waiting' && hasFees) {
+        feesItem.state = 'in_progress';
+        setTimeout(() => {
+          setChecklistItems((current) => {
+            const copy = [...current];
+            const fee = copy.find(i => i.id === 'fees');
+            if (fee && fee.state === 'in_progress') {
+              fee.state = 'complete';
+            }
+            return copy;
+          });
+        }, 1500);
       }
 
       return updated;
@@ -261,10 +296,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       setLiveTranscript('');
       setInterimTranscript('');
       setChecklistItems([
-        { id: 'job', label: 'Job identified', state: 'waiting' },
-        { id: 'materials', label: 'Materials detected', state: 'waiting' },
-        { id: 'labour', label: 'Labour detected', state: 'waiting' },
-        { id: 'totals', label: 'Totals ready', state: 'waiting' },
+        { id: 'location', label: 'Job location', state: 'waiting' },
+        { id: 'jobname', label: 'Job name', state: 'waiting' },
+        { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
+        { id: 'labour', label: 'Labour & time', state: 'waiting' },
+        { id: 'fees', label: 'Additional fees', state: 'waiting' },
       ]);
       setShowChecklist(true);
 
@@ -327,10 +363,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     audioChunksRef.current = [];
     setShowChecklist(false);
     setChecklistItems([
-      { id: 'job', label: 'Job identified', state: 'waiting' },
-      { id: 'materials', label: 'Materials detected', state: 'waiting' },
-      { id: 'labour', label: 'Labour detected', state: 'waiting' },
-      { id: 'totals', label: 'Totals ready', state: 'waiting' },
+      { id: 'location', label: 'Job location', state: 'waiting' },
+      { id: 'jobname', label: 'Job name', state: 'waiting' },
+      { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
+      { id: 'labour', label: 'Labour & time', state: 'waiting' },
+      { id: 'fees', label: 'Additional fees', state: 'waiting' },
     ]);
   };
 
