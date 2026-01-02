@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { formatCents } from '../lib/utils/calculations';
+import { ProgressChecklist, ChecklistItem } from '../components/progresschecklist';
 
 interface ReviewDraftProps {
   quoteId: string;
@@ -50,6 +51,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [statusMessage, setStatusMessage] = useState(STATUS_MESSAGES[0]);
   const [error, setError] = useState('');
   const [firstRenderWithItemsLogged, setFirstRenderWithItemsLogged] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
+    { id: 'job', label: 'Job identified', state: 'waiting' },
+    { id: 'materials', label: 'Materials detected', state: 'waiting' },
+    { id: 'labour', label: 'Labour detected', state: 'waiting' },
+    { id: 'totals', label: 'Totals ready', state: 'waiting' },
+  ]);
+  const [showChecklist, setShowChecklist] = useState(true);
+  const [checklistFadingOut, setChecklistFadingOut] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -105,6 +114,48 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         console.error('[ReviewDraft] Quote not found');
         setError('Quote not found');
         return;
+      }
+
+      const intakeResult = await supabase
+        .from('voice_intakes')
+        .select('extraction_json, status')
+        .eq('id', intakeId)
+        .maybeSingle();
+
+      const extractionData = intakeResult.data?.extraction_json;
+
+      setChecklistItems((prev) => {
+        const updated = [...prev];
+
+        const jobItem = updated.find(i => i.id === 'job');
+        if (jobItem && extractionData?.job?.title) {
+          jobItem.state = 'complete';
+        }
+
+        const materialsItem = updated.find(i => i.id === 'materials');
+        if (materialsItem && extractionData?.materials?.items && extractionData.materials.items.length > 0) {
+          materialsItem.state = 'complete';
+        }
+
+        const labourItem = updated.find(i => i.id === 'labour');
+        if (labourItem && extractionData?.time?.labour_entries && extractionData.time.labour_entries.length > 0) {
+          labourItem.state = 'complete';
+        }
+
+        const totalsItem = updated.find(i => i.id === 'totals');
+        if (totalsItem && quoteResult.data.line_items && quoteResult.data.line_items.length > 0) {
+          totalsItem.state = 'complete';
+        }
+
+        return updated;
+      });
+
+      const allComplete = checklistItems.every(item => item.state === 'complete');
+      if (allComplete && !checklistFadingOut) {
+        setChecklistFadingOut(true);
+        setTimeout(() => {
+          setShowChecklist(false);
+        }, 300);
       }
 
       setQuote(quoteResult.data);
@@ -247,9 +298,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         <div className="text-center py-2">
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
-        {isStillProcessing && (
-          <div className="text-center py-1">
-            <p className="text-sm text-secondary font-medium">{statusMessage}</p>
+        {isStillProcessing && showChecklist && (
+          <div className={`py-2 ${checklistFadingOut ? 'animate-fade-out' : ''}`}>
+            <ProgressChecklist items={checklistItems} className="max-w-xs mx-auto" />
           </div>
         )}
 

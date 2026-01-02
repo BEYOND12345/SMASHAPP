@@ -3,6 +3,7 @@ import { Layout, Header } from '../components/layout';
 import { Mic, X, Loader2, Check, AlertCircle, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { CustomerPickerSheet } from '../components/customerpickersheet';
+import { ProgressChecklist, ChecklistItem } from '../components/progresschecklist';
 
 interface ExtractionMetadata {
   overall_confidence: number;
@@ -29,6 +30,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const [recordingTime, setRecordingTime] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [interimTranscript, setInterimTranscript] = useState<string>('');
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
+    { id: 'job', label: 'Job identified', state: 'waiting' },
+    { id: 'materials', label: 'Materials detected', state: 'waiting' },
+    { id: 'labour', label: 'Labour detected', state: 'waiting' },
+    { id: 'totals', label: 'Totals ready', state: 'waiting' },
+  ]);
+  const [showChecklist, setShowChecklist] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -90,6 +98,79 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       startRecording();
     }
   }, [autoStart]);
+
+  useEffect(() => {
+    if (state !== 'recording' || !liveTranscript) return;
+
+    const transcriptLower = (liveTranscript + ' ' + interimTranscript).toLowerCase();
+    const transcriptLength = liveTranscript.split(' ').filter(w => w.length > 0).length;
+
+    const jobKeywords = /\b(install|repair|fix|build|replace|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen)\b/;
+    const materialKeywords = /\b(timber|wood|paint|sheet|plywood|concrete|cement|brick|tile|insulation|drywall|screw|nail|bolt|pipe|wire|cable|material|supply|purchase|buy)\b/;
+    const labourKeywords = /\b(hour|hours|day|days|week|weeks|minute|minutes|time|labor|labour)\b/;
+
+    const hasJobContent = jobKeywords.test(transcriptLower) && transcriptLength >= 10;
+    const hasMaterialMentions = materialKeywords.test(transcriptLower);
+    const materialMatches = transcriptLower.match(materialKeywords);
+    const hasTwoMaterials = materialMatches && materialMatches.length >= 2;
+    const hasLabourMention = labourKeywords.test(transcriptLower);
+    const hasSpecificDuration = /\b(\d+)\s*(hour|hours|day|days|week|weeks)\b/.test(transcriptLower);
+
+    setChecklistItems((prev) => {
+      const updated = [...prev];
+
+      const jobItem = updated.find(i => i.id === 'job');
+      if (jobItem && jobItem.state === 'waiting' && hasJobContent) {
+        jobItem.state = 'in_progress';
+        setTimeout(() => {
+          setChecklistItems((current) => {
+            const copy = [...current];
+            const job = copy.find(i => i.id === 'job');
+            if (job && job.state === 'in_progress') {
+              job.state = 'complete';
+            }
+            return copy;
+          });
+        }, 3000);
+      }
+
+      const materialsItem = updated.find(i => i.id === 'materials');
+      if (materialsItem && materialsItem.state === 'waiting' && hasMaterialMentions) {
+        materialsItem.state = 'in_progress';
+        if (hasTwoMaterials) {
+          setTimeout(() => {
+            setChecklistItems((current) => {
+              const copy = [...current];
+              const mat = copy.find(i => i.id === 'materials');
+              if (mat && mat.state === 'in_progress') {
+                mat.state = 'complete';
+              }
+              return copy;
+            });
+          }, 2000);
+        }
+      }
+
+      const labourItem = updated.find(i => i.id === 'labour');
+      if (labourItem && labourItem.state === 'waiting' && hasLabourMention) {
+        labourItem.state = 'in_progress';
+        if (hasSpecificDuration) {
+          setTimeout(() => {
+            setChecklistItems((current) => {
+              const copy = [...current];
+              const lab = copy.find(i => i.id === 'labour');
+              if (lab && lab.state === 'in_progress') {
+                lab.state = 'complete';
+              }
+              return copy;
+            });
+          }, 2000);
+        }
+      }
+
+      return updated;
+    });
+  }, [liveTranscript, interimTranscript, state]);
 
   useEffect(() => {
     if (state === 'recording' && analyserRef.current) {
@@ -179,6 +260,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
       setLiveTranscript('');
       setInterimTranscript('');
+      setChecklistItems([
+        { id: 'job', label: 'Job identified', state: 'waiting' },
+        { id: 'materials', label: 'Materials detected', state: 'waiting' },
+        { id: 'labour', label: 'Labour detected', state: 'waiting' },
+        { id: 'totals', label: 'Totals ready', state: 'waiting' },
+      ]);
+      setShowChecklist(true);
 
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -237,6 +325,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     setError('');
     setState('idle');
     audioChunksRef.current = [];
+    setShowChecklist(false);
+    setChecklistItems([
+      { id: 'job', label: 'Job identified', state: 'waiting' },
+      { id: 'materials', label: 'Materials detected', state: 'waiting' },
+      { id: 'labour', label: 'Labour detected', state: 'waiting' },
+      { id: 'totals', label: 'Totals ready', state: 'waiting' },
+    ]);
   };
 
   const handleCustomerSelect = (customerId: string, name: string) => {
@@ -668,28 +763,34 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
               ))}
             </div>
 
-            {(liveTranscript || interimTranscript) ? (
-              <div className="flex-1 w-full bg-white border border-border rounded-2xl p-5 overflow-hidden flex flex-col">
-                <p className="text-[12px] font-semibold text-tertiary uppercase tracking-wide mb-3">
-                  Live Transcript
-                </p>
-                <div
-                  ref={transcriptBoxRef}
-                  className="flex-1 overflow-y-auto text-[15px] text-primary leading-relaxed"
-                >
-                  {liveTranscript}
-                  {interimTranscript && (
-                    <span className="text-secondary italic">{interimTranscript}</span>
-                  )}
+            <div className="flex-1 w-full space-y-4 flex flex-col">
+              {(liveTranscript || interimTranscript) ? (
+                <div className="flex-1 bg-white border border-border rounded-2xl p-5 overflow-hidden flex flex-col">
+                  <p className="text-[12px] font-semibold text-tertiary uppercase tracking-wide mb-3">
+                    Live Transcript
+                  </p>
+                  <div
+                    ref={transcriptBoxRef}
+                    className="flex-1 overflow-y-auto text-[15px] text-primary leading-relaxed"
+                  >
+                    {liveTranscript}
+                    {interimTranscript && (
+                      <span className="text-secondary italic">{interimTranscript}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex-1 w-full bg-brand/5 border border-brand/20 rounded-2xl p-6 flex items-center justify-center">
-                <p className="text-[14px] text-secondary text-center">
-                  Start speaking to see your words appear here...
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="flex-1 bg-brand/5 border border-brand/20 rounded-2xl p-6 flex items-center justify-center">
+                  <p className="text-[14px] text-secondary text-center">
+                    Start speaking to see your words appear here...
+                  </p>
+                </div>
+              )}
+
+              {showChecklist && (
+                <ProgressChecklist items={checklistItems} className="max-w-xs mx-auto" />
+              )}
+            </div>
 
             <button
               onClick={stopRecording}
@@ -717,6 +818,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
                 {getStatusDescription()}
               </p>
             </div>
+            {showChecklist && (
+              <ProgressChecklist items={checklistItems} className="max-w-xs" />
+            )}
           </div>
         )}
 
