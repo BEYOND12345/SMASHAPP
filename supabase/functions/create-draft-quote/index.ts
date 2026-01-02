@@ -42,7 +42,12 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    if (!supabaseAnonKey) {
+      console.error("[FATAL] SUPABASE_ANON_KEY environment variable is not set");
+      throw new Error("Server misconfiguration: SUPABASE_ANON_KEY is required. Please configure it as a Supabase secret.");
+    }
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -50,10 +55,10 @@ Deno.serve(async (req: Request) => {
       throw new Error("Missing authorization header");
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const jwt = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await supabase.auth.getUser(jwt);
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(jwt);
 
     if (userError || !user) {
       console.error("[AUTH] Unauthorized request", { error: userError?.message });
@@ -68,11 +73,15 @@ Deno.serve(async (req: Request) => {
           Authorization: authHeader,
         },
       },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
     });
 
     console.log("[AUTH] User-scoped client created for RLS operations");
 
-    const { data: rateLimitResult, error: rateLimitError } = await supabase
+    const { data: rateLimitResult, error: rateLimitError } = await supabaseAdmin
       .rpc("check_rate_limit", {
         p_user_id: user.id,
         p_endpoint: "create-draft-quote",
@@ -133,7 +142,7 @@ Deno.serve(async (req: Request) => {
     let isUpdatingShell = false;
 
     if (existingQuoteId) {
-      const { count: lineItemsCount } = await supabase
+      const { count: lineItemsCount } = await supabaseAdmin
         .from("quote_line_items")
         .select("*", { count: "exact", head: true })
         .eq("quote_id", existingQuoteId);
@@ -141,7 +150,7 @@ Deno.serve(async (req: Request) => {
       if (lineItemsCount && lineItemsCount > 0) {
         console.log(`Idempotent replay detected for intake ${intake_id}, quote ${existingQuoteId} already has ${lineItemsCount} line items`);
 
-        const { data: existingQuote, error: quoteError } = await supabase
+        const { data: existingQuote, error: quoteError } = await supabaseAdmin
           .from("quotes")
           .select("*")
           .eq("id", existingQuoteId)
@@ -335,7 +344,7 @@ Deno.serve(async (req: Request) => {
           assumptions_count: assumptions.length
         });
 
-        await supabase
+        await supabaseAdmin
           .from("voice_intakes")
           .update({
             status: "needs_user_review",
@@ -355,7 +364,7 @@ Deno.serve(async (req: Request) => {
       needs_review: needsReview,
     });
 
-    const { data: profileData, error: profileError } = await supabase
+    const { data: profileData, error: profileError } = await supabaseAdmin
       .rpc("get_effective_pricing_profile", { p_user_id: user.id });
 
     console.log(`Pricing profile lookup for user ${user.id}:`, {
@@ -409,7 +418,7 @@ Deno.serve(async (req: Request) => {
       const customerData = extracted.customer;
 
       if (customerData.email) {
-        const { data: existingCustomer } = await supabase
+        const { data: existingCustomer } = await supabaseAdmin
           .from("customers")
           .select("id")
           .eq("org_id", profile.org_id)
@@ -422,7 +431,7 @@ Deno.serve(async (req: Request) => {
       }
 
       if (!customerId && customerData.name) {
-        const { data: newCustomer, error: customerError } = await supabase
+        const { data: newCustomer, error: customerError } = await supabaseAdmin
           .from("customers")
           .insert({
             org_id: profile.org_id,
@@ -442,7 +451,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!customerId) {
-      const { data: placeholderCustomer, error: placeholderError } = await supabase
+      const { data: placeholderCustomer, error: placeholderError } = await supabaseAdmin
         .from("customers")
         .insert({
           org_id: profile.org_id,
@@ -469,7 +478,7 @@ Deno.serve(async (req: Request) => {
     if (isUpdatingShell && existingQuoteId) {
       console.log(`[QUOTE_CREATE] Updating quote shell ${existingQuoteId} with extracted data`);
 
-      const { data: updatedQuote, error: updateError } = await supabase
+      const { data: updatedQuote, error: updateError } = await supabaseAdmin
         .from("quotes")
         .update({
           customer_id: customerId,
@@ -493,14 +502,14 @@ Deno.serve(async (req: Request) => {
     } else {
       console.log(`[QUOTE_CREATE] Creating new quote`);
 
-      const { data: quoteNumber, error: quoteNumberError } = await supabase
+      const { data: quoteNumber, error: quoteNumberError } = await supabaseAdmin
         .rpc("generate_quote_number", { p_org_id: profile.org_id });
 
       if (quoteNumberError || !quoteNumber) {
         throw new Error(`Failed to generate quote number: ${quoteNumberError?.message}`);
       }
 
-      const { data: newQuote, error: quoteError } = await supabase
+      const { data: newQuote, error: quoteError } = await supabaseAdmin
         .from("quotes")
         .insert({
           org_id: profile.org_id,
@@ -578,7 +587,7 @@ Deno.serve(async (req: Request) => {
 
         if (catalogItemId && (!material.unit_price_cents || material.unit_price_cents === 0)) {
           console.log("[QUOTE_CREATE] Fetching catalog price for item", { catalogItemId });
-          const { data: catalogItem } = await supabase
+          const { data: catalogItem } = await supabaseAdmin
             .from("material_catalog_items")
             .select("unit_price_cents, typical_low_price_cents, typical_high_price_cents")
             .eq("id", catalogItemId)
@@ -862,7 +871,7 @@ Deno.serve(async (req: Request) => {
       if (hasRealItems) {
         console.log("[QUOTE_CREATE] Evicting placeholder items before inserting real items");
 
-        const { error: deleteError } = await supabase
+        const { error: deleteError } = await supabaseAdmin
           .from("quote_line_items")
           .delete()
           .eq("quote_id", quote.id)
@@ -875,7 +884,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const { data: insertedItems, error: lineItemsError } = await supabase
+      const { data: insertedItems, error: lineItemsError } = await supabaseAdmin
         .from("quote_line_items")
         .insert(lineItems)
         .select("id, org_id, quote_id");
@@ -887,7 +896,7 @@ Deno.serve(async (req: Request) => {
 
       console.log(`[QUOTE_CREATE] Insert returned ${insertedItems?.length || 0} items`);
 
-      const { count: readableCount, error: countError } = await supabase
+      const { count: readableCount, error: countError } = await supabaseAdmin
         .from("quote_line_items")
         .select("*", { count: "exact", head: true })
         .eq("quote_id", quote.id);
@@ -925,7 +934,7 @@ Deno.serve(async (req: Request) => {
 
     const finalIntakeStatus = needsReview ? "needs_user_review" : "quote_created";
 
-    await supabase
+    await supabaseAdmin
       .from("voice_intakes")
       .update({
         created_quote_id: quote.id,
@@ -938,7 +947,7 @@ Deno.serve(async (req: Request) => {
     const totalDuration = Date.now() - startTime;
     console.log(`[PERF] trace_id=${trace_id || 'none'} step=create_draft_complete intake_id=${intake_id} quote_id=${quote.id} ms=${totalDuration} line_items_count=${lineItems.length}`);
 
-    const { count: finalCount } = await supabase
+    const { count: finalCount } = await supabaseAdmin
       .from("quote_line_items")
       .select("*", { count: "exact", head: true })
       .eq("quote_id", quote.id);
