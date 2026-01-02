@@ -765,6 +765,26 @@ Deno.serve(async (req: Request) => {
     if (lineItems.length > 0) {
       console.log(`[QUOTE_CREATE] Inserting ${lineItems.length} line items for quote ${quote.id}`);
 
+      const hasRealItems = lineItems.some(item =>
+        !item.notes || !item.notes.includes("Placeholder")
+      );
+
+      if (hasRealItems) {
+        console.log("[QUOTE_CREATE] Evicting placeholder items before inserting real items");
+
+        const { error: deleteError } = await supabase
+          .from("quote_line_items")
+          .delete()
+          .eq("quote_id", quote.id)
+          .ilike("notes", "%Placeholder%");
+
+        if (deleteError) {
+          console.warn("[QUOTE_CREATE] Failed to delete placeholders (non-fatal):", deleteError);
+        } else {
+          console.log("[QUOTE_CREATE] Placeholder eviction complete");
+        }
+      }
+
       const { data: insertedItems, error: lineItemsError } = await supabase
         .from("quote_line_items")
         .insert(lineItems)
