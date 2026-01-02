@@ -145,10 +145,13 @@ Deno.serve(async (req: Request) => {
       const { count: lineItemsCount } = await supabaseAdmin
         .from("quote_line_items")
         .select("*", { count: "exact", head: true })
-        .eq("quote_id", existingQuoteId);
+        .eq("quote_id", existingQuoteId)
+        .eq("is_placeholder", false);
+
+      console.log(`[IDEMPOTENCY_CHECK] quote_id=${existingQuoteId} non_placeholder_items=${lineItemsCount || 0}`);
 
       if (lineItemsCount && lineItemsCount > 0) {
-        console.log(`Idempotent replay detected for intake ${intake_id}, quote ${existingQuoteId} already has ${lineItemsCount} line items`);
+        console.log(`[IDEMPOTENCY_REPLAY] intake=${intake_id} quote=${existingQuoteId} has ${lineItemsCount} real line items`);
 
         const { data: existingQuote, error: quoteError } = await supabaseAdmin
           .from("quotes")
@@ -181,7 +184,7 @@ Deno.serve(async (req: Request) => {
           }
         );
       } else {
-        console.log(`[QUOTE_CREATE] Found quote shell ${existingQuoteId} with no line items, will update it`);
+        console.log(`[QUOTE_CREATE] Found quote shell ${existingQuoteId} with no real items (may have placeholders), will update it`);
         isUpdatingShell = true;
       }
     }
@@ -862,7 +865,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (lineItems.length > 0) {
-      console.log(`[QUOTE_CREATE] Inserting ${lineItems.length} line items for quote ${quote.id}`);
+      console.log(`[QUOTE_CREATE] Preparing to insert ${lineItems.length} line items for quote ${quote.id}`);
+      console.log(`[QUOTE_CREATE] Line item breakdown:`, {
+        labour: lineItems.filter(i => i.item_type === 'labour').length,
+        materials: lineItems.filter(i => i.item_type === 'materials').length,
+        fees: lineItems.filter(i => i.item_type === 'fee').length,
+        placeholders: lineItems.filter(i => i.is_placeholder === true).length,
+        needs_review: lineItems.filter(i => i.is_needs_review === true).length,
+      });
 
       const hasRealItems = lineItems.some(item =>
         !item.notes || !item.notes.includes("Placeholder")
@@ -884,17 +894,19 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      console.log(`[LINE_ITEMS_INSERT] BEFORE: Inserting ${lineItems.length} items into quote ${quote.id}`);
+
       const { data: insertedItems, error: lineItemsError } = await supabaseAdmin
         .from("quote_line_items")
         .insert(lineItems)
         .select("id, org_id, quote_id");
 
       if (lineItemsError) {
-        console.error("[QUOTE_CREATE] Line items insert failed:", lineItemsError);
+        console.error("[LINE_ITEMS_INSERT] FAILED:", lineItemsError);
         throw new Error(`Failed to create line items: ${lineItemsError.message}`);
       }
 
-      console.log(`[QUOTE_CREATE] Insert returned ${insertedItems?.length || 0} items`);
+      console.log(`[LINE_ITEMS_INSERT] AFTER: Insert returned ${insertedItems?.length || 0} items (expected ${lineItems.length})`);
 
       const { count: readableCount, error: countError } = await supabaseAdmin
         .from("quote_line_items")
