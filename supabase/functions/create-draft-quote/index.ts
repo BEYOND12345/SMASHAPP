@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
-const DRAFT_VERSION = "v2-2026-01-02-0815";
+const DRAFT_VERSION = "v2.1-2026-01-02-0900";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -772,6 +772,7 @@ Deno.serve(async (req: Request) => {
               line_total_cents: lineTotalCents,
               position: position++,
               notes: `Needs review - extracted ${hoursMatch ? hoursMatch[1] + ' ' + timeUnit : daysMatch ? daysMatch[1] + ' ' + timeUnit : weeksMatch[1] + ' ' + timeUnit} from scope`,
+              is_needs_review: true,
             });
 
             warnings.push(`Created labour item from scope: "${description}" with ${extractedHours}hrs extracted from text`);
@@ -787,6 +788,7 @@ Deno.serve(async (req: Request) => {
               line_total_cents: 0,
               position: position++,
               notes: "Needs review - from scope, pricing required",
+              is_needs_review: true,
             });
 
             warnings.push(`Created material/scope item from scope: "${description}" - pricing required`);
@@ -812,6 +814,7 @@ Deno.serve(async (req: Request) => {
             line_total_cents: profile.hourly_rate_cents,
             position: position++,
             notes: "Placeholder - please update with actual labour estimate",
+            is_placeholder: true,
           });
           warnings.push("Created placeholder labour item - extraction confidence was too low");
         }
@@ -828,6 +831,7 @@ Deno.serve(async (req: Request) => {
             line_total_cents: 0,
             position: position++,
             notes: "Placeholder - please add actual materials and pricing",
+            is_placeholder: true,
           });
           warnings.push("Created placeholder materials item - extraction confidence was too low");
         }
