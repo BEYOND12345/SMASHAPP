@@ -26,13 +26,16 @@
     animation: slide-up 0.3s ease-out;
   }
   .animate-pulse-slow {
-    animation: pulse-slow 1.5s ease-in-out infinite;
+    animation: pulse-slow 2s ease-in-out infinite;
   }
   .animate-scale-in {
-    animation: scale-in 150ms ease-out;
+    animation: scale-in 200ms ease-out;
   }
   .animate-fade-out {
-    animation: fade-out 300ms ease-out forwards;
+    animation: fade-out 400ms ease-out forwards;
+  }
+  .animate-fade-slide-out {
+    animation: fade-slide-out 400ms ease-out forwards;
   }
 }
 
@@ -52,13 +55,13 @@
     opacity: 1;
   }
   50% {
-    opacity: 0.6;
+    opacity: 0.7;
   }
 }
 
 @keyframes scale-in {
   from {
-    transform: scale(0.8);
+    transform: scale(0.9);
     opacity: 0;
   }
   to {
@@ -73,5 +76,16 @@
   }
   to {
     opacity: 0;
+  }
+}
+
+@keyframes fade-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
   }
 }

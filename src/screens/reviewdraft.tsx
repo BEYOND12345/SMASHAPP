@@ -52,11 +52,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [error, setError] = useState('');
   const [firstRenderWithItemsLogged, setFirstRenderWithItemsLogged] = useState(false);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
-    { id: 'location', label: 'Job location', state: 'waiting' },
-    { id: 'jobname', label: 'Job name', state: 'waiting' },
-    { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
-    { id: 'labour', label: 'Labour & time', state: 'waiting' },
-    { id: 'fees', label: 'Additional fees', state: 'waiting' },
+    { id: 'job', label: 'Job identified', state: 'waiting' },
+    { id: 'materials', label: 'Materials detected', state: 'waiting' },
+    { id: 'labour', label: 'Labour detected', state: 'waiting' },
+    { id: 'totals', label: 'Totals ready', state: 'waiting' },
   ]);
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklistFadingOut, setChecklistFadingOut] = useState(false);
@@ -124,18 +123,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         .maybeSingle();
 
       const extractionData = intakeResult.data?.extraction_json;
+      const hasLineItems = quoteResult.data.line_items && quoteResult.data.line_items.length > 0;
 
       setChecklistItems((prev) => {
         const updated = [...prev];
 
-        const locationItem = updated.find(i => i.id === 'location');
-        if (locationItem && extractionData?.job?.location) {
-          locationItem.state = 'complete';
-        }
-
-        const jobNameItem = updated.find(i => i.id === 'jobname');
-        if (jobNameItem && extractionData?.job?.title) {
-          jobNameItem.state = 'complete';
+        const jobItem = updated.find(i => i.id === 'job');
+        if (jobItem && (extractionData?.job?.location || extractionData?.job?.title)) {
+          jobItem.state = 'complete';
         }
 
         const materialsItem = updated.find(i => i.id === 'materials');
@@ -148,11 +143,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           labourItem.state = 'complete';
         }
 
-        const feesItem = updated.find(i => i.id === 'fees');
-        if (feesItem && extractionData?.fees?.items && extractionData.fees.items.length > 0) {
-          feesItem.state = 'complete';
-        } else if (feesItem && feesItem.state === 'waiting') {
-          feesItem.state = 'complete';
+        const totalsItem = updated.find(i => i.id === 'totals');
+        if (totalsItem) {
+          if (totalsItem.state === 'waiting') {
+            totalsItem.state = 'in_progress';
+          }
+          if (hasLineItems && totalsItem.state === 'in_progress') {
+            totalsItem.state = 'complete';
+          }
         }
 
         return updated;
@@ -163,13 +161,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         setChecklistFadingOut(true);
         setTimeout(() => {
           setShowChecklist(false);
-        }, 300);
+        }, 500);
       }
 
       setQuote(quoteResult.data);
       setLoading(false);
-
-      const hasLineItems = quoteResult.data.line_items && quoteResult.data.line_items.length > 0;
       const elapsedMs = Date.now() - mountTimeRef.current;
 
       console.log(`[POLL] #${pollNum} elapsed_ms=${elapsedMs} has_items=${hasLineItems} items_count=${quoteResult.data.line_items?.length || 0}`);
@@ -307,7 +303,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
         {isStillProcessing && showChecklist && (
-          <div className={`py-2 ${checklistFadingOut ? 'animate-fade-out' : ''}`}>
+          <div className={`py-2 ${checklistFadingOut ? 'animate-fade-slide-out' : ''}`}>
             <ProgressChecklist items={checklistItems} className="max-w-xs mx-auto" />
           </div>
         )}
