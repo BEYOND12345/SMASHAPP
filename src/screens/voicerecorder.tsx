@@ -670,9 +670,39 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           const createQuoteStartTime = Date.now();
 
           console.warn(`[BACKGROUND_PROCESSING] Starting quote creation for intake ${intakeId}`);
+
+          const fetchWithRetry = async (url: string, options: RequestInit, maxRetries = 3): Promise<Response> => {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                console.log(`[RETRY_MECHANISM] Attempt ${attempt}/${maxRetries} for create-draft-quote`);
+                const response = await fetch(url, options);
+
+                if (response.status === 500 || response.status === 502 || response.status === 503) {
+                  if (attempt < maxRetries) {
+                    const backoffMs = Math.pow(2, attempt - 1) * 1000;
+                    console.warn(`[RETRY_MECHANISM] Server error ${response.status}, retrying in ${backoffMs}ms`);
+                    await new Promise(resolve => setTimeout(resolve, backoffMs));
+                    continue;
+                  }
+                }
+
+                return response;
+              } catch (error) {
+                if (attempt < maxRetries) {
+                  const backoffMs = Math.pow(2, attempt - 1) * 1000;
+                  console.warn(`[RETRY_MECHANISM] Network error, retrying in ${backoffMs}ms:`, error);
+                  await new Promise(resolve => setTimeout(resolve, backoffMs));
+                  continue;
+                }
+                throw error;
+              }
+            }
+            throw new Error('Max retries exceeded');
+          };
+
           let createResponse;
           try {
-            createResponse = await fetch(
+            createResponse = await fetchWithRetry(
               `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
               {
                 method: 'POST',
@@ -681,10 +711,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ intake_id: intakeId, trace_id: traceId }),
-              }
+              },
+              3
             );
           } catch (fetchError) {
-            const errorMsg = `Quote creation network error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
+            const errorMsg = `Quote creation failed after 3 retries: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`;
             console.error('[BACKGROUND_PROCESSING]', errorMsg);
             console.error('  This usually means: CORS failure, network timeout, or Edge Function not responding');
             await updateStage('failed', errorMsg);

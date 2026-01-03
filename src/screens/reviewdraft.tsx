@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Layout, Header } from '../components/layout';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/button';
 import { Card } from '../components/card';
@@ -470,6 +470,67 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     );
   }
 
+  const retryDraftCreation = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError('Not authenticated');
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ intake_id: intakeId }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        setError(`Retry failed: ${errorData.error || response.statusText}`);
+        setLoading(false);
+        return;
+      }
+
+      await loadAllData();
+    } catch (err) {
+      console.error('[ReviewDraft] Retry failed:', err);
+      setError(err instanceof Error ? err.message : 'Retry failed');
+      setLoading(false);
+    }
+  };
+
+  if (intake?.stage === 'failed' && intake?.error_message) {
+    return (
+      <Layout showNav={false} className="bg-surface">
+        <div className="flex items-center justify-center h-full p-6">
+          <Card className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertCircle size={32} className="text-red-600" />
+            </div>
+            <p className="text-lg font-semibold text-primary mb-2">Processing Failed</p>
+            <p className="text-sm text-secondary mb-4">{intake.error_message}</p>
+            <div className="flex gap-2 justify-center">
+              <Button onClick={onBack} variant="secondary">Go Back</Button>
+              <Button onClick={retryDraftCreation} disabled={loading}>
+                {loading ? 'Retrying...' : 'Retry Draft Creation'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
   if (error && !quote) {
     return (
       <Layout showNav={false} className="bg-surface">
@@ -504,6 +565,20 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const materialItems = lineItems.filter(item => item.item_type === 'materials');
   const feeItems = lineItems.filter(item => item.item_type === 'fee');
 
+  const hasOnlyPlaceholders = hasLineItems && lineItems.every(item => item.is_placeholder);
+  const hasSomePlaceholders = hasLineItems && lineItems.some(item => item.is_placeholder);
+
+  const showProcessingState = (
+    intake?.stage === 'draft_started' ||
+    intake?.stage === 'extract_done' ||
+    (hasLineItems && hasOnlyPlaceholders)
+  );
+
+  const showPlaceholderWarning = (
+    intake?.stage === 'draft_done' &&
+    hasSomePlaceholders
+  );
+
   return (
     <Layout showNav={false} className="bg-surface">
       <Header
@@ -524,7 +599,42 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
 
-        {shouldShowIncompleteWarning && hasLineItems && (
+        {showProcessingState && (
+          <Card className="bg-blue-50 border-blue-200">
+            <div className="flex items-start gap-3">
+              <Loader2 size={20} className="text-blue-600 animate-spin flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900 mb-1">
+                  Processing your quote
+                </p>
+                <p className="text-xs text-blue-700">
+                  Extracting materials, calculating costs, and building line items. This usually takes 5-10 seconds.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {showPlaceholderWarning && !showProcessingState && (
+          <Card className="bg-red-50 border-red-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-900 mb-1">
+                  Placeholder items detected
+                </p>
+                <p className="text-xs text-red-700 mb-2">
+                  Some line items were not properly created from your voice recording. Rebuilding now...
+                </p>
+                <Button size="sm" onClick={retryDraftCreation} disabled={loading}>
+                  {loading ? 'Rebuilding...' : 'Rebuild Quote'}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {shouldShowIncompleteWarning && hasLineItems && !showProcessingState && (
           <Card className="bg-amber-50 border-amber-200">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 w-1 h-full bg-amber-400 rounded-full"></div>

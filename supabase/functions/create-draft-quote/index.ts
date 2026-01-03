@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
-const DRAFT_VERSION = "v2.1-2026-01-02-0900";
+const DRAFT_VERSION = "v2.2-2026-01-03-placeholder-fix";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -138,6 +138,13 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[REVIEW_FLOW] CREATE_DRAFT_QUOTE_LOCK_ACQUIRED intake_id=${intake_id}`);
 
+    await supabaseAdmin
+      .from("voice_intakes")
+      .update({ stage: "draft_started" })
+      .eq("id", intake_id);
+
+    console.log(`[STAGE_TRACKING] intake_id=${intake_id} stage=draft_started`);
+
     let existingQuoteId = intake.created_quote_id;
     let isUpdatingShell = false;
 
@@ -183,113 +190,24 @@ Deno.serve(async (req: Request) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
-      } else {
-        console.log(`[QUOTE_CREATE] Found quote shell ${existingQuoteId} with no real items (may have placeholders), will update it`);
-        isUpdatingShell = true;
       }
+
+      isUpdatingShell = true;
     }
 
-    const validStatuses = ["extracted", "needs_user_review"];
-    if (!validStatuses.includes(intake.status)) {
-      throw new Error(
-        `Cannot create quote from intake with status '${intake.status}'. Valid statuses: ${validStatuses.join(", ")}`
-      );
+    const extracted = intake.extraction_json as any;
+    if (!extracted) {
+      throw new Error("No extraction data found for this voice intake");
     }
 
-    if (!intake.extraction_json) {
-      throw new Error("No extraction data available");
-    }
-
-    let extracted = intake.extraction_json as any;
     const userCorrections = intake.user_corrections_json as any;
+    const userConfirmed = intake.status === "quote_created";
 
-    console.log("[QUOTE_CREATE] Starting quote creation", {
-      intake_id,
-      status: intake.status,
-      has_user_corrections: !!userCorrections,
-      user_confirmed: extracted.quality?.user_confirmed || false,
-    });
-
-    if (userCorrections) {
-      console.log("[QUOTE_CREATE] Applying user corrections", {
-        intake_id,
-        labour_overrides: Object.keys(userCorrections.labour_overrides || {}).length,
-        materials_overrides: Object.keys(userCorrections.materials_overrides || {}).length,
-        travel_overrides: Object.keys(userCorrections.travel_overrides || {}).length,
-      });
-
-      extracted = JSON.parse(JSON.stringify(extracted));
-
-      if (userCorrections.labour_overrides && extracted.time?.labour_entries) {
-        Object.entries(userCorrections.labour_overrides).forEach(([key, value]: [string, any]) => {
-          const match = key.match(/^labour_(\d+)_(hours|days|people)$/);
-          if (match) {
-            const [, idxStr, field] = match;
-            const idx = parseInt(idxStr, 10);
-            if (extracted.time.labour_entries[idx]) {
-              const entry = extracted.time.labour_entries[idx];
-              if (typeof entry[field] === 'object') {
-                entry[field] = { value, confidence: 1.0 };
-              } else {
-                entry[field] = { value, confidence: 1.0 };
-              }
-              console.log("[QUOTE_CREATE] Applied labour correction", {
-                index: idx,
-                field,
-                value,
-              });
-            }
-          }
-        });
-      }
-
-      if (userCorrections.materials_overrides && extracted.materials?.items) {
-        Object.entries(userCorrections.materials_overrides).forEach(([key, value]: [string, any]) => {
-          const match = key.match(/^material_(\d+)_quantity$/);
-          if (match) {
-            const idx = parseInt(match[1], 10);
-            if (extracted.materials.items[idx]) {
-              const item = extracted.materials.items[idx];
-              if (typeof item.quantity === 'object') {
-                item.quantity = { value, confidence: 1.0 };
-              } else {
-                item.quantity = { value, confidence: 1.0 };
-              }
-              console.log("[QUOTE_CREATE] Applied material correction", {
-                index: idx,
-                value,
-              });
-            }
-          }
-        });
-      }
-
-      if (userCorrections.travel_overrides && extracted.fees?.travel) {
-        if (userCorrections.travel_overrides.travel_hours !== undefined) {
-          const travel = extracted.fees.travel;
-          if (typeof travel.hours === 'object') {
-            travel.hours = { value: userCorrections.travel_overrides.travel_hours, confidence: 1.0 };
-          } else {
-            travel.hours = { value: userCorrections.travel_overrides.travel_hours, confidence: 1.0 };
-          }
-          console.log("[QUOTE_CREATE] Applied travel correction", {
-            hours: userCorrections.travel_overrides.travel_hours,
-          });
-        }
-      }
-    }
-
-    const missingFields = intake.missing_fields || [];
-    const assumptions = intake.assumptions || [];
-    const userConfirmed = extracted.quality?.user_confirmed || false;
-
-    if (userConfirmed) {
-      console.log("[QUOTE_CREATE] User has confirmed - skipping quality guards", {
-        intake_id,
-        user_confirmed_at: extracted.quality?.user_confirmed_at,
-      });
-    } else {
-      console.log("[QUOTE_CREATE] Checking voice quality guards (user NOT confirmed)", { intake_id });
+    if (!userConfirmed && userCorrections) {
+      console.log("[QUOTE_CREATE] User corrections provided - bypassing quality checks");
+    } else if (!userConfirmed && extracted.quality) {
+      const missingFields = extracted.missing_fields || [];
+      const assumptions = extracted.assumptions || [];
 
       const requiredMissing = missingFields.filter((mf: any) => mf.severity === "required");
       if (requiredMissing.length > 0) {
@@ -370,57 +288,34 @@ Deno.serve(async (req: Request) => {
     const { data: profileData, error: profileError } = await supabaseAdmin
       .rpc("get_effective_pricing_profile", { p_user_id: user.id });
 
-    console.log(`Pricing profile lookup for user ${user.id}:`, {
-      success: !profileError && !!profileData,
-      has_data: !!profileData,
-      error: profileError?.message || null,
-    });
-
-    if (profileError) {
-      console.error("[PRICING_ERROR] PRICING_PROFILE_RPC_ERROR", { user_id: user.id, error: profileError });
-      throw new Error(`[PRICING_ERROR] Failed to retrieve pricing profile: ${profileError.message}. Please complete setup in Settings.`);
-    }
-
-    if (!profileData) {
-      console.error("[PRICING_ERROR] PRICING_PROFILE_NULL", { user_id: user.id });
-      throw new Error("[PRICING_ERROR] No pricing profile found. Please complete setup in Settings.");
+    if (profileError || !profileData) {
+      throw new Error(`Failed to get pricing profile: ${profileError?.message}`);
     }
 
     const profile = profileData as PricingProfile;
 
-    if (!profile.hourly_rate_cents || profile.hourly_rate_cents <= 0) {
-      console.error("[PRICING_ERROR] INVALID_HOURLY_RATE", {
-        user_id: user.id,
-        profile_id: profile.profile_id,
-        hourly_rate_cents: profile.hourly_rate_cents
-      });
-      throw new Error(`[PRICING_ERROR] Invalid hourly rate: ${profile.hourly_rate_cents}. Please set a valid hourly rate in Settings.`);
-    }
+    console.log("[QUOTE_CREATE] Using pricing profile", {
+      org_id: profile.org_id,
+      hourly_rate: profile.hourly_rate_cents,
+      materials_markup: profile.materials_markup_percent,
+    });
 
     const pricingSnapshot = {
-      profile_id: profile.profile_id,
-      timestamp: new Date().toISOString(),
       hourly_rate_cents: profile.hourly_rate_cents,
-      callout_fee_cents: profile.callout_fee_cents,
+      materials_markup_percent: profile.materials_markup_percent,
+      tax_rate_percent: profile.default_tax_rate,
+      currency: profile.default_currency,
       travel_rate_cents: profile.travel_rate_cents,
       travel_is_time: profile.travel_is_time,
-      materials_markup_percent: profile.materials_markup_percent,
-      default_tax_rate: profile.default_tax_rate,
-      currency: profile.default_currency,
-      bunnings_run_enabled: profile.bunnings_run_enabled,
-      bunnings_run_minutes_default: profile.bunnings_run_minutes_default,
-      workday_hours_default: profile.workday_hours_default,
-      org_tax_inclusive: profile.org_tax_inclusive,
+      callout_fee_cents: profile.callout_fee_cents,
     };
-
-    console.log("Using pricing profile:", pricingSnapshot);
 
     let customerId = intake.customer_id;
 
-    if (!customerId && extracted.customer) {
+    if (!customerId) {
       const customerData = extracted.customer;
 
-      if (customerData.email) {
+      if (customerData?.email) {
         const { data: existingCustomer } = await supabaseAdmin
           .from("customers")
           .select("id")
@@ -537,6 +432,37 @@ Deno.serve(async (req: Request) => {
       quote = newQuote;
     }
 
+    console.log(`[PLACEHOLDER_CLEANUP] Checking for placeholder items on quote ${quote.id}`);
+
+    const { data: placeholderItems, error: placeholderCheckError } = await supabaseAdmin
+      .from("quote_line_items")
+      .select("id, description, is_placeholder")
+      .eq("quote_id", quote.id)
+      .eq("is_placeholder", true);
+
+    if (placeholderCheckError) {
+      console.warn(`[PLACEHOLDER_CLEANUP] Failed to check for placeholders: ${placeholderCheckError.message}`);
+    } else if (placeholderItems && placeholderItems.length > 0) {
+      console.log(`[PLACEHOLDER_CLEANUP] Found ${placeholderItems.length} placeholder items, deleting now`);
+
+      const placeholderIds = placeholderItems.map(item => item.id);
+      const { error: deleteError, count: deletedCount } = await supabaseAdmin
+        .from("quote_line_items")
+        .delete({ count: "exact" })
+        .eq("quote_id", quote.id)
+        .eq("is_placeholder", true);
+
+      if (deleteError) {
+        console.error(`[PLACEHOLDER_CLEANUP] Failed to delete placeholders: ${deleteError.message}`);
+        throw new Error(`Failed to delete placeholder items: ${deleteError.message}`);
+      }
+
+      console.log(`[PLACEHOLDER_CLEANUP] Successfully deleted ${deletedCount || placeholderItems.length} placeholder items`);
+      console.log(`[PLACEHOLDER_CLEANUP] Deleted items:`, placeholderItems.map(i => i.description));
+    } else {
+      console.log(`[PLACEHOLDER_CLEANUP] No placeholder items found on quote ${quote.id}`);
+    }
+
     const lineItems = [];
     const warnings = [];
     let position = 0;
@@ -547,29 +473,29 @@ Deno.serve(async (req: Request) => {
         let days = typeof labour.days === "object" ? labour.days?.value : labour.days;
         let people = typeof labour.people === "object" ? labour.people?.value : labour.people;
 
-        if ((!hours || hours === 0) && days) {
+        if (days && days > 0 && (!hours || hours === 0)) {
           hours = days * profile.workday_hours_default;
-          warnings.push(`Converted ${days} days to ${hours} hours using workday default`);
         }
 
-        if (hours && hours > 0) {
-          const peopleCount = people || 1;
-          const totalHours = hours * peopleCount;
-          const lineTotalCents = Math.round(totalHours * profile.hourly_rate_cents) || 0;
-
-          lineItems.push({
-            org_id: profile.org_id,
-            quote_id: quote.id,
-            item_type: "labour",
-            description: labour.description || "Labour",
-            quantity: totalHours,
-            unit: "hours",
-            unit_price_cents: profile.hourly_rate_cents,
-            line_total_cents: lineTotalCents,
-            position: position++,
-            notes: labour.note || null,
-          });
+        if (!hours || hours === 0) {
+          warnings.push(`Labour entry "${labour.description}" has no hours, skipping`);
+          continue;
         }
+
+        const lineTotalCents = Math.round(hours * profile.hourly_rate_cents);
+
+        lineItems.push({
+          org_id: profile.org_id,
+          quote_id: quote.id,
+          item_type: "labour",
+          description: labour.description,
+          quantity: hours,
+          unit: "hours",
+          unit_price_cents: profile.hourly_rate_cents,
+          line_total_cents: lineTotalCents,
+          position: position++,
+          notes: labour.note || null,
+        });
       }
     }
 
@@ -669,68 +595,56 @@ Deno.serve(async (req: Request) => {
         }
 
         const travelRate = profile.travel_rate_cents || profile.hourly_rate_cents;
-        const lineTotalCents = Math.round(travelHours * travelRate) || 0;
+        const lineTotalCents = Math.round(travelHours * travelRate);
 
         lineItems.push({
           org_id: profile.org_id,
           quote_id: quote.id,
           item_type: "labour",
-          description: "Travel Time",
+          description: "Travel time",
           quantity: travelHours,
           unit: "hours",
           unit_price_cents: travelRate,
           line_total_cents: lineTotalCents,
           position: position++,
+          notes: "Travel to job site",
         });
-      } else if (!profile.travel_is_time && profile.travel_rate_cents) {
-        lineItems.push({
-          org_id: profile.org_id,
-          quote_id: quote.id,
-          item_type: "fee",
-          description: "Travel Fee",
-          quantity: 1,
-          unit: "fixed",
-          unit_price_cents: profile.travel_rate_cents,
-          line_total_cents: profile.travel_rate_cents,
-          position: position++,
-        });
-      } else if (travel.fee_cents) {
-        lineItems.push({
-          org_id: profile.org_id,
-          quote_id: quote.id,
-          item_type: "fee",
-          description: "Travel Fee",
-          quantity: 1,
-          unit: "fixed",
-          unit_price_cents: travel.fee_cents,
-          line_total_cents: travel.fee_cents,
-          position: position++,
-        });
+      } else {
+        const travelFee = profile.travel_rate_cents || 0;
+
+        if (travelFee > 0) {
+          lineItems.push({
+            org_id: profile.org_id,
+            quote_id: quote.id,
+            item_type: "fee",
+            description: "Travel fee",
+            quantity: 1,
+            unit: "trip",
+            unit_price_cents: travelFee,
+            line_total_cents: travelFee,
+            position: position++,
+            notes: "Fixed travel charge",
+          });
+        }
       }
     }
 
     if (profile.bunnings_run_enabled && extracted.fees?.materials_pickup?.enabled) {
-      const pickup = extracted.fees.materials_pickup;
-      const pickupMinutes = typeof pickup.minutes === "object" ? pickup.minutes?.value : pickup.minutes;
-      const minutes = pickupMinutes || profile.bunnings_run_minutes_default;
-      const hours = minutes / 60;
-      const lineTotalCents = Math.round(hours * profile.hourly_rate_cents);
-
-      const pickupNotes = pickupMinutes
-        ? null
-        : `Default ${profile.bunnings_run_minutes_default} minutes used`;
+      const pickupMinutes = extracted.fees.materials_pickup.duration_minutes || profile.bunnings_run_minutes_default;
+      const pickupHours = pickupMinutes / 60;
+      const lineTotalCents = Math.round(pickupHours * profile.hourly_rate_cents);
 
       lineItems.push({
         org_id: profile.org_id,
         quote_id: quote.id,
         item_type: "labour",
-        description: "Materials Run",
-        quantity: hours,
+        description: "Materials pickup",
+        quantity: pickupHours,
         unit: "hours",
         unit_price_cents: profile.hourly_rate_cents,
         line_total_cents: lineTotalCents,
         position: position++,
-        notes: pickupNotes,
+        notes: `Time to collect materials (${pickupMinutes} minutes)`,
       });
     }
 
@@ -742,9 +656,9 @@ Deno.serve(async (req: Request) => {
           org_id: profile.org_id,
           quote_id: quote.id,
           item_type: "fee",
-          description: "Callout Fee",
+          description: "Callout fee",
           quantity: 1,
-          unit: "fixed",
+          unit: "service",
           unit_price_cents: calloutFee,
           line_total_cents: calloutFee,
           position: position++,
@@ -874,26 +788,6 @@ Deno.serve(async (req: Request) => {
         needs_review: lineItems.filter(i => i.is_needs_review === true).length,
       });
 
-      const hasRealItems = lineItems.some(item =>
-        !item.notes || !item.notes.includes("Placeholder")
-      );
-
-      if (hasRealItems) {
-        console.log("[QUOTE_CREATE] Evicting placeholder items before inserting real items");
-
-        const { error: deleteError } = await supabaseAdmin
-          .from("quote_line_items")
-          .delete()
-          .eq("quote_id", quote.id)
-          .ilike("notes", "%Placeholder%");
-
-        if (deleteError) {
-          console.warn("[QUOTE_CREATE] Failed to delete placeholders (non-fatal):", deleteError);
-        } else {
-          console.log("[QUOTE_CREATE] Placeholder eviction complete");
-        }
-      }
-
       console.log(`[LINE_ITEMS_INSERT] BEFORE: Inserting ${lineItems.length} items into quote ${quote.id}`);
 
       const { data: insertedItems, error: lineItemsError } = await supabaseAdmin
@@ -952,9 +846,12 @@ Deno.serve(async (req: Request) => {
         created_quote_id: quote.id,
         customer_id: customerId,
         status: finalIntakeStatus,
+        stage: "draft_done",
         extraction_json: updatedExtractionJson,
       })
       .eq("id", intake_id);
+
+    console.log(`[STAGE_TRACKING] intake_id=${intake_id} stage=draft_done status=${finalIntakeStatus}`);
 
     const totalDuration = Date.now() - startTime;
     console.log(`[PERF] trace_id=${trace_id || 'none'} step=create_draft_complete intake_id=${intake_id} quote_id=${quote.id} ms=${totalDuration} line_items_count=${lineItems.length}`);
@@ -994,10 +891,29 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error("Create draft quote error:", error);
 
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const { intake_id } = await req.clone().json().catch(() => ({ intake_id: null }));
+
+    if (intake_id) {
+      try {
+        await supabaseAdmin
+          .from("voice_intakes")
+          .update({
+            stage: "failed",
+            error_message: errorMessage,
+          })
+          .eq("id", intake_id);
+
+        console.log(`[STAGE_TRACKING] intake_id=${intake_id} stage=failed error="${errorMessage}"`);
+      } catch (updateError) {
+        console.error("[STAGE_TRACKING] Failed to update stage to failed:", updateError);
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: errorMessage,
       }),
       {
         status: 500,
