@@ -6,6 +6,7 @@ import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { formatCents } from '../lib/utils/calculations';
 import { ProgressChecklist, ChecklistItem } from '../components/progresschecklist';
+import { getQuoteLineItemsForQuote, QuoteLineItem } from '../lib/data/quoteLineItems';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface ReviewDraftProps {
@@ -13,6 +14,31 @@ interface ReviewDraftProps {
   intakeId: string;
   onBack: () => void;
   onContinue: (quoteId: string) => void;
+}
+
+interface QuoteData {
+  id: string;
+  title: string;
+  org_id: string;
+  customer_id: string;
+  subtotal_cents: number;
+  tax_total_cents: number;
+  grand_total_cents: number;
+  scope_of_work: string[];
+  customer?: {
+    name?: string;
+  };
+}
+
+interface IntakeData {
+  id: string;
+  status: string;
+  extraction_json: any;
+}
+
+interface ProcessingState {
+  isActive: boolean;
+  startTime: number;
 }
 
 const STATUS_MESSAGES = [
@@ -46,13 +72,13 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   onBack,
   onContinue,
 }) => {
-  const [quote, setQuote] = useState<any | null>(null);
-  const [intake, setIntake] = useState<any | null>(null);
+  const [quote, setQuote] = useState<QuoteData | null>(null);
+  const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
+  const [intake, setIntake] = useState<IntakeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(true);
   const [statusMessage, setStatusMessage] = useState(STATUS_MESSAGES[0]);
   const [error, setError] = useState('');
-  const [firstRenderWithItemsLogged, setFirstRenderWithItemsLogged] = useState(false);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
     { id: 'job', label: 'Job identified', state: 'waiting' },
     { id: 'materials', label: 'Materials detected', state: 'waiting' },
@@ -62,14 +88,33 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklistFadingOut, setChecklistFadingOut] = useState(false);
   const [processingTimeout, setProcessingTimeout] = useState(false);
+  const [refreshAttempts, setRefreshAttempts] = useState(0);
+  const [showPricingWarning, setShowPricingWarning] = useState(false);
 
   const quoteChannelRef = useRef<RealtimeChannel | null>(null);
-  const intakeChannelRef = useRef<RealtimeChannel | null>(null);
+  const lineItemsChannelRef = useRef<RealtimeChannel | null>(null);
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIndexRef = useRef(0);
   const traceIdRef = useRef<string>('');
   const mountTimeRef = useRef<number>(0);
   const timeoutTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processingStateRef = useRef<ProcessingState>({ isActive: true, startTime: Date.now() });
+
+  const logDiagnostics = (phase: string, data: any) => {
+    const diagnosticInfo = {
+      phase,
+      timestamp: new Date().toISOString(),
+      trace_id: traceIdRef.current,
+      quote_id: quoteId,
+      intake_id: intakeId,
+      ...data,
+    };
+
+    console.groupCollapsed(`[ReviewDraft] ${phase}`);
+    console.log('Diagnostic Info:', diagnosticInfo);
+    console.groupEnd();
+  };
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -83,26 +128,38 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
     console.warn(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} total_ms=${renderTime}`);
 
-    loadInitialData();
+    const { data: { user } } = supabase.auth.getUser();
+    user.then(({ data }) => {
+      logDiagnostics('MOUNT', {
+        user_id: data?.user?.id,
+        has_trace_id: !!traceId,
+        render_time_ms: renderTime,
+      });
+    });
+
+    loadAllData();
     setupRealtimeSubscriptions();
     startStatusRotation();
+    startRefreshPolling();
     startTimeoutCheck();
 
     return () => {
       cleanupSubscriptions();
       stopStatusRotation();
+      stopRefreshPolling();
       stopTimeoutCheck();
     };
   }, [quoteId, intakeId]);
 
-  const loadInitialData = async () => {
+  const loadAllData = async () => {
     try {
+      const startTime = Date.now();
+
       const quoteResult = await supabase
         .from('quotes')
         .select(`
           *,
-          customer:customers!customer_id(*),
-          line_items:quote_line_items(*)
+          customer:customers!customer_id(name)
         `)
         .eq('id', quoteId)
         .maybeSingle();
@@ -121,78 +178,41 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
       const intakeResult = await supabase
         .from('voice_intakes')
-        .select('extraction_json, status')
+        .select('*')
         .eq('id', intakeId)
         .maybeSingle();
 
-      // REPAIR: If quote has zero line items and title is not "Processing job", repair it
-      const hasNoLineItems = !quoteResult.data.line_items || quoteResult.data.line_items.length === 0;
-      const hasBeenProcessed = quoteResult.data.title && quoteResult.data.title !== 'Processing job';
+      const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
 
-      if (hasNoLineItems && hasBeenProcessed) {
-        console.warn('[ReviewDraft] REPAIR: Quote has no line items but has been processed. Creating placeholders.');
-
-        // Get org_id from quote
-        const orgId = quoteResult.data.org_id;
-
-        // Create placeholder line items
-        const placeholderItems = [
-          {
-            org_id: orgId,
-            quote_id: quoteId,
-            item_type: 'labour',
-            description: 'Labour (needs estimation)',
-            quantity: 1,
-            unit: 'hours',
-            unit_price_cents: 8500, // Default $85/hr
-            line_total_cents: 8500,
-            position: 0,
-            notes: 'Auto-repair: Placeholder created due to extraction failure',
-          },
-          {
-            org_id: orgId,
-            quote_id: quoteId,
-            item_type: 'materials',
-            description: 'Materials (needs pricing)',
-            quantity: 1,
-            unit: 'item',
-            unit_price_cents: 0,
-            line_total_cents: 0,
-            position: 1,
-            notes: 'Auto-repair: Placeholder created due to extraction failure',
-          },
-        ];
-
-        const { error: repairError } = await supabase
-          .from('quote_line_items')
-          .insert(placeholderItems);
-
-        if (repairError) {
-          console.error('[ReviewDraft] Failed to repair quote:', repairError);
-        } else {
-          console.log('[ReviewDraft] Successfully repaired quote with placeholder items');
-
-          // Reload quote with new line items
-          const reloadedQuote = await supabase
-            .from('quotes')
-            .select(`
-              *,
-              customer:customers!customer_id(*),
-              line_items:quote_line_items(*)
-            `)
-            .eq('id', quoteId)
-            .maybeSingle();
-
-          if (reloadedQuote.data) {
-            quoteResult.data = reloadedQuote.data;
-          }
-        }
+      if (lineItemsResult.error) {
+        console.error('[ReviewDraft] Line items load error:', lineItemsResult.error);
       }
 
+      const { data: { user } } = await supabase.auth.getUser();
+
+      logDiagnostics('DATA_LOADED', {
+        quote_org_id: quoteResult.data.org_id,
+        user_id: user?.id,
+        line_items_count: lineItemsResult.data?.length || 0,
+        line_items_query_error: lineItemsResult.error ? lineItemsResult.error.message : null,
+        first_line_item: lineItemsResult.data?.[0] ? {
+          id: lineItemsResult.data[0].id,
+          quote_id: lineItemsResult.data[0].quote_id,
+          org_id: lineItemsResult.data[0].org_id,
+          item_type: lineItemsResult.data[0].item_type,
+        } : null,
+        load_duration_ms: Date.now() - startTime,
+      });
+
       setQuote(quoteResult.data);
+      setLineItems(lineItemsResult.data || []);
       setIntake(intakeResult.data);
-      updateChecklistFromData(quoteResult.data, intakeResult.data);
+      updateChecklistFromActualData(quoteResult.data, lineItemsResult.data || [], intakeResult.data);
       setLoading(false);
+
+      if ((lineItemsResult.data?.length || 0) > 0) {
+        markProcessingComplete();
+      }
     } catch (err) {
       console.error('[ReviewDraft] Load error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
@@ -200,56 +220,145 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
   };
 
-  const updateChecklistFromData = (quoteData: any, intakeData: any) => {
-    const extractionData = intakeData?.extraction_json;
-    const hasLineItems = quoteData?.line_items && quoteData.line_items.length > 0;
+  const refreshLineItems = async () => {
+    const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
+
+    if (lineItemsResult.data && lineItemsResult.data.length > 0) {
+      logDiagnostics('REFRESH_SUCCESS', {
+        attempt: refreshAttempts + 1,
+        items_found: lineItemsResult.data.length,
+      });
+
+      setLineItems(lineItemsResult.data);
+      setRefreshAttempts(0);
+
+      if (quote) {
+        updateChecklistFromActualData(quote, lineItemsResult.data, intake);
+      }
+
+      markProcessingComplete();
+      return true;
+    }
+
+    return false;
+  };
+
+  const updateChecklistFromActualData = (
+    quoteData: QuoteData,
+    items: QuoteLineItem[],
+    intakeData: IntakeData | null
+  ) => {
+    const hasLineItems = items.length > 0;
+    const hasMaterials = items.some(item => item.item_type === 'materials');
+    const hasLabour = items.some(item => item.item_type === 'labour');
+    const hasJobDetails = quoteData.title && quoteData.title !== 'Processing job';
+    const hasTotals = quoteData.subtotal_cents !== undefined && quoteData.subtotal_cents !== null;
+
+    const needsPricing = items.some(item =>
+      item.unit_price_cents === 0 ||
+      item.notes?.toLowerCase().includes('needs pricing')
+    );
+
+    setShowPricingWarning(needsPricing);
 
     setChecklistItems((prev) => {
       const updated = [...prev];
 
       const jobItem = updated.find(i => i.id === 'job');
-      if (jobItem && (extractionData?.job?.title || quoteData.title !== 'Processing job')) {
-        jobItem.state = 'complete';
+      if (jobItem) {
+        jobItem.state = hasJobDetails ? 'complete' : 'waiting';
       }
 
       const materialsItem = updated.find(i => i.id === 'materials');
-      if (materialsItem && extractionData?.materials?.items && extractionData.materials.items.length > 0) {
-        materialsItem.state = 'complete';
+      if (materialsItem) {
+        materialsItem.state = hasMaterials ? 'complete' : 'waiting';
       }
 
       const labourItem = updated.find(i => i.id === 'labour');
-      if (labourItem && extractionData?.time?.labour_entries && extractionData.time.labour_entries.length > 0) {
-        labourItem.state = 'complete';
+      if (labourItem) {
+        labourItem.state = hasLabour ? 'complete' : 'waiting';
       }
 
       const totalsItem = updated.find(i => i.id === 'totals');
       if (totalsItem) {
-        if (totalsItem.state === 'waiting' && (extractionData?.materials?.items || extractionData?.time?.labour_entries)) {
-          totalsItem.state = 'in_progress';
-        }
-        if (hasLineItems && totalsItem.state === 'in_progress') {
+        if (hasLineItems && hasTotals) {
           totalsItem.state = 'complete';
+        } else if (hasLineItems) {
+          totalsItem.state = 'in_progress';
+        } else {
+          totalsItem.state = 'waiting';
         }
       }
 
       return updated;
     });
 
+    logDiagnostics('CHECKLIST_UPDATED', {
+      has_line_items: hasLineItems,
+      has_materials: hasMaterials,
+      has_labour: hasLabour,
+      has_job_details: hasJobDetails,
+      has_totals: hasTotals,
+      needs_pricing: needsPricing,
+      line_items_count: items.length,
+    });
+
     if (hasLineItems) {
-      setIsProcessing(false);
-      stopStatusRotation();
-      stopTimeoutCheck();
-      setStatusMessage('Quote ready');
+      const now = Date.now();
+      const urlParams = new URLSearchParams(window.location.search);
+      const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
+      const totalTimeMs = recordStopTime > 0 ? now - recordStopTime : 0;
 
-      if (!firstRenderWithItemsLogged) {
-        const now = Date.now();
-        const urlParams = new URLSearchParams(window.location.search);
-        const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
-        const totalTimeMs = recordStopTime > 0 ? now - recordStopTime : 0;
+      console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${items.length} total_ms=${totalTimeMs}`);
+    }
+  };
 
-        console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${quoteData.line_items.length} total_ms=${totalTimeMs}`);
-        setFirstRenderWithItemsLogged(true);
+  const markProcessingComplete = () => {
+    processingStateRef.current.isActive = false;
+    setIsProcessing(false);
+    stopStatusRotation();
+    stopRefreshPolling();
+    stopTimeoutCheck();
+    setStatusMessage('Quote ready');
+  };
+
+  const startRefreshPolling = () => {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10;
+    const POLL_INTERVAL = 1000;
+
+    refreshIntervalRef.current = setInterval(async () => {
+      if (!processingStateRef.current.isActive) {
+        stopRefreshPolling();
+        return;
       }
+
+      if (lineItems.length > 0) {
+        stopRefreshPolling();
+        return;
+      }
+
+      attempts++;
+      setRefreshAttempts(attempts);
+
+      logDiagnostics('POLLING_ATTEMPT', {
+        attempt: attempts,
+        max_attempts: MAX_ATTEMPTS,
+        elapsed_ms: Date.now() - processingStateRef.current.startTime,
+      });
+
+      const foundItems = await refreshLineItems();
+
+      if (foundItems || attempts >= MAX_ATTEMPTS) {
+        stopRefreshPolling();
+      }
+    }, POLL_INTERVAL);
+  };
+
+  const stopRefreshPolling = () => {
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+      refreshIntervalRef.current = null;
     }
   };
 
@@ -266,54 +375,24 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         },
         async (payload) => {
           console.log('[REALTIME] Quote updated:', payload.new);
-
-          const { data: updatedQuote } = await supabase
-            .from('quotes')
-            .select(`
-              *,
-              customer:customers!customer_id(*),
-              line_items:quote_line_items(*)
-            `)
-            .eq('id', quoteId)
-            .maybeSingle();
-
-          if (updatedQuote) {
-            setQuote(updatedQuote);
-            setIntake(currentIntake => {
-              updateChecklistFromData(updatedQuote, currentIntake);
-              return currentIntake;
-            });
-          }
+          await loadAllData();
         }
       )
       .subscribe();
 
-    intakeChannelRef.current = supabase
-      .channel(`intake:${intakeId}`)
+    lineItemsChannelRef.current = supabase
+      .channel(`line_items:${quoteId}`)
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: 'INSERT',
           schema: 'public',
-          table: 'voice_intakes',
-          filter: `id=eq.${intakeId}`
+          table: 'quote_line_items',
+          filter: `quote_id=eq.${quoteId}`
         },
         async (payload) => {
-          console.log('[REALTIME] Intake updated:', payload.new);
-
-          const { data: updatedIntake } = await supabase
-            .from('voice_intakes')
-            .select('extraction_json, status')
-            .eq('id', intakeId)
-            .maybeSingle();
-
-          if (updatedIntake) {
-            setIntake(updatedIntake);
-            setQuote(currentQuote => {
-              updateChecklistFromData(currentQuote, updatedIntake);
-              return currentQuote;
-            });
-          }
+          console.log('[REALTIME] Line item inserted:', payload.new);
+          await refreshLineItems();
         }
       )
       .subscribe();
@@ -324,9 +403,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       supabase.removeChannel(quoteChannelRef.current);
       quoteChannelRef.current = null;
     }
-    if (intakeChannelRef.current) {
-      supabase.removeChannel(intakeChannelRef.current);
-      intakeChannelRef.current = null;
+    if (lineItemsChannelRef.current) {
+      supabase.removeChannel(lineItemsChannelRef.current);
+      lineItemsChannelRef.current = null;
     }
   };
 
@@ -345,58 +424,20 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   const startTimeoutCheck = () => {
-    timeoutTimerRef.current = setTimeout(async () => {
-      if (isProcessing && !quote?.line_items?.length) {
-        console.warn('[ReviewDraft] Processing timeout detected after 10 seconds - checking if retry needed');
+    timeoutTimerRef.current = setTimeout(() => {
+      if (processingStateRef.current.isActive && lineItems.length === 0) {
+        console.warn('[ReviewDraft] Processing timeout - 10 seconds elapsed without line items');
 
-        const { data: intakeData } = await supabase
-          .from('voice_intakes')
-          .select('status, extraction_json')
-          .eq('id', intakeId)
-          .maybeSingle();
-
-        if (intakeData?.status === 'extracted' && intakeData?.extraction_json) {
-          console.log('[ReviewDraft] Intake is extracted but quote has no line items - retrying create-draft-quote');
-
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const token = session?.access_token;
-
-            if (token) {
-              const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-draft-quote`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    intake_id: intakeId,
-                    trace_id: `${traceIdRef.current}-retry`
-                  }),
-                }
-              );
-
-              if (response.ok) {
-                const result = await response.json();
-                console.log('[ReviewDraft] Retry successful:', result);
-                await loadInitialData();
-                return;
-              } else {
-                const errorText = await response.text();
-                console.error('[ReviewDraft] Retry failed:', errorText);
-              }
-            }
-          } catch (retryErr) {
-            console.error('[ReviewDraft] Exception during retry:', retryErr);
-          }
-        }
+        logDiagnostics('TIMEOUT', {
+          refresh_attempts: refreshAttempts,
+          processing_duration_ms: Date.now() - processingStateRef.current.startTime,
+        });
 
         setProcessingTimeout(true);
         setIsProcessing(false);
         stopStatusRotation();
-        setError('Could not extract job details with confidence. Please review and complete manually.');
+        stopRefreshPolling();
+        setError('Could not extract job details with confidence. You can still proceed to edit the quote manually.');
       }
     }, 10000);
   };
@@ -444,12 +485,25 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     );
   }
 
-  const hasLineItems = quote?.line_items && quote.line_items.length > 0;
+  const hasLineItems = lineItems.length > 0;
   const customerName = quote?.customer?.name || null;
   const quoteTitle = quote?.title || 'Processing job';
   const isStillProcessing = isProcessing || quoteTitle === 'Processing job';
   const extractionData = intake?.extraction_json;
   const scopeOfWork = quote?.scope_of_work || [];
+
+  const extractionRequiresReview = intake?.status === 'needs_user_review' &&
+    extractionData?.quality?.requires_user_confirmation === true;
+
+  const hasRequiredFieldsMissing = intake?.extraction_json?.missing_fields?.some(
+    (field: any) => field.severity === 'required'
+  );
+
+  const shouldShowIncompleteWarning = extractionRequiresReview || hasRequiredFieldsMissing;
+
+  const labourItems = lineItems.filter(item => item.item_type === 'labour');
+  const materialItems = lineItems.filter(item => item.item_type === 'materials');
+  const feeItems = lineItems.filter(item => item.item_type === 'fee');
 
   return (
     <Layout showNav={false} className="bg-surface">
@@ -471,21 +525,40 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
 
-        {hasLineItems && quote.line_items.some((item: any) => item.notes?.includes('Placeholder')) && (
+        {shouldShowIncompleteWarning && hasLineItems && (
           <Card className="bg-amber-50 border-amber-200">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 w-1 h-full bg-amber-400 rounded-full"></div>
               <div className="flex-1 py-1">
                 <p className="text-sm font-medium text-amber-900 mb-1">
-                  Incomplete extraction
+                  Requires review
                 </p>
                 <p className="text-xs text-amber-700">
-                  We could not confidently extract all details. Review the placeholder items below and update them with accurate information.
+                  {hasRequiredFieldsMissing
+                    ? 'Some required fields are missing. Please review and update the details below.'
+                    : 'Some details were extracted with low confidence. Please review the items below and make any necessary corrections.'}
                 </p>
               </div>
             </div>
           </Card>
         )}
+
+        {showPricingWarning && hasLineItems && (
+          <Card className="bg-blue-50 border-blue-200">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 w-1 h-full bg-blue-400 rounded-full"></div>
+              <div className="flex-1 py-1">
+                <p className="text-sm font-medium text-blue-900 mb-1">
+                  Pricing needed
+                </p>
+                <p className="text-xs text-blue-700">
+                  Some materials couldn't be matched to the catalog. You'll be able to add pricing in the next step.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
         {processingTimeout && (
           <Card className="bg-yellow-50 border-yellow-200">
             <div className="text-center space-y-3">
@@ -494,8 +567,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
               </p>
               <p className="text-xs text-yellow-700">
                 {hasLineItems
-                  ? 'This can happen with longer recordings or complex jobs. Check the browser console for details.'
-                  : 'The recording quality or content prevented automatic extraction. You can still create the quote manually.'}
+                  ? 'Some details may still be loading. You can continue or wait a moment and refresh.'
+                  : 'The recording may not have contained clear job details. You can still create the quote manually in the next step.'}
               </p>
               <div className="flex gap-2 justify-center">
                 {hasLineItems ? (
@@ -525,9 +598,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             </div>
           </Card>
         )}
+
         {isStillProcessing && showChecklist && !processingTimeout && (
           <div className={`py-2 ${checklistFadingOut ? 'animate-fade-slide-out' : ''}`}>
             <ProgressChecklist items={checklistItems} className="max-w-xs mx-auto" />
+            {refreshAttempts > 0 && (
+              <p className="text-xs text-tertiary text-center mt-2">
+                Loading details... (attempt {refreshAttempts}/10)
+              </p>
+            )}
           </div>
         )}
 
@@ -608,33 +687,31 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             </div>
           ) : hasLineItems ? (
             <div className="space-y-3">
-              {quote.line_items
-                .filter((item: any) => item.item_type === 'labour')
-                .map((item: any) => {
-                  const isPlaceholder = item.notes?.includes('Placeholder');
-                  return (
-                    <div
-                      key={item.id}
-                      className={`pb-3 border-b border-border last:border-0 last:pb-0 ${isPlaceholder ? 'bg-amber-50 -mx-4 px-4 py-3 rounded' : ''}`}
-                    >
-                      <div className="flex justify-between items-start mb-1 gap-3">
-                        <span className={`font-medium flex-1 min-w-0 truncate ${isPlaceholder ? 'text-amber-900' : 'text-primary'}`}>
-                          {item.description}
-                        </span>
-                        <span className={`font-semibold flex-shrink-0 ${isPlaceholder ? 'text-amber-700' : 'text-primary'}`}>
-                          {formatCents(item.line_total_cents)}
-                        </span>
-                      </div>
-                      <div className={`text-sm ${isPlaceholder ? 'text-amber-600' : 'text-secondary'}`}>
-                        {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
-                      </div>
-                      {isPlaceholder && (
-                        <p className="mt-1 text-xs text-amber-700 font-medium">Needs estimation</p>
-                      )}
+              {labourItems.map((item) => {
+                const needsReview = item.is_needs_review || item.is_placeholder;
+                return (
+                  <div
+                    key={item.id}
+                    className={`pb-3 border-b border-border last:border-0 last:pb-0 ${needsReview ? 'bg-amber-50 -mx-4 px-4 py-3 rounded' : ''}`}
+                  >
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className={`font-medium flex-1 min-w-0 truncate ${needsReview ? 'text-amber-900' : 'text-primary'}`}>
+                        {item.description}
+                      </span>
+                      <span className={`font-semibold flex-shrink-0 ${needsReview ? 'text-amber-700' : 'text-primary'}`}>
+                        {formatCents(item.line_total_cents)}
+                      </span>
                     </div>
-                  );
-                })}
-              {quote.line_items.filter((item: any) => item.item_type === 'labour').length === 0 && (
+                    <div className={`text-sm ${needsReview ? 'text-amber-600' : 'text-secondary'}`}>
+                      {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
+                    </div>
+                    {needsReview && (
+                      <p className="mt-1 text-xs text-amber-700 font-medium">Needs estimation</p>
+                    )}
+                  </div>
+                );
+              })}
+              {labourItems.length === 0 && (
                 <p className="text-sm text-tertiary">No labour items</p>
               )}
             </div>
@@ -680,35 +757,36 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             </div>
           ) : hasLineItems ? (
             <div className="space-y-3">
-              {quote.line_items
-                .filter((item: any) => item.item_type === 'materials')
-                .map((item: any) => {
-                  const isPlaceholder = item.notes?.includes('Placeholder');
-                  return (
-                    <div
-                      key={item.id}
-                      className={`pb-3 border-b border-border last:border-0 last:pb-0 ${isPlaceholder ? 'bg-amber-50 -mx-4 px-4 py-3 rounded' : ''}`}
-                    >
-                      <div className="flex justify-between items-start mb-1 gap-3">
-                        <span className={`font-medium flex-1 min-w-0 truncate ${isPlaceholder ? 'text-amber-900' : 'text-primary'}`}>
-                          {item.description}
-                        </span>
-                        <span className={`font-semibold flex-shrink-0 ${isPlaceholder ? 'text-amber-700' : 'text-primary'}`}>
-                          {formatCents(item.line_total_cents)}
-                        </span>
-                      </div>
-                      <div className={`text-sm ${isPlaceholder ? 'text-amber-600' : 'text-secondary'}`}>
-                        {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
-                      </div>
-                      {isPlaceholder ? (
-                        <p className="mt-1 text-xs text-amber-700 font-medium">Needs pricing</p>
-                      ) : item.notes ? (
-                        <p className="mt-1 text-xs text-secondary italic">{item.notes}</p>
-                      ) : null}
+              {materialItems.map((item) => {
+                const needsPricing = item.unit_price_cents === 0 || item.notes?.toLowerCase().includes('needs pricing');
+                const needsReview = item.is_needs_review || item.is_placeholder;
+                const showWarning = needsPricing || needsReview;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`pb-3 border-b border-border last:border-0 last:pb-0 ${showWarning ? 'bg-amber-50 -mx-4 px-4 py-3 rounded' : ''}`}
+                  >
+                    <div className="flex justify-between items-start mb-1 gap-3">
+                      <span className={`font-medium flex-1 min-w-0 truncate ${showWarning ? 'text-amber-900' : 'text-primary'}`}>
+                        {item.description}
+                      </span>
+                      <span className={`font-semibold flex-shrink-0 ${showWarning ? 'text-amber-700' : 'text-primary'}`}>
+                        {formatCents(item.line_total_cents)}
+                      </span>
                     </div>
-                  );
-                })}
-              {quote.line_items.filter((item: any) => item.item_type === 'materials').length === 0 && (
+                    <div className={`text-sm ${showWarning ? 'text-amber-600' : 'text-secondary'}`}>
+                      {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
+                    </div>
+                    {needsPricing ? (
+                      <p className="mt-1 text-xs text-amber-700 font-medium">Needs pricing</p>
+                    ) : item.notes ? (
+                      <p className="mt-1 text-xs text-secondary italic">{item.notes}</p>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {materialItems.length === 0 && (
                 <p className="text-sm text-tertiary">No materials</p>
               )}
             </div>
@@ -725,22 +803,20 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {quote.line_items
-                .filter((item: any) => item.item_type === 'fee')
-                .map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="pb-3 border-b border-border last:border-0 last:pb-0"
-                  >
-                    <div className="flex justify-between items-start mb-1 gap-3">
-                      <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
-                      <span className="font-semibold text-primary flex-shrink-0">
-                        {formatCents(item.line_total_cents)}
-                      </span>
-                    </div>
+              {feeItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="pb-3 border-b border-border last:border-0 last:pb-0"
+                >
+                  <div className="flex justify-between items-start mb-1 gap-3">
+                    <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                    <span className="font-semibold text-primary flex-shrink-0">
+                      {formatCents(item.line_total_cents)}
+                    </span>
                   </div>
-                ))}
-              {quote.line_items.filter((item: any) => item.item_type === 'fee').length === 0 && (
+                </div>
+              ))}
+              {feeItems.length === 0 && (
                 <p className="text-sm text-tertiary">No fees</p>
               )}
             </div>
@@ -769,19 +845,19 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
               <div className="flex justify-between text-xs">
                 <span className="text-tertiary">Subtotal:</span>
                 <span className="text-secondary">
-                  {formatCents(quote.subtotal_cents || 0)}
+                  {formatCents(quote?.subtotal_cents || 0)}
                 </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-tertiary">Tax:</span>
                 <span className="text-secondary">
-                  {formatCents(quote.tax_total_cents || 0)}
+                  {formatCents(quote?.tax_total_cents || 0)}
                 </span>
               </div>
               <div className="flex justify-between text-sm font-medium">
                 <span className="text-secondary">Total:</span>
                 <span className="text-primary">
-                  {formatCents(quote.grand_total_cents || 0)}
+                  {formatCents(quote?.grand_total_cents || 0)}
                 </span>
               </div>
             </div>
@@ -797,9 +873,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <Button
             onClick={() => onContinue(quoteId)}
             className="flex-1"
-            disabled={!hasLineItems}
+            disabled={!hasLineItems && !processingTimeout}
           >
-            {hasLineItems ? 'Confirm Job and Build Quote' : 'Preparing details...'}
+            {hasLineItems ? 'Confirm Job and Build Quote' : processingTimeout ? 'Continue to Edit' : 'Preparing details...'}
           </Button>
         </div>
       </div>
