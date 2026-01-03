@@ -128,8 +128,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
     console.warn(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} total_ms=${renderTime}`);
 
-    const { data: { user } } = supabase.auth.getUser();
-    user.then(({ data }) => {
+    supabase.auth.getUser().then(({ data }) => {
       logDiagnostics('MOUNT', {
         user_id: data?.user?.id,
         has_trace_id: !!traceId,
