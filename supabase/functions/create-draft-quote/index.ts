@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
-const DRAFT_VERSION = "v2.2-2026-01-03-placeholder-fix";
+const DRAFT_VERSION = "v2.3-2026-01-03-source-field-fix";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -417,6 +417,7 @@ Deno.serve(async (req: Request) => {
           description: quoteDescription,
           scope_of_work: scopeOfWork,
           status: "draft",
+          source: "voice",
           currency: profile.default_currency,
           default_tax_rate: profile.default_tax_rate,
           tax_inclusive: profile.org_tax_inclusive,

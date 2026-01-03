@@ -209,7 +209,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       updateChecklistFromActualData(quoteResult.data, lineItemsResult.data || [], intakeResult.data);
       setLoading(false);
 
-      if ((lineItemsResult.data?.length || 0) > 0) {
+      const hasRealItems = lineItemsResult.data && lineItemsResult.data.length > 0 &&
+        lineItemsResult.data.some(item => !item.is_placeholder);
+      const isDraftDone = intakeResult.data?.stage === 'draft_done';
+
+      if (hasRealItems && isDraftDone) {
         markProcessingComplete();
       }
     } catch (err) {
@@ -235,7 +239,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         updateChecklistFromActualData(quote, lineItemsResult.data, intake);
       }
 
-      markProcessingComplete();
+      const hasRealItems = lineItemsResult.data.some(item => !item.is_placeholder);
+      const isDraftDone = intake?.stage === 'draft_done';
+
+      if (hasRealItems && isDraftDone) {
+        markProcessingComplete();
+      }
       return true;
     }
 

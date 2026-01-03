@@ -457,6 +457,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           description: '',
           scope_of_work: [],
           status: 'draft',
+          source: 'voice',
           currency: 'AUD',
           default_tax_rate: 10,
           tax_inclusive: false,
