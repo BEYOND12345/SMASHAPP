@@ -41,12 +41,19 @@ const PROMPT_LINES = [
   "3. RANGES: three or four days store min 3 max 4 use max for estimates",
   "4. UNIT NORMALIZATION: metres meters m lm all equal m, square metres sqm m2 all equal sqm",
   "5. Extract all scope of work tasks as separate items in array",
+  "6. JOB TITLE EXTRACTION (CRITICAL):",
+  "   - Extract from first 1-2 sentences describing the main work",
+  "   - Examples: 'Deck replacement at house in Sydney' → 'Deck replacement'",
+  "   - Examples: 'Need new kitchen cabinets installed' → 'Kitchen cabinet installation'",
+  "   - Examples: 'Fix leaking roof' → 'Roof leak repair'",
+  "   - Examples: 'Quote for painting exterior' → 'Exterior painting'",
+  "   - ALWAYS extract a title. Never return null. Be concise (3-6 words).",
   "",
   "Return ONLY this exact JSON structure:",
   "{",
   '  "customer": { "name": string|null, "email": string|null, "phone": string|null },',
   '  "job": {',
-  '    "title": string|null,',
+  '    "title": string,',
   '    "summary": string|null,',
   '    "site_address": string|null,',
   '    "estimated_days_min": number|null,',
@@ -302,11 +309,55 @@ async function matchAndPriceMaterials(
   });
 }
 
-function enrichExtractedData(rawData: any, pricingProfile: any): any {
+function generateFallbackTitle(extractedData: any, transcript: string): string {
+  if (extractedData.job?.scope_of_work && extractedData.job.scope_of_work.length > 0) {
+    const firstScope = String(extractedData.job.scope_of_work[0]).trim();
+    if (firstScope.length > 0) {
+      return firstScope.substring(0, 60);
+    }
+  }
+
+  const sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 0);
+  if (sentences.length > 0) {
+    const firstSentence = sentences[0];
+    if (firstSentence.length >= 10 && firstSentence.length <= 100) {
+      return firstSentence.substring(0, 60);
+    }
+  }
+
+  if (extractedData.time?.labour_entries && extractedData.time.labour_entries.length > 0) {
+    const firstLabour = extractedData.time.labour_entries[0];
+    if (firstLabour.description && firstLabour.description.length > 0) {
+      return String(firstLabour.description).substring(0, 60);
+    }
+  }
+
+  if (extractedData.materials?.items && extractedData.materials.items.length > 0) {
+    const firstMaterial = extractedData.materials.items[0];
+    if (firstMaterial.description && firstMaterial.description.length > 0) {
+      return `Supply ${String(firstMaterial.description).substring(0, 50)}`;
+    }
+  }
+
+  return `Voice Quote ${new Date().toLocaleDateString()}`;
+}
+
+function enrichExtractedData(rawData: any, pricingProfile: any, transcript?: string): any {
+  let jobTitle = rawData.job?.title || null;
+
+  if (!jobTitle || jobTitle.trim() === '' || jobTitle.toLowerCase() === 'processing job') {
+    if (transcript) {
+      jobTitle = generateFallbackTitle(rawData, transcript);
+      console.log('[TITLE_FALLBACK] Generated fallback title:', jobTitle);
+    } else {
+      jobTitle = null;
+    }
+  }
+
   const enriched: any = {
     customer: rawData.customer || { name: null, email: null, phone: null },
     job: {
-      title: rawData.job?.title || null,
+      title: jobTitle,
       summary: rawData.job?.summary || null,
       site_address: rawData.job?.site_address || null,
       estimated_days_min: rawData.job?.estimated_days_min || null,
@@ -621,7 +672,7 @@ Deno.serve(async (req: Request) => {
       console.log("[PHASE_1.2] Starting post-processing");
       const postProcessStartTime = Date.now();
 
-      extractedData = enrichExtractedData(rawExtraction, minimalProfile);
+      extractedData = enrichExtractedData(rawExtraction, minimalProfile, intake.transcript_text);
 
       if (existingCustomer) {
         extractedData.customer = {
@@ -833,8 +884,14 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      let finalTitle = extractedData.job?.title || "Processing job";
+      if (!finalTitle || finalTitle === "Processing job") {
+        finalTitle = generateFallbackTitle(extractedData, intake.transcript_text);
+        console.log("[PROGRESSIVE_UPDATE] Using fallback title:", finalTitle);
+      }
+
       const quoteUpdateData: any = {
-        title: extractedData.job?.title || "Processing job",
+        title: finalTitle,
         description: extractedData.job?.summary || "",
         scope_of_work: extractedData.job?.scope_of_work || [],
       };
