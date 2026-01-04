@@ -110,6 +110,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const mountTimeRef = useRef<number>(0);
   const timeoutTimerRef = useRef<NodeJS.Timeout | null>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const processingStateRef = useRef<ProcessingState>({ isActive: true, startTime: Date.now() });
 
   const logDiagnostics = (phase: string, data: any) => {
@@ -128,6 +129,22 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   useEffect(() => {
+    if (!quoteId || typeof quoteId !== 'string' || quoteId.trim() === '') {
+      const errorMsg = 'Invalid quoteId prop';
+      console.error('[ReviewDraft] Props validation failed:', errorMsg);
+      setError(errorMsg);
+      setLoading(false);
+      return;
+    }
+
+    if (!intakeId || typeof intakeId !== 'string' || intakeId.trim() === '') {
+      const errorMsg = 'Invalid intakeId prop';
+      console.error('[ReviewDraft] Props validation failed:', errorMsg);
+      setError(errorMsg);
+      setLoading(false);
+      return;
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     const traceId = urlParams.get('trace_id') || '';
     traceIdRef.current = traceId;
@@ -186,12 +203,22 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       if (quoteResult.error) {
         console.error('[ReviewDraft] Quote load error:', quoteResult.error);
         setError('Failed to load quote');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        cleanupSubscriptions();
+        setLoading(false);
         return;
       }
 
       if (!quoteResult.data) {
         console.error('[ReviewDraft] Quote not found');
         setError('Quote not found');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        cleanupSubscriptions();
+        setLoading(false);
         return;
       }
 
@@ -213,6 +240,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       if (intakeResult.error) {
         console.error('[ReviewDraft] Intake load error:', intakeResult.error);
         setError('Failed to load voice intake');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        cleanupSubscriptions();
         setLoading(false);
         return;
       }
@@ -220,6 +251,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       if (!intakeResult.data) {
         console.error('[ReviewDraft] Intake not found for id:', intakeId);
         setError('Voice intake not found');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        cleanupSubscriptions();
         setLoading(false);
         return;
       }
@@ -290,18 +325,45 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     } catch (err) {
       console.error('[ReviewDraft] Load error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load data');
+      stopRefreshPolling();
+      stopStatusRotation();
+      stopTimeoutCheck();
+      cleanupSubscriptions();
       setLoading(false);
     }
   };
 
   const refreshLineItems = async () => {
-    const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
+    console.log('[ReviewDraft] REFRESH: Starting refresh cycle', {
+      current_line_items: lineItems.length,
+      current_stage: intake?.stage,
+    });
 
+    const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
+    console.log('[ReviewDraft] REFRESH: Line items result:', {
+      has_data: !!lineItemsResult.data,
+      has_error: !!lineItemsResult.error,
+      count: lineItemsResult.data?.length || 0,
+    });
+
+    console.log('[ReviewDraft] REFRESH: Fetching intake with id:', intakeId);
     const intakeResult = await supabase
       .from('voice_intakes')
       .select('*')
       .eq('id', intakeId)
       .maybeSingle();
+
+    console.log('[ReviewDraft] REFRESH: Intake fetch result:', {
+      has_data: !!intakeResult.data,
+      has_error: !!intakeResult.error,
+      error: intakeResult.error,
+      data_stage: intakeResult.data?.stage,
+    });
+
+    if (intakeResult.error) {
+      console.error('[ReviewDraft] Refresh intake error:', intakeResult.error);
+      return false;
+    }
 
     if (lineItemsResult.data && lineItemsResult.data.length > 0) {
       const hasRealItems = lineItemsResult.data.some(item => !item.is_placeholder);
@@ -478,6 +540,18 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
   };
 
+  const debouncedRefresh = () => {
+    if (refreshDebounceRef.current) {
+      clearTimeout(refreshDebounceRef.current);
+    }
+
+    refreshDebounceRef.current = setTimeout(async () => {
+      console.log('[ReviewDraft] Executing debounced refresh');
+      await refreshLineItems();
+      refreshDebounceRef.current = null;
+    }, 500);
+  };
+
   const setupRealtimeSubscriptions = () => {
     quoteChannelRef.current = supabase
       .channel(`quote:${quoteId}`)
@@ -489,9 +563,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           table: 'quotes',
           filter: `id=eq.${quoteId}`
         },
-        async (payload) => {
+        (payload) => {
           console.log('[REALTIME] Quote updated:', payload.new);
-          await loadAllData();
+          debouncedRefresh();
         }
       )
       .subscribe();
@@ -506,9 +580,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           table: 'quote_line_items',
           filter: `quote_id=eq.${quoteId}`
         },
-        async (payload) => {
+        (payload) => {
           console.log('[REALTIME] Line item inserted:', payload.new);
-          await refreshLineItems();
+          debouncedRefresh();
         }
       )
       .on(
@@ -519,9 +593,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           table: 'quote_line_items',
           filter: `quote_id=eq.${quoteId}`
         },
-        async (payload) => {
+        (payload) => {
           console.log('[REALTIME] Line item updated:', payload.new);
-          await refreshLineItems();
+          debouncedRefresh();
         }
       )
       .subscribe();
@@ -536,12 +610,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           table: 'voice_intakes',
           filter: `id=eq.${intakeId}`
         },
-        async (payload) => {
+        (payload) => {
           console.log('[REALTIME] Intake updated:', {
             stage: payload.new.stage,
             status: payload.new.status,
           });
-          await refreshLineItems();
+          debouncedRefresh();
         }
       )
       .subscribe();
@@ -699,7 +773,16 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <Card className="text-center">
             <p className="text-lg font-semibold text-primary mb-2">Unable to load quote</p>
             <p className="text-sm text-secondary mb-4">{error}</p>
-            <Button onClick={onBack}>Go Back</Button>
+            <div className="flex gap-2 justify-center">
+              <Button onClick={onBack} variant="secondary">Go Back</Button>
+              <Button onClick={() => {
+                setError('');
+                setLoading(true);
+                loadAllData();
+              }} disabled={loading}>
+                {loading ? 'Retrying...' : 'Retry'}
+              </Button>
+            </div>
           </Card>
         </div>
       </Layout>
