@@ -511,11 +511,6 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         return;
       }
 
-      if (lineItems.length > 0) {
-        stopRefreshPolling();
-        return;
-      }
-
       attempts++;
       setRefreshAttempts(attempts);
 
@@ -525,9 +520,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         elapsed_ms: Date.now() - processingStateRef.current.startTime,
       });
 
-      const foundItems = await refreshLineItems();
+      await refreshLineItems();
 
-      if (foundItems || attempts >= MAX_ATTEMPTS) {
+      if (attempts >= MAX_ATTEMPTS) {
         stopRefreshPolling();
       }
     }, POLL_INTERVAL);
