@@ -332,7 +332,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const startRefreshPolling = () => {
     let attempts = 0;
-    const MAX_ATTEMPTS = 10;
+    const MAX_ATTEMPTS = 40;
     const POLL_INTERVAL = 1000;
 
     refreshIntervalRef.current = setInterval(async () => {
@@ -434,7 +434,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const startTimeoutCheck = () => {
     timeoutTimerRef.current = setTimeout(() => {
       if (processingStateRef.current.isActive && lineItems.length === 0) {
-        console.warn('[ReviewDraft] Processing timeout - 10 seconds elapsed without line items');
+        console.warn('[ReviewDraft] Processing timeout - 45 seconds elapsed without line items');
 
         logDiagnostics('TIMEOUT', {
           refresh_attempts: refreshAttempts,
@@ -447,7 +447,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         stopRefreshPolling();
         setError('Could not extract job details with confidence. You can still proceed to edit the quote manually.');
       }
-    }, 10000);
+    }, 45000);
   };
 
   const stopTimeoutCheck = () => {
