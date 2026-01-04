@@ -93,6 +93,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const quoteChannelRef = useRef<RealtimeChannel | null>(null);
   const lineItemsChannelRef = useRef<RealtimeChannel | null>(null);
+  const intakeChannelRef = useRef<RealtimeChannel | null>(null);
   const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const statusIndexRef = useRef(0);
   const traceIdRef = useRef<string>('');
@@ -211,9 +212,28 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
       const hasRealItems = lineItemsResult.data && lineItemsResult.data.length > 0 &&
         lineItemsResult.data.some(item => !item.is_placeholder);
+      const realItemsCount = lineItemsResult.data?.filter(item => !item.is_placeholder).length || 0;
       const isDraftDone = intakeResult.data?.stage === 'draft_done';
 
+      console.log('[ReviewDraft] INITIAL LOAD CHECK:', {
+        quote_id: quoteId,
+        intake_id: intakeId,
+        intake_stage: intakeResult.data?.stage,
+        intake_status: intakeResult.data?.status,
+        total_line_items: lineItemsResult.data?.length || 0,
+        real_line_items: realItemsCount,
+        has_real_items: hasRealItems,
+        is_draft_done: isDraftDone,
+        should_complete: hasRealItems && isDraftDone,
+      });
+
       if (hasRealItems && isDraftDone) {
+        console.log('[ReviewDraft] PROCESSING COMPLETE ON MOUNT - Conditions met:', {
+          quote_id: quoteId,
+          intake_stage: intakeResult.data?.stage,
+          real_items_count: realItemsCount,
+          reason: 'draft_done stage already reached on initial load',
+        });
         markProcessingComplete();
       }
     } catch (err) {
@@ -226,23 +246,53 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const refreshLineItems = async () => {
     const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
 
+    const intakeResult = await supabase
+      .from('voice_intakes')
+      .select('*')
+      .eq('id', intakeId)
+      .maybeSingle();
+
     if (lineItemsResult.data && lineItemsResult.data.length > 0) {
+      const hasRealItems = lineItemsResult.data.some(item => !item.is_placeholder);
+      const realItemsCount = lineItemsResult.data.filter(item => !item.is_placeholder).length;
+      const currentIntake = intakeResult.data || intake;
+      const isDraftDone = currentIntake?.stage === 'draft_done';
+
+      console.log('[ReviewDraft] REFRESH CHECK:', {
+        quote_id: quoteId,
+        intake_id: intakeId,
+        intake_stage: currentIntake?.stage,
+        intake_status: currentIntake?.status,
+        total_line_items: lineItemsResult.data.length,
+        real_line_items: realItemsCount,
+        has_real_items: hasRealItems,
+        is_draft_done: isDraftDone,
+        should_complete: hasRealItems && isDraftDone,
+      });
+
       logDiagnostics('REFRESH_SUCCESS', {
         attempt: refreshAttempts + 1,
         items_found: lineItemsResult.data.length,
+        real_items: realItemsCount,
+        intake_stage: currentIntake?.stage,
+        should_complete: hasRealItems && isDraftDone,
       });
 
       setLineItems(lineItemsResult.data);
+      setIntake(currentIntake);
       setRefreshAttempts(0);
 
       if (quote) {
-        updateChecklistFromActualData(quote, lineItemsResult.data, intake);
+        updateChecklistFromActualData(quote, lineItemsResult.data, currentIntake);
       }
 
-      const hasRealItems = lineItemsResult.data.some(item => !item.is_placeholder);
-      const isDraftDone = intake?.stage === 'draft_done';
-
       if (hasRealItems && isDraftDone) {
+        console.log('[ReviewDraft] PROCESSING COMPLETE - Conditions met:', {
+          quote_id: quoteId,
+          intake_stage: currentIntake?.stage,
+          real_items_count: realItemsCount,
+          reason: 'draft_done stage reached with real line items',
+        });
         markProcessingComplete();
       }
       return true;
@@ -322,6 +372,13 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   const markProcessingComplete = () => {
+    console.log('[ReviewDraft] ✅ MARKING PROCESSING COMPLETE', {
+      quote_id: quoteId,
+      intake_id: intakeId,
+      was_processing: processingStateRef.current.isActive,
+      duration_ms: Date.now() - processingStateRef.current.startTime,
+    });
+
     processingStateRef.current.isActive = false;
     setIsProcessing(false);
     stopStatusRotation();
@@ -403,6 +460,39 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           await refreshLineItems();
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'quote_line_items',
+          filter: `quote_id=eq.${quoteId}`
+        },
+        async (payload) => {
+          console.log('[REALTIME] Line item updated:', payload.new);
+          await refreshLineItems();
+        }
+      )
+      .subscribe();
+
+    intakeChannelRef.current = supabase
+      .channel(`intake:${intakeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'voice_intakes',
+          filter: `id=eq.${intakeId}`
+        },
+        async (payload) => {
+          console.log('[REALTIME] Intake updated:', {
+            stage: payload.new.stage,
+            status: payload.new.status,
+          });
+          await refreshLineItems();
+        }
+      )
       .subscribe();
   };
 
@@ -414,6 +504,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     if (lineItemsChannelRef.current) {
       supabase.removeChannel(lineItemsChannelRef.current);
       lineItemsChannelRef.current = null;
+    }
+    if (intakeChannelRef.current) {
+      supabase.removeChannel(intakeChannelRef.current);
+      intakeChannelRef.current = null;
     }
   };
 
