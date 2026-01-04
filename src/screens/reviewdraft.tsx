@@ -527,19 +527,26 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const startTimeoutCheck = () => {
     timeoutTimerRef.current = setTimeout(() => {
-      if (processingStateRef.current.isActive && lineItems.length === 0) {
-        console.warn('[ReviewDraft] Processing timeout - 45 seconds elapsed without line items');
+      if (processingStateRef.current.isActive) {
+        console.warn('[ReviewDraft] Processing timeout - 45 seconds elapsed', {
+          has_line_items: lineItems.length > 0,
+          intake_stage: intake?.stage,
+        });
 
         logDiagnostics('TIMEOUT', {
           refresh_attempts: refreshAttempts,
           processing_duration_ms: Date.now() - processingStateRef.current.startTime,
+          line_items_count: lineItems.length,
         });
 
         setProcessingTimeout(true);
         setIsProcessing(false);
         stopStatusRotation();
         stopRefreshPolling();
-        setError('Could not extract job details with confidence. You can still proceed to edit the quote manually.');
+
+        if (lineItems.length === 0) {
+          setError('Could not extract job details with confidence. You can still proceed to edit the quote manually.');
+        }
       }
     }, 45000);
   };
@@ -651,7 +658,6 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const hasLineItems = lineItems.length > 0;
   const customerName = quote?.customer?.name || null;
   const quoteTitle = quote?.title || 'Processing job';
-  const isStillProcessing = isProcessing || quoteTitle === 'Processing job';
   const extractionData = intake?.extraction_json;
   const scopeOfWork = quote?.scope_of_work || [];
 
@@ -668,17 +674,49 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const materialItems = lineItems.filter(item => item.item_type === 'materials');
   const feeItems = lineItems.filter(item => item.item_type === 'fee');
 
+  console.log('[ReviewDraft] LINE ITEMS IN RENDER:', {
+    total_count: lineItems.length,
+    labour_count: labourItems.length,
+    material_count: materialItems.length,
+    labour_items: labourItems.map(item => ({
+      id: item.id,
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit,
+      unit_price_cents: item.unit_price_cents,
+      is_placeholder: item.is_placeholder,
+      is_needs_review: item.is_needs_review,
+    })),
+  });
+
   const hasOnlyPlaceholders = hasLineItems && lineItems.every(item => item.is_placeholder);
+  const hasRealItems = hasLineItems && lineItems.some(item => !item.is_placeholder);
   const hasSomePlaceholders = hasLineItems && lineItems.some(item => item.is_placeholder);
 
-  const showProcessingState = (
+  const isDraftComplete = intake?.stage === 'draft_done' && hasRealItems;
+
+  console.log('[ReviewDraft] RENDER STATE:', {
+    intake_stage: intake?.stage,
+    intake_status: intake?.status,
+    has_line_items: hasLineItems,
+    has_real_items: hasRealItems,
+    is_draft_complete: isDraftComplete,
+    is_processing_state: isProcessing,
+    processing_timeout: processingTimeout,
+  });
+
+  const showProcessingState = !isDraftComplete && (
     intake?.stage === 'draft_started' ||
     intake?.stage === 'extract_done' ||
-    (hasLineItems && hasOnlyPlaceholders)
+    intake?.stage === 'extracting' ||
+    (hasLineItems && hasOnlyPlaceholders) ||
+    isProcessing
   );
 
+  const isStillProcessing = showProcessingState;
+
   const showPlaceholderWarning = (
-    intake?.stage === 'draft_done' &&
+    isDraftComplete &&
     hasSomePlaceholders
   );
 
@@ -771,7 +809,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           </Card>
         )}
 
-        {processingTimeout && (
+        {processingTimeout && !isDraftComplete && (
           <Card className="bg-yellow-50 border-yellow-200">
             <div className="text-center space-y-3">
               <p className="text-sm font-medium text-yellow-900">
