@@ -300,25 +300,29 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         lineItemsResult.data.some(item => !item.is_placeholder);
       const realItemsCount = lineItemsResult.data?.filter(item => !item.is_placeholder).length || 0;
       const isDraftDone = intakeResult.data?.stage === 'draft_done';
+      const hasCreatedQuoteId = !!intakeResult.data?.created_quote_id;
 
       console.log('[ReviewDraft] INITIAL LOAD CHECK:', {
         quote_id: quoteId,
         intake_id: intakeId,
         intake_stage: intakeResult.data?.stage,
         intake_status: intakeResult.data?.status,
+        intake_created_quote_id: intakeResult.data?.created_quote_id,
         total_line_items: lineItemsResult.data?.length || 0,
         real_line_items: realItemsCount,
         has_real_items: hasRealItems,
         is_draft_done: isDraftDone,
-        should_complete: hasRealItems && isDraftDone,
+        has_created_quote_id: hasCreatedQuoteId,
+        should_complete: isDraftDone && hasCreatedQuoteId,
       });
 
-      if (hasRealItems && isDraftDone) {
+      if (isDraftDone && hasCreatedQuoteId) {
         console.log('[ReviewDraft] PROCESSING COMPLETE ON MOUNT - Conditions met:', {
           quote_id: quoteId,
           intake_stage: intakeResult.data?.stage,
+          intake_created_quote_id: intakeResult.data?.created_quote_id,
           real_items_count: realItemsCount,
-          reason: 'draft_done stage already reached on initial load',
+          reason: 'draft_done stage + created_quote_id present',
         });
         markProcessingComplete();
       }
@@ -365,51 +369,81 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       return false;
     }
 
-    if (lineItemsResult.data && lineItemsResult.data.length > 0) {
-      const hasRealItems = lineItemsResult.data.some(item => !item.is_placeholder);
-      const realItemsCount = lineItemsResult.data.filter(item => !item.is_placeholder).length;
-      const currentIntake = intakeResult.data || intake;
-      const isDraftDone = currentIntake?.stage === 'draft_done';
+    const currentIntake = intakeResult.data || intake;
+    const isDraftDone = currentIntake?.stage === 'draft_done';
+    const hasCreatedQuoteId = !!currentIntake?.created_quote_id;
+    const hasLineItems = lineItemsResult.data && lineItemsResult.data.length > 0;
+    const hasRealItems = hasLineItems && lineItemsResult.data.some(item => !item.is_placeholder);
+    const realItemsCount = hasLineItems ? lineItemsResult.data.filter(item => !item.is_placeholder).length : 0;
 
-      console.log('[ReviewDraft] REFRESH CHECK:', {
-        quote_id: quoteId,
-        intake_id: intakeId,
-        intake_stage: currentIntake?.stage,
-        intake_status: currentIntake?.status,
-        total_line_items: lineItemsResult.data.length,
-        real_line_items: realItemsCount,
-        has_real_items: hasRealItems,
-        is_draft_done: isDraftDone,
-        should_complete: hasRealItems && isDraftDone,
+    console.log('[ReviewDraft] REFRESH CHECK:', {
+      quote_id: quoteId,
+      intake_id: intakeId,
+      intake_stage: currentIntake?.stage,
+      intake_status: currentIntake?.status,
+      intake_created_quote_id: currentIntake?.created_quote_id,
+      total_line_items: lineItemsResult.data?.length || 0,
+      real_line_items: realItemsCount,
+      has_real_items: hasRealItems,
+      is_draft_done: isDraftDone,
+      has_created_quote_id: hasCreatedQuoteId,
+      should_complete: isDraftDone && hasCreatedQuoteId,
+    });
+
+    if (lineItemsResult.error) {
+      console.error('[ReviewDraft] REFRESH: Line items query failed:', {
+        error: lineItemsResult.error,
+        message: lineItemsResult.error.message,
+        code: lineItemsResult.error.code,
       });
 
-      logDiagnostics('REFRESH_SUCCESS', {
-        attempt: refreshAttempts + 1,
-        items_found: lineItemsResult.data.length,
-        real_items: realItemsCount,
-        intake_stage: currentIntake?.stage,
-        should_complete: hasRealItems && isDraftDone,
-      });
-
-      setLineItems(lineItemsResult.data);
-      setIntake(currentIntake);
-      setRefreshAttempts(0);
-
-      if (quote) {
-        updateChecklistFromActualData(quote, lineItemsResult.data, currentIntake);
+      if (lineItemsResult.error.code === '42501' || lineItemsResult.error.message?.includes('permission')) {
+        setError('Access denied to line items. Please contact support.');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        return false;
       }
+    }
 
-      if (hasRealItems && isDraftDone) {
-        console.log('[ReviewDraft] PROCESSING COMPLETE - Conditions met:', {
-          quote_id: quoteId,
-          intake_stage: currentIntake?.stage,
-          real_items_count: realItemsCount,
-          reason: 'draft_done stage reached with real line items',
-        });
-        markProcessingComplete();
+    logDiagnostics('REFRESH_SUCCESS', {
+      attempt: refreshAttempts + 1,
+      items_found: lineItemsResult.data?.length || 0,
+      real_items: realItemsCount,
+      intake_stage: currentIntake?.stage,
+      has_created_quote_id: hasCreatedQuoteId,
+      should_complete: isDraftDone && hasCreatedQuoteId,
+    });
+
+    setLineItems(lineItemsResult.data || []);
+    setIntake(currentIntake);
+
+    if (quote) {
+      updateChecklistFromActualData(quote, lineItemsResult.data || [], currentIntake);
+    }
+
+    if (isDraftDone && hasCreatedQuoteId) {
+      console.log('[ReviewDraft] PROCESSING COMPLETE - Conditions met:', {
+        quote_id: quoteId,
+        intake_stage: currentIntake?.stage,
+        intake_created_quote_id: currentIntake?.created_quote_id,
+        real_items_count: realItemsCount,
+        has_line_items: hasLineItems,
+        reason: 'draft_done stage + created_quote_id present',
+      });
+      markProcessingComplete();
+
+      if (!hasLineItems) {
+        console.log('[REVIEWDRAFT_POLL] trace_id=' + traceIdRef.current + ' reason=waiting_for_line_items count=0');
+      } else {
+        setRefreshAttempts(0);
       }
       return true;
     }
+
+    console.log('[REVIEWDRAFT_POLL] trace_id=' + traceIdRef.current + ' reason=' +
+      (!isDraftDone ? 'stage_not_draft_done' : !hasCreatedQuoteId ? 'no_created_quote_id' : 'unknown') +
+      ' stage=' + currentIntake?.stage + ' count=' + (lineItemsResult.data?.length || 0));
 
     return false;
   };
@@ -502,27 +536,36 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const startRefreshPolling = () => {
     let attempts = 0;
-    const MAX_ATTEMPTS = 40;
-    const POLL_INTERVAL = 1000;
+    const MAX_ATTEMPTS = 10;
+    const POLL_INTERVAL = 2000;
 
     refreshIntervalRef.current = setInterval(async () => {
-      if (!processingStateRef.current.isActive) {
-        stopRefreshPolling();
-        return;
-      }
-
       attempts++;
       setRefreshAttempts(attempts);
+
+      const needsPolling = !intake?.stage || intake?.stage !== 'draft_done' ||
+        !intake?.created_quote_id || lineItems.length === 0;
 
       logDiagnostics('POLLING_ATTEMPT', {
         attempt: attempts,
         max_attempts: MAX_ATTEMPTS,
         elapsed_ms: Date.now() - processingStateRef.current.startTime,
+        intake_stage: intake?.stage,
+        has_created_quote_id: !!intake?.created_quote_id,
+        line_items_count: lineItems.length,
+        needs_polling: needsPolling,
       });
 
-      await refreshLineItems();
+      const success = await refreshLineItems();
+
+      if (!needsPolling && lineItems.length > 0) {
+        console.log('[ReviewDraft] Polling complete - line items loaded');
+        stopRefreshPolling();
+        return;
+      }
 
       if (attempts >= MAX_ATTEMPTS) {
+        console.warn('[ReviewDraft] Polling timeout after 20 seconds');
         stopRefreshPolling();
       }
     }, POLL_INTERVAL);
@@ -822,11 +865,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const hasRealItems = hasLineItems && lineItems.some(item => !item.is_placeholder);
   const hasSomePlaceholders = hasLineItems && lineItems.some(item => item.is_placeholder);
 
-  const isDraftComplete = intake?.stage === 'draft_done' && hasRealItems;
+  const isDraftComplete = intake?.stage === 'draft_done' && intake?.created_quote_id != null;
 
   console.log('[ReviewDraft] RENDER STATE:', {
     intake_stage: intake?.stage,
     intake_status: intake?.status,
+    intake_created_quote_id: intake?.created_quote_id,
     has_line_items: hasLineItems,
     has_real_items: hasRealItems,
     is_draft_complete: isDraftComplete,
@@ -838,7 +882,6 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     intake?.stage === 'draft_started' ||
     intake?.stage === 'extract_done' ||
     intake?.stage === 'extracting' ||
-    (hasLineItems && hasOnlyPlaceholders) ||
     isProcessing
   );
 
@@ -1029,10 +1072,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
         <Card>
           <h3 className="font-semibold text-primary mb-3">Labour</h3>
-          {!hasLineItems && !extractionData?.time?.labour_entries ? (
+          {!hasLineItems && !extractionData?.time?.labour_entries && isStillProcessing ? (
             <div className="space-y-3">
               <SkeletonRow />
               <SkeletonRow />
+            </div>
+          ) : !hasLineItems && !isStillProcessing && isDraftComplete ? (
+            <div className="py-4 text-center">
+              <p className="text-sm text-tertiary italic">Waiting for items...</p>
             </div>
           ) : !hasLineItems && extractionData?.time?.labour_entries ? (
             <div className="space-y-3">
@@ -1101,11 +1148,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
         <Card>
           <h3 className="font-semibold text-primary mb-3">Materials</h3>
-          {!hasLineItems && !extractionData?.materials?.items ? (
+          {!hasLineItems && !extractionData?.materials?.items && isStillProcessing ? (
             <div className="space-y-3">
               <SkeletonRow />
               <SkeletonRow />
               <SkeletonRow />
+            </div>
+          ) : !hasLineItems && !isStillProcessing && isDraftComplete ? (
+            <div className="py-4 text-center">
+              <p className="text-sm text-tertiary italic">Waiting for items...</p>
             </div>
           ) : !hasLineItems && extractionData?.materials?.items ? (
             <div className="space-y-3">
