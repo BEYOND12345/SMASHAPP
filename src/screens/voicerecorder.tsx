@@ -478,12 +478,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       const intakeId = crypto.randomUUID();
       const storagePath = `${profile.org_id}/${user.id}/voice_intakes/${intakeId}/audio.${fileExtension}`;
 
+      // Create voice_intakes record BEFORE navigation so ReviewDraft can load it
+      console.log('[VOICE_CAPTURE] Creating voice_intakes record before navigation');
+      const { error: intakeError } = await supabase
+        .from('voice_intakes')
+        .insert({
+          id: intakeId,
+          org_id: profile.org_id,
+          user_id: user.id,
+          customer_id: currentCustomerId || null,
+          source: 'web',
+          audio_storage_path: storagePath,
+          status: 'captured',
+          created_quote_id: quoteId,
+          stage: 'created',
+          trace_id: traceId,
+        });
+
+      if (intakeError) {
+        console.error('[VOICE_CAPTURE] Failed to create voice_intakes record', { error: intakeError });
+        throw new Error('Failed to create voice intake record');
+      }
+
+      console.warn(`[PERF] trace_id=${traceId} step=intake_created intake_id=${intakeId} ms=${Date.now() - quoteShellStartTime} total_ms=${Date.now() - recordStopTime}`);
+
       setState('success');
 
       const navTime = Date.now() - recordStopTime;
       console.warn(`[PERF] trace_id=${traceId} step=nav_to_reviewdraft intake_id=${intakeId} quote_id=${quoteId} total_ms=${navTime}`);
 
-      // Navigate immediately
+      // Navigate immediately - the intake record now exists
       setTimeout(() => {
         onSuccess(intakeId, quoteId, traceId, recordStopTime);
       }, 50);
@@ -524,7 +548,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           await updateStage('recorder_started');
           console.log(`[VOICE_FLOW_DIAGNOSTIC] background_block_started intake_id=${intakeId} quote_id=${quoteId} trace_id=${traceId}`);
 
-          // Upload audio and create intake record in background
+          // Upload audio in background (intake record already created before navigation)
           const uploadStartTime = Date.now();
           console.warn(`[BACKGROUND_PROCESSING] Starting upload for intake ${intakeId}`);
 
@@ -537,33 +561,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
 
           if (uploadError) {
             console.error('[BACKGROUND_PROCESSING] Upload failed', { error: uploadError });
+            await updateStage('failed', `Upload failed: ${uploadError.message}`);
             throw uploadError;
           }
 
           console.warn(`[PERF] trace_id=${traceId} step=upload_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
-
-          const { error: intakeError } = await supabase
-            .from('voice_intakes')
-            .insert({
-              id: intakeId,
-              org_id: profile.org_id,
-              user_id: user.id,
-              customer_id: currentCustomerId || null,
-              source: 'web',
-              audio_storage_path: storagePath,
-              status: 'captured',
-              created_quote_id: quoteId,
-              stage: 'recorder_started',
-              trace_id: traceId,
-            });
-
-          if (intakeError) {
-            console.error('[BACKGROUND_PROCESSING] Failed to create intake', { error: intakeError });
-            await updateStage('failed', `Intake creation failed: ${intakeError.message}`);
-            throw intakeError;
-          }
-
-          console.warn(`[PERF] trace_id=${traceId} step=intake_insert_complete intake_id=${intakeId} ms=${Date.now() - uploadStartTime} total_ms=${Date.now() - recordStopTime}`);
 
           await updateStage('transcribe_started');
 
