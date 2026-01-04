@@ -33,6 +33,7 @@ interface QuoteData {
 interface IntakeData {
   id: string;
   status: string;
+  stage: string;
   extraction_json: any;
 }
 
@@ -72,6 +73,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   onBack,
   onContinue,
 }) => {
+  console.log('[ReviewDraft] COMPONENT MOUNTED WITH PROPS:', {
+    quoteId,
+    intakeId,
+    quoteId_type: typeof quoteId,
+    intakeId_type: typeof intakeId,
+    quoteId_defined: !!quoteId,
+    intakeId_defined: !!intakeId,
+  });
+
   const [quote, setQuote] = useState<QuoteData | null>(null);
   const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
   const [intake, setIntake] = useState<IntakeData | null>(null);
@@ -155,6 +165,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     try {
       const startTime = Date.now();
 
+      console.log('[ReviewDraft] FETCHING QUOTE with id:', quoteId);
       const quoteResult = await supabase
         .from('quotes')
         .select(`
@@ -163,6 +174,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         `)
         .eq('id', quoteId)
         .maybeSingle();
+
+      console.log('[ReviewDraft] QUOTE FETCH RESULT:', {
+        has_data: !!quoteResult.data,
+        has_error: !!quoteResult.error,
+        error: quoteResult.error,
+        data_title: quoteResult.data?.title,
+        data_id: quoteResult.data?.id,
+      });
 
       if (quoteResult.error) {
         console.error('[ReviewDraft] Quote load error:', quoteResult.error);
@@ -176,11 +195,34 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         return;
       }
 
+      console.log('[ReviewDraft] FETCHING INTAKE with id:', intakeId);
       const intakeResult = await supabase
         .from('voice_intakes')
         .select('*')
         .eq('id', intakeId)
         .maybeSingle();
+
+      console.log('[ReviewDraft] INTAKE FETCH RESULT:', {
+        has_data: !!intakeResult.data,
+        has_error: !!intakeResult.error,
+        error: intakeResult.error,
+        data_stage: intakeResult.data?.stage,
+        data_status: intakeResult.data?.status,
+      });
+
+      if (intakeResult.error) {
+        console.error('[ReviewDraft] Intake load error:', intakeResult.error);
+        setError('Failed to load voice intake');
+        setLoading(false);
+        return;
+      }
+
+      if (!intakeResult.data) {
+        console.error('[ReviewDraft] Intake not found for id:', intakeId);
+        setError('Voice intake not found');
+        setLoading(false);
+        return;
+      }
 
       const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
 
@@ -202,6 +244,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           item_type: lineItemsResult.data[0].item_type,
         } : null,
         load_duration_ms: Date.now() - startTime,
+      });
+
+      console.log('[ReviewDraft] SETTING STATE with data:', {
+        quote_title: quoteResult.data.title,
+        quote_id: quoteResult.data.id,
+        intake_stage: intakeResult.data?.stage,
+        intake_status: intakeResult.data?.status,
+        line_items_count: lineItemsResult.data?.length || 0,
+        real_items: lineItemsResult.data?.filter(item => !item.is_placeholder).length || 0,
       });
 
       setQuote(quoteResult.data);

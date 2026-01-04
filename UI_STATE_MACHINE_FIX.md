@@ -1,7 +1,9 @@
 # UI State Machine Fix - Complete
 
 **Date**: 2026-01-05
-**Status**: ✅ FIXED
+**Status**: ✅ FIXED (+ Data Loading Bug Fixed)
+
+**Note**: After implementing this fix, we discovered a second bug preventing data from loading. See `DATA_LOADING_BUG_FIX.md` for details on the missing `stage` field in the TypeScript interface and lack of error handling.
 
 ---
 
