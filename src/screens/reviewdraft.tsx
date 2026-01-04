@@ -34,6 +34,7 @@ interface IntakeData {
   id: string;
   status: string;
   stage: string;
+  created_quote_id?: string;
   extraction_json: any;
 }
 
@@ -535,6 +536,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   const startRefreshPolling = () => {
+    stopRefreshPolling();
+
     let attempts = 0;
     const MAX_ATTEMPTS = 10;
     const POLL_INTERVAL = 2000;
@@ -543,30 +546,68 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       attempts++;
       setRefreshAttempts(attempts);
 
-      const needsPolling = !intake?.stage || intake?.stage !== 'draft_done' ||
-        !intake?.created_quote_id || lineItems.length === 0;
+      try {
+        const freshIntakeResult = await supabase
+          .from('voice_intakes')
+          .select('id, stage, status, created_quote_id')
+          .eq('id', intakeId)
+          .maybeSingle();
 
-      logDiagnostics('POLLING_ATTEMPT', {
-        attempt: attempts,
-        max_attempts: MAX_ATTEMPTS,
-        elapsed_ms: Date.now() - processingStateRef.current.startTime,
-        intake_stage: intake?.stage,
-        has_created_quote_id: !!intake?.created_quote_id,
-        line_items_count: lineItems.length,
-        needs_polling: needsPolling,
-      });
+        if (freshIntakeResult.error || !freshIntakeResult.data) {
+          console.error('[ReviewDraft] POLL: Failed to fetch intake', freshIntakeResult.error);
+          return;
+        }
 
-      const success = await refreshLineItems();
+        const freshIntake = freshIntakeResult.data;
+        const freshStage = freshIntake.stage;
+        const freshCreatedQuoteId = freshIntake.created_quote_id;
 
-      if (!needsPolling && lineItems.length > 0) {
-        console.log('[ReviewDraft] Polling complete - line items loaded');
-        stopRefreshPolling();
-        return;
-      }
+        let freshLineItemsCount = 0;
+        if (freshCreatedQuoteId) {
+          const lineItemsResult = await supabase
+            .from('quote_line_items')
+            .select('id', { count: 'exact', head: true })
+            .eq('quote_id', freshCreatedQuoteId);
 
-      if (attempts >= MAX_ATTEMPTS) {
-        console.warn('[ReviewDraft] Polling timeout after 20 seconds');
-        stopRefreshPolling();
+          freshLineItemsCount = lineItemsResult.count || 0;
+        }
+
+        let reason = 'unknown';
+        if (freshStage !== 'draft_done') {
+          reason = 'stage_not_draft_done';
+        } else if (!freshCreatedQuoteId) {
+          reason = 'no_created_quote_id';
+        } else if (freshLineItemsCount === 0) {
+          reason = 'waiting_for_line_items';
+        }
+
+        console.log(`[REVIEWDRAFT_POLL] trace_id=${traceIdRef.current} reason=${reason} stage=${freshStage} quote_id=${freshCreatedQuoteId || 'null'} count=${freshLineItemsCount} attempt=${attempts}`);
+
+        logDiagnostics('POLLING_ATTEMPT', {
+          attempt: attempts,
+          max_attempts: MAX_ATTEMPTS,
+          elapsed_ms: Date.now() - processingStateRef.current.startTime,
+          fresh_stage: freshStage,
+          fresh_created_quote_id: freshCreatedQuoteId,
+          fresh_line_items_count: freshLineItemsCount,
+          reason: reason,
+        });
+
+        if (freshStage === 'draft_done' && freshCreatedQuoteId && freshLineItemsCount > 0) {
+          console.log('[ReviewDraft] Polling complete - all conditions met');
+          await refreshLineItems();
+          stopRefreshPolling();
+          return;
+        }
+
+        await refreshLineItems();
+
+        if (attempts >= MAX_ATTEMPTS) {
+          console.warn('[ReviewDraft] Polling timeout after 20 seconds');
+          stopRefreshPolling();
+        }
+      } catch (err) {
+        console.error('[ReviewDraft] POLL: Exception during tick', err);
       }
     }, POLL_INTERVAL);
   };
