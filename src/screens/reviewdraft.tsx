@@ -991,7 +991,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     has_real_items: hasRealItems,
     is_draft_complete: isDraftComplete,
     is_processing_state: isProcessing,
-    processing_timeout: processingTimeout,
+    show_slow_processing_warning: showSlowProcessingWarning,
   });
 
   const showProcessingState = !isDraftComplete && (
