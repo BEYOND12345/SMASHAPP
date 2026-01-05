@@ -11,6 +11,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
   (window as any).supabase = supabase;
+  console.log('[DEV] Supabase client exposed:', supabase);
+  console.log('[DEV] Auth object:', supabase.auth);
+  console.log('[DEV] Has getSession?', typeof supabase.auth.getSession);
 }
 
 export const uploadLogo = async (userId: string, file: File): Promise<string> => {
