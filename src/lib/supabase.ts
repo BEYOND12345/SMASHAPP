@@ -10,6 +10,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
+  const url = supabaseUrl;
+  const ref = (() => {
+    try {
+      const u = new URL(url);
+      return u.hostname.split('.')[0];
+    } catch {
+      return null;
+    }
+  })();
+
+  (window as any).__SUPABASE_URL = url;
+  (window as any).__SUPABASE_PROJECT_REF = ref;
+
+  console.log('[DEV] __SUPABASE_URL', url);
+  console.log('[DEV] __SUPABASE_PROJECT_REF', ref);
+
   (window as any).supabase = supabase;
   console.log('[DEV] Supabase client exposed:', supabase);
   console.log('[DEV] Auth object:', supabase.auth);
