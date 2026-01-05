@@ -1219,6 +1219,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             <div className="space-y-3">
               {labourItems.map((item) => {
                 const needsReview = item.is_needs_review || item.is_placeholder;
+                const quantity = typeof item.quantity === 'object' ? (item.quantity as any)?.value : item.quantity;
+                const unit = typeof item.unit === 'object' ? (item.unit as any)?.value : item.unit;
                 return (
                   <div
                     key={item.id}
@@ -1233,7 +1235,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                       </span>
                     </div>
                     <div className={`text-sm ${needsReview ? 'text-amber-600' : 'text-secondary'}`}>
-                      {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
+                      {quantity} {unit} × {formatCents(item.unit_price_cents)}
                     </div>
                     {needsReview && (
                       <p className="mt-1 text-xs text-amber-700 font-medium">Needs estimation</p>
@@ -1295,6 +1297,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                 const needsPricing = item.unit_price_cents === 0 || item.notes?.toLowerCase().includes('needs pricing');
                 const needsReview = item.is_needs_review || item.is_placeholder;
                 const showWarning = needsPricing || needsReview;
+                const quantity = typeof item.quantity === 'object' ? (item.quantity as any)?.value : item.quantity;
+                const unit = typeof item.unit === 'object' ? (item.unit as any)?.value : item.unit;
 
                 return (
                   <div
@@ -1310,7 +1314,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                       </span>
                     </div>
                     <div className={`text-sm ${showWarning ? 'text-amber-600' : 'text-secondary'}`}>
-                      {item.quantity} {item.unit} × {formatCents(item.unit_price_cents)}
+                      {quantity} {unit} × {formatCents(item.unit_price_cents)}
                     </div>
                     {needsPricing ? (
                       <p className="mt-1 text-xs text-amber-700 font-medium">Needs pricing</p>
