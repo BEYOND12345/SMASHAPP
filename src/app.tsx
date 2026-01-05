@@ -21,6 +21,7 @@ import { Settings } from './screens/settings';
 import { ReviewQuote } from './screens/reviewquote';
 import { ReviewDraft } from './screens/reviewdraft';
 import { MaterialsCatalog } from './screens/materialscatalog';
+import { QuoteEditor } from './screens/quoteeditor';
 import { supabase } from './lib/supabase';
 import { parsePublicRoute } from './lib/utils/routeHelpers';
 
@@ -642,12 +643,12 @@ const App: React.FC = () => {
     urlParams.set('quote_id', quoteId);
     window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
 
-    // Navigate directly to ReviewDraft with quote shell
+    // Navigate directly to QuoteEditor with quote shell
     setState(prev => ({
       ...prev,
       voiceIntakeId: intakeId,
       voiceQuoteId: quoteId,
-      currentScreen: 'ReviewDraft'
+      currentScreen: 'QuoteEditor'
     }));
   };
 
@@ -1236,6 +1237,20 @@ const App: React.FC = () => {
             onConfirmed={handleReviewQuoteConfirmed}
           />
         ) : null;
+
+      case 'QuoteEditor':
+        console.log('[App] Rendering QuoteEditor with voiceQuoteId:', state.voiceQuoteId);
+        if (!state.voiceQuoteId) {
+          console.error('[App] Missing voiceQuoteId, redirecting to EstimatesList');
+          setTimeout(() => navigate('EstimatesList'), 0);
+          return null;
+        }
+        return (
+          <QuoteEditor
+            quoteId={state.voiceQuoteId}
+            onBack={() => navigate('EstimatesList')}
+          />
+        );
 
       case 'ReviewDraft':
         console.log('[App] Rendering ReviewDraft with voiceQuoteId:', state.voiceQuoteId, 'voiceIntakeId:', state.voiceIntakeId);

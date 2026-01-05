@@ -461,7 +461,20 @@ Deno.serve(async (req: Request) => {
 
     const customerName = extracted.customer?.name;
     const siteAddress = extracted.job?.site_address || extracted.job?.location;
-    console.log(`[CUSTOMER_EXTRACT] name=${customerName || 'none'} address=${siteAddress || 'none'}`);
+
+    // Extract timeline description from natural language
+    let timelineDescription = null;
+    if (extracted.job?.estimated_days_min && extracted.job?.estimated_days_max) {
+      if (extracted.job.estimated_days_min === extracted.job.estimated_days_max) {
+        timelineDescription = `${extracted.job.estimated_days_min} ${extracted.job.estimated_days_min === 1 ? 'day' : 'days'}`;
+      } else {
+        timelineDescription = `${extracted.job.estimated_days_min}-${extracted.job.estimated_days_max} days`;
+      }
+    } else if (extracted.job?.estimated_days_max) {
+      timelineDescription = `${extracted.job.estimated_days_max} ${extracted.job.estimated_days_max === 1 ? 'day' : 'days'}`;
+    }
+
+    console.log(`[CUSTOMER_EXTRACT] name=${customerName || 'none'} address=${siteAddress || 'none'} timeline=${timelineDescription || 'none'}`);
 
     const quoteTitle = extracted.job?.title || "Voice Quote";
     let quoteDescription = extracted.job?.summary || "";
@@ -483,6 +496,8 @@ Deno.serve(async (req: Request) => {
           customer_id: customerId,
           title: quoteTitle,
           description: quoteDescription,
+          site_address: siteAddress || null,
+          timeline_description: timelineDescription || null,
           scope_of_work: scopeOfWork,
           currency: profile.default_currency,
           default_tax_rate: profile.default_tax_rate,
@@ -516,6 +531,8 @@ Deno.serve(async (req: Request) => {
           quote_number: quoteNumber,
           title: quoteTitle,
           description: quoteDescription,
+          site_address: siteAddress || null,
+          timeline_description: timelineDescription || null,
           scope_of_work: scopeOfWork,
           status: "draft",
           source: "voice",

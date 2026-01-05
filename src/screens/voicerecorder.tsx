@@ -31,10 +31,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
-    { id: 'job', label: 'Job identified', state: 'waiting' },
-    { id: 'materials', label: 'Materials detected', state: 'waiting' },
-    { id: 'labour', label: 'Labour detected', state: 'waiting' },
-    { id: 'totals', label: 'Totals ready', state: 'waiting' },
+    { id: 'customer_location', label: 'Customer & Location', state: 'waiting' },
+    { id: 'scope', label: 'Scope of Work', state: 'waiting' },
+    { id: 'materials', label: 'Materials Needed', state: 'waiting' },
+    { id: 'labour', label: 'Labour Estimate', state: 'waiting' },
+    { id: 'fees', label: 'Additional Fees', state: 'waiting' },
+    { id: 'timeline', label: 'Timeline (Optional)', state: 'waiting' },
   ]);
   const [showChecklist, setShowChecklist] = useState(false);
 
@@ -105,31 +107,34 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     const fullTranscript = (liveTranscript + ' ' + interimTranscript).toLowerCase();
     const wordCount = liveTranscript.split(' ').filter(w => w.length > 0).length;
 
-    const locationPattern = /\b(\d+\s+\w+\s+(street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|court|ct|place|pl|boulevard|blvd|terrace|crescent|close)|at\s+(number\s+)?\d+|address|located|location|site)\b/;
-    const jobPattern = /\b(install|repair|fix|build|replace|replacement|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen|remodel|window|door|wall|floor|ceiling)\b/;
+    // Updated patterns for new checklist order
+    const customerLocationPattern = /\b(\d+\s+\w+\s+(street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|court|ct|place|pl|boulevard|blvd|terrace|crescent|close)|at\s+(number\s+)?\d+|address|located|location|site|for\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)|customer)\b/;
+    const scopePattern = /\b(install|repair|fix|build|replace|replacement|service|maintenance|construction|renovation|painting|plumbing|electrical|roofing|flooring|cabinet|deck|fence|drywall|tile|bathroom|kitchen|remodel|window|door|wall|floor|ceiling|scope|work|job)\b/;
     const materialPattern = /\b(timber|wood|lumber|paint|sheet|sheets|plywood|concrete|cement|brick|tile|insulation|drywall|gyprock|screw|nail|bolt|pipe|wire|cable|material|supply|board|panel|window|windows)\b|\b(\d+)\s*(sheets?|boards?|windows?|doors?|litres?|liters?|meters?|metres?|tonnes?|tons?|pieces?|units?|bags?)\b/;
-    const labourPattern = /\b(\d+)\s*(hour|hours|hr|hrs|day|days|week|weeks)\b/;
-    const namePattern = /\bfor\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/;
+    const labourPattern = /\b(\d+)\s*(hour|hours|hr|hrs|day|days|week|weeks|labour|labor)\b/;
+    const feesPattern = /\b(travel|callout|supply|fee|fees|charge|charges|additional|extra)\b/;
+    const timelinePattern = /\b(timeline|when|schedule|start|finish|complete|deadline|urgent|asap|today|tomorrow|next week|this week)\b/;
 
-    const hasLocation = locationPattern.test(fullTranscript);
-    const hasJobName = jobPattern.test(fullTranscript);
+    const hasCustomerLocation = customerLocationPattern.test(fullTranscript);
+    const hasScope = scopePattern.test(fullTranscript);
     const hasMaterials = materialPattern.test(fullTranscript);
     const hasLabour = labourPattern.test(fullTranscript);
-    const hasCustomerName = namePattern.test(liveTranscript);
+    const hasFees = feesPattern.test(fullTranscript);
+    const hasTimeline = timelinePattern.test(fullTranscript);
 
     setChecklistItems((prev) => {
       const updated = [...prev];
 
-      const locationItem = updated.find(i => i.id === 'location');
-      if (locationItem && hasLocation) {
-        if (locationItem.state === 'waiting') {
-          locationItem.state = 'in_progress';
+      const customerLocationItem = updated.find(i => i.id === 'customer_location');
+      if (customerLocationItem && hasCustomerLocation) {
+        if (customerLocationItem.state === 'waiting') {
+          customerLocationItem.state = 'in_progress';
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
-              const loc = copy.find(i => i.id === 'location');
-              if (loc && loc.state === 'in_progress') {
-                loc.state = 'complete';
+              const item = copy.find(i => i.id === 'customer_location');
+              if (item && item.state === 'in_progress') {
+                item.state = 'complete';
               }
               return copy;
             });
@@ -137,16 +142,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
         }
       }
 
-      const jobnameItem = updated.find(i => i.id === 'jobname');
-      if (jobnameItem && hasJobName) {
-        if (jobnameItem.state === 'waiting') {
-          jobnameItem.state = 'in_progress';
+      const scopeItem = updated.find(i => i.id === 'scope');
+      if (scopeItem && hasScope) {
+        if (scopeItem.state === 'waiting') {
+          scopeItem.state = 'in_progress';
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
-              const job = copy.find(i => i.id === 'jobname');
-              if (job && job.state === 'in_progress') {
-                job.state = 'complete';
+              const item = copy.find(i => i.id === 'scope');
+              if (item && item.state === 'in_progress') {
+                item.state = 'complete';
               }
               return copy;
             });
@@ -161,9 +166,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
-              const mat = copy.find(i => i.id === 'materials');
-              if (mat && mat.state === 'in_progress') {
-                mat.state = 'complete';
+              const item = copy.find(i => i.id === 'materials');
+              if (item && item.state === 'in_progress') {
+                item.state = 'complete';
               }
               return copy;
             });
@@ -178,9 +183,43 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           setTimeout(() => {
             setChecklistItems((current) => {
               const copy = [...current];
-              const lab = copy.find(i => i.id === 'labour');
-              if (lab && lab.state === 'in_progress') {
-                lab.state = 'complete';
+              const item = copy.find(i => i.id === 'labour');
+              if (item && item.state === 'in_progress') {
+                item.state = 'complete';
+              }
+              return copy;
+            });
+          }, 800);
+        }
+      }
+
+      const feesItem = updated.find(i => i.id === 'fees');
+      if (feesItem && hasFees) {
+        if (feesItem.state === 'waiting') {
+          feesItem.state = 'in_progress';
+          setTimeout(() => {
+            setChecklistItems((current) => {
+              const copy = [...current];
+              const item = copy.find(i => i.id === 'fees');
+              if (item && item.state === 'in_progress') {
+                item.state = 'complete';
+              }
+              return copy;
+            });
+          }, 800);
+        }
+      }
+
+      const timelineItem = updated.find(i => i.id === 'timeline');
+      if (timelineItem && hasTimeline) {
+        if (timelineItem.state === 'waiting') {
+          timelineItem.state = 'in_progress';
+          setTimeout(() => {
+            setChecklistItems((current) => {
+              const copy = [...current];
+              const item = copy.find(i => i.id === 'timeline');
+              if (item && item.state === 'in_progress') {
+                item.state = 'complete';
               }
               return copy;
             });
@@ -281,11 +320,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
       setLiveTranscript('');
       setInterimTranscript('');
       setChecklistItems([
-        { id: 'location', label: 'Job location', state: 'waiting' },
-        { id: 'jobname', label: 'Job name', state: 'waiting' },
-        { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
-        { id: 'labour', label: 'Labour & time', state: 'waiting' },
-        { id: 'fees', label: 'Additional fees', state: 'waiting' },
+        { id: 'customer_location', label: 'Customer & Location', state: 'waiting' },
+        { id: 'scope', label: 'Scope of Work', state: 'waiting' },
+        { id: 'materials', label: 'Materials Needed', state: 'waiting' },
+        { id: 'labour', label: 'Labour Estimate', state: 'waiting' },
+        { id: 'fees', label: 'Additional Fees', state: 'waiting' },
+        { id: 'timeline', label: 'Timeline (Optional)', state: 'waiting' },
       ]);
       setShowChecklist(true);
 
@@ -348,11 +388,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
     audioChunksRef.current = [];
     setShowChecklist(false);
     setChecklistItems([
-      { id: 'location', label: 'Job location', state: 'waiting' },
-      { id: 'jobname', label: 'Job name', state: 'waiting' },
-      { id: 'materials', label: 'Materials & quantities', state: 'waiting' },
-      { id: 'labour', label: 'Labour & time', state: 'waiting' },
-      { id: 'fees', label: 'Additional fees', state: 'waiting' },
+      { id: 'customer_location', label: 'Customer & Location', state: 'waiting' },
+      { id: 'scope', label: 'Scope of Work', state: 'waiting' },
+      { id: 'materials', label: 'Materials Needed', state: 'waiting' },
+      { id: 'labour', label: 'Labour Estimate', state: 'waiting' },
+      { id: 'fees', label: 'Additional Fees', state: 'waiting' },
+      { id: 'timeline', label: 'Timeline (Optional)', state: 'waiting' },
     ]);
   };
 
