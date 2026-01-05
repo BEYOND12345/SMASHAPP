@@ -112,7 +112,7 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
         .select('*')
         .eq('quote_id', quoteId)
         .eq('is_placeholder', false)
-        .order('display_order', { ascending: true });
+        .order('position', { ascending: true });
 
       if (lineItemsError) throw lineItemsError;
 
