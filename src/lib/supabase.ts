@@ -10,6 +10,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 if (typeof window !== 'undefined') {
+  const w = window as any;
+  w.supabase = supabase;
+
+  if (!supabase.auth || typeof supabase.auth.getSession !== 'function') {
+    throw new Error('[SUPABASE] auth client not initialized correctly');
+  }
+
   const url = supabaseUrl;
   const ref = (() => {
     try {
@@ -20,13 +27,11 @@ if (typeof window !== 'undefined') {
     }
   })();
 
-  (window as any).__SUPABASE_URL = url;
-  (window as any).__SUPABASE_PROJECT_REF = ref;
+  w.__SUPABASE_URL = url;
+  w.__SUPABASE_PROJECT_REF = ref;
 
   console.log('[DEV] __SUPABASE_URL', url);
   console.log('[DEV] __SUPABASE_PROJECT_REF', ref);
-
-  (window as any).supabase = supabase;
   console.log('[DEV] Supabase client exposed:', supabase);
   console.log('[DEV] Auth object:', supabase.auth);
   console.log('[DEV] Has getSession?', typeof supabase.auth.getSession);

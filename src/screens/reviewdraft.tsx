@@ -146,6 +146,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      console.log('[ReviewDraft] session exists:', !!data.session);
+    });
+
     if (!quoteId || typeof quoteId !== 'string' || quoteId.trim() === '') {
       const errorMsg = 'Invalid quoteId prop';
       console.error('[ReviewDraft] Props validation failed:', errorMsg);
