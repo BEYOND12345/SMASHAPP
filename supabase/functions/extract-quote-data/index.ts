@@ -241,6 +241,176 @@ function generateMissingFields(extractedData: any): any[] {
   return missingFields;
 }
 
+/**
+ * Normalize text for alias matching
+ * Must be identical for both alias insertion and lookup
+ */
+function normalizeText(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+
+  let normalized = text.toLowerCase().trim();
+
+  // Replace ampersand with 'and'
+  normalized = normalized.replace(/&/g, 'and');
+
+  // Remove punctuation (keep spaces and alphanumeric)
+  normalized = normalized.replace(/[^\w\s]/g, ' ');
+
+  // Collapse multiple spaces
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+
+  // Remove filler tokens as standalone words
+  const fillerTokens = [
+    'materials', 'material', 'timber', 'wood', 'board', 'boards',
+    'sheet', 'sheets', 'pack', 'packs', 'bottle', 'can', 'cans'
+  ];
+
+  const words = normalized.split(' ');
+  const filtered = words.filter(word => !fillerTokens.includes(word));
+
+  // If filtering removed everything, keep original normalized
+  if (filtered.length === 0) {
+    return normalized;
+  }
+
+  normalized = filtered.join(' ');
+
+  // Normalize metre variants
+  normalized = normalized.replace(/\bmetres?\b/g, 'metre');
+  normalized = normalized.replace(/\bm\b/g, 'metre');
+
+  return normalized.trim();
+}
+
+/**
+ * Try to match material description against org's alias table
+ * Returns matched catalog item data if found, null otherwise
+ */
+async function matchAlias(
+  orgId: string,
+  description: string,
+  supabase: any
+): Promise<any> {
+  if (!description || typeof description !== 'string') return null;
+
+  const normalizedDesc = normalizeText(description);
+  if (!normalizedDesc) return null;
+
+  debugLog('[ALIAS_MATCH] Attempting alias match for:', {
+    original: description,
+    normalized: normalizedDesc
+  });
+
+  // Strategy A: Exact match
+  const { data: exactMatches, error: exactError } = await supabase
+    .from('material_catalog_aliases')
+    .select(`
+      id,
+      alias_text,
+      normalized_alias,
+      priority,
+      canonical_catalog_item_id,
+      material_catalog_items!material_catalog_aliases_canonical_catalog_item_id_fkey (
+        id,
+        name,
+        unit,
+        unit_price_cents,
+        typical_low_price_cents,
+        typical_high_price_cents
+      )
+    `)
+    .eq('org_id', orgId)
+    .eq('normalized_alias', normalizedDesc)
+    .order('priority', { ascending: true })
+    .limit(1);
+
+  if (!exactError && exactMatches && exactMatches.length > 0) {
+    const match = exactMatches[0];
+    const catalogItem = (match as any).material_catalog_items;
+
+    debugLog('[ALIAS_MATCH] Exact match found:', {
+      alias: match.alias_text,
+      catalog_item: catalogItem?.name
+    });
+
+    return {
+      catalog_item_id: catalogItem.id,
+      catalog_item_name: catalogItem.name,
+      unit: catalogItem.unit,
+      typical_low_price_cents: catalogItem.typical_low_price_cents,
+      typical_high_price_cents: catalogItem.typical_high_price_cents,
+      match_type: 'exact_alias',
+      matched_alias: match.alias_text
+    };
+  }
+
+  // Strategy B: Contains match (find if description contains any alias)
+  const { data: allAliases, error: allError } = await supabase
+    .from('material_catalog_aliases')
+    .select(`
+      id,
+      alias_text,
+      normalized_alias,
+      priority,
+      canonical_catalog_item_id,
+      material_catalog_items!material_catalog_aliases_canonical_catalog_item_id_fkey (
+        id,
+        name,
+        unit,
+        unit_price_cents,
+        typical_low_price_cents,
+        typical_high_price_cents
+      )
+    `)
+    .eq('org_id', orgId)
+    .order('priority', { ascending: true });
+
+  if (allError || !allAliases || allAliases.length === 0) {
+    debugLog('[ALIAS_MATCH] No aliases found for org');
+    return null;
+  }
+
+  // Find aliases where normalized_desc contains normalized_alias as whole word sequence
+  const containsMatches = allAliases.filter(alias => {
+    const aliasNorm = alias.normalized_alias;
+    if (!aliasNorm) return false;
+
+    // Check if description contains alias as whole word sequence
+    const pattern = new RegExp(`\\b${aliasNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    return pattern.test(normalizedDesc);
+  });
+
+  if (containsMatches.length > 0) {
+    // Choose longest normalized_alias, then lowest priority
+    containsMatches.sort((a, b) => {
+      const lenDiff = b.normalized_alias.length - a.normalized_alias.length;
+      if (lenDiff !== 0) return lenDiff;
+      return a.priority - b.priority;
+    });
+
+    const match = containsMatches[0];
+    const catalogItem = (match as any).material_catalog_items;
+
+    debugLog('[ALIAS_MATCH] Contains match found:', {
+      alias: match.alias_text,
+      catalog_item: catalogItem?.name
+    });
+
+    return {
+      catalog_item_id: catalogItem.id,
+      catalog_item_name: catalogItem.name,
+      unit: catalogItem.unit,
+      typical_low_price_cents: catalogItem.typical_low_price_cents,
+      typical_high_price_cents: catalogItem.typical_high_price_cents,
+      match_type: 'contains_alias',
+      matched_alias: match.alias_text
+    };
+  }
+
+  debugLog('[ALIAS_MATCH] No alias match found');
+  return null;
+}
+
 async function matchAndPriceMaterials(
   materials: any[],
   orgId: string,
@@ -252,43 +422,90 @@ async function matchAndPriceMaterials(
     return [];
   }
 
-  const materialsForMatching = materials.map(m => ({
-    description: m.description || '',
-    unit: m.unit || null,
-    quantity: m.quantity || null
-  }));
-
-  const { data: matchResults, error } = await supabase
-    .rpc('match_catalog_items_for_quote_materials', {
-      p_org_id: orgId,
-      p_region_code: regionCode,
-      p_materials: materialsForMatching
-    });
-
-  if (error) {
-    console.error("[CATALOG_MATCH] SQL matching failed", error);
-    return materials.map(m => ({
-      description: m.description,
-      quantity: wrapFieldValue(m.quantity, 0.85),
-      unit: wrapFieldValue(m.unit, 0.85),
-      unit_price_cents: null,
-      estimated_cost_cents: null,
-      needs_pricing: true,
-      source_store: null,
-      notes: m.notes || null,
-      catalog_item_id: null,
-      catalog_match_confidence: null
-    }));
+  // Step 1: Try alias matching for each material
+  const aliasResults: (any | null)[] = [];
+  for (const material of materials) {
+    const aliasMatch = await matchAlias(orgId, material.description, supabase);
+    aliasResults.push(aliasMatch);
   }
 
+  // Step 2: For materials without alias match, prepare for fuzzy matching
+  const materialsNeedingFuzzyMatch: any[] = [];
+  const fuzzyMatchIndices: number[] = [];
+
+  materials.forEach((m, idx) => {
+    if (!aliasResults[idx]) {
+      materialsNeedingFuzzyMatch.push({
+        description: m.description || '',
+        unit: m.unit || null,
+        quantity: m.quantity || null
+      });
+      fuzzyMatchIndices.push(idx);
+    }
+  });
+
+  // Step 3: Run fuzzy matching for remaining materials
+  let fuzzyMatchResults: any[] = [];
+  if (materialsNeedingFuzzyMatch.length > 0) {
+    const { data: matchResults, error } = await supabase
+      .rpc('match_catalog_items_for_quote_materials', {
+        p_org_id: orgId,
+        p_region_code: regionCode,
+        p_materials: materialsNeedingFuzzyMatch
+      });
+
+    if (error) {
+      console.error("[CATALOG_MATCH] SQL matching failed", error);
+      fuzzyMatchResults = materialsNeedingFuzzyMatch.map(() => null);
+    } else {
+      fuzzyMatchResults = matchResults || [];
+    }
+  }
+
+  // Step 4: Merge results - alias matches take priority
   return materials.map((m, idx) => {
-    const match = matchResults[idx];
+    const aliasMatch = aliasResults[idx];
+
+    // If alias match found, use it
+    if (aliasMatch) {
+      const midpoint = Math.round(
+        (aliasMatch.typical_low_price_cents + aliasMatch.typical_high_price_cents) / 2
+      );
+      const unitPriceCents = Math.round(midpoint * (1 + markupPercent / 100));
+
+      const quantity = typeof m.quantity === 'number' ? m.quantity : null;
+      const estimatedCostCents = quantity !== null && unitPriceCents !== null
+        ? Math.round(unitPriceCents * quantity)
+        : null;
+
+      const needsPricing = estimatedCostCents === null;
+
+      return {
+        description: m.description,
+        quantity: wrapFieldValue(m.quantity, 0.85),
+        unit: wrapFieldValue(aliasMatch.unit || m.unit, 0.85),
+        unit_price_cents: unitPriceCents,
+        estimated_cost_cents: estimatedCostCents,
+        needs_pricing: needsPricing,
+        source_store: null,
+        notes: `Matched by alias: ${aliasMatch.matched_alias}`,
+        catalog_item_id: aliasMatch.catalog_item_id,
+        catalog_match_confidence: 1.0
+      };
+    }
+
+    // Otherwise use fuzzy match result
+    const fuzzyIdx = fuzzyMatchIndices.indexOf(idx);
+    const fuzzyMatch = fuzzyIdx >= 0 ? fuzzyMatchResults[fuzzyIdx] : null;
+
     let unitPriceCents = null;
     let estimatedCostCents = null;
     let needsPricing = true;
 
-    if (match?.typical_low_price_cents && match?.typical_high_price_cents) {
-      const midpoint = Math.round((match.typical_low_price_cents + match.typical_high_price_cents) / 2);
+    if (fuzzyMatch?.typical_low_price_cents && fuzzyMatch?.typical_high_price_cents) {
+      const midpoint = Math.round(
+        (fuzzyMatch.typical_low_price_cents + fuzzyMatch.typical_high_price_cents) / 2
+      );
       unitPriceCents = Math.round(midpoint * (1 + markupPercent / 100));
 
       const quantity = typeof m.quantity === 'number' ? m.quantity : null;
@@ -301,14 +518,14 @@ async function matchAndPriceMaterials(
     return {
       description: m.description,
       quantity: wrapFieldValue(m.quantity, 0.85),
-      unit: wrapFieldValue(match?.unit || m.unit, 0.85),
+      unit: wrapFieldValue(fuzzyMatch?.unit || m.unit, 0.85),
       unit_price_cents: unitPriceCents,
       estimated_cost_cents: estimatedCostCents,
       needs_pricing: needsPricing,
       source_store: null,
       notes: m.notes || null,
-      catalog_item_id: match?.catalog_item_id || null,
-      catalog_match_confidence: match?.match_confidence || null
+      catalog_item_id: fuzzyMatch?.catalog_item_id || null,
+      catalog_match_confidence: fuzzyMatch?.match_confidence || null
     };
   });
 }
