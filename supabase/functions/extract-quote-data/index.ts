@@ -30,16 +30,16 @@ const PROMPT_LINES = [
   "5. Extract all scope of work tasks as separate items in array",
   "6. JOB TITLE EXTRACTION (CRITICAL):",
   "   - Extract from first 1-2 sentences describing the main work",
-  "   - Examples: 'Deck replacement at house in Sydney' → 'Deck replacement'",
-  "   - Examples: 'Need new kitchen cabinets installed' → 'Kitchen cabinet installation'",
-  "   - Examples: 'Fix leaking roof' → 'Roof leak repair'",
-  "   - Examples: 'Quote for painting exterior' → 'Exterior painting'",
+  "   - Examples: 'Deck replacement at house in Sydney' \u2192 'Deck replacement'",
+  "   - Examples: 'Need new kitchen cabinets installed' \u2192 'Kitchen cabinet installation'",
+  "   - Examples: 'Fix leaking roof' \u2192 'Roof leak repair'",
+  "   - Examples: 'Quote for painting exterior' \u2192 'Exterior painting'",
   "   - ALWAYS extract a title. Never return null. Be concise (3-6 words).",
   "7. CUSTOMER & SITE EXTRACTION:",
   "   - Customer name: Look for 'for NAME', 'customer NAME', NAME's house, possessive forms",
   "   - Site address: Extract any mention of location, address, suburb, street, or site",
-  "   - Examples: 'Kate's place' → name: Kate, 'work at 123 Smith St' → site_address: 123 Smith St",
-  "   - Examples: 'job for John in Newtown' → name: John, site_address: Newtown",
+  "   - Examples: 'Kate's place' \u2192 name: Kate, 'work at 123 Smith St' \u2192 site_address: 123 Smith St",
+  "   - Examples: 'job for John in Newtown' \u2192 name: John, site_address: Newtown",
   "8. TIMELINE EXTRACTION:",
   "   - Extract natural language descriptions of duration and timing",
   "   - Examples: '2 to 3 days', 'about 40 hours', 'next week', 'couple of days'",
@@ -127,13 +127,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // CRITICAL DEBUG: Verify transcript exists
-    console.log(`[${trace_id}] Transcript length: ${intake.transcript?.length || 0} chars`);
-    console.log(`[${trace_id}] Transcript preview: ${intake.transcript?.substring(0, 200) || 'EMPTY'}`);
+    console.log(`[${trace_id}] Transcript length: ${intake.transcript_text?.length || 0} chars`);
+    console.log(`[${trace_id}] Transcript preview: ${intake.transcript_text?.substring(0, 200) || 'EMPTY'}`);
 
     const systemPrompt = EXTRACTION_ONLY_PROMPT;
     const userPrompt = user_corrections_json
-      ? `Original transcript:\n${intake.transcript}\n\nUser corrections:\n${JSON.stringify(user_corrections_json)}\n\nApply user corrections to the extracted data.`
-      : `Transcript:\n${intake.transcript}`;
+      ? `Original transcript:\n${intake.transcript_text}\n\nUser corrections:\n${JSON.stringify(user_corrections_json)}\n\nApply user corrections to the extracted data.`
+      : `Transcript:\n${intake.transcript_text}`;
 
     console.log(`[${trace_id}] User prompt length: ${userPrompt.length} chars`);
     console.log(`[${trace_id}] Calling OpenAI with model: gpt-4o-mini`);
