@@ -944,19 +944,28 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   }
 
   const hasLineItems = lineItems.length > 0;
-  const customerName = quote?.customer?.name || null;
-  const quoteTitle = quote?.title || 'Processing job';
   const extractionData = intake?.extraction_json;
+
+  const customerName = quote?.customer?.name || extractionData?.customer?.name || null;
+  const siteAddress = extractionData?.job?.site_address || null;
+  const quoteTitle = quote?.title || 'Processing job';
+
   const scopeOfWork = (() => {
-    if (!quote?.scope_of_work) return [];
-    if (typeof quote.scope_of_work === 'string') {
+    if (quote?.scope_of_work && Array.isArray(quote.scope_of_work) && quote.scope_of_work.length > 0) {
+      return quote.scope_of_work;
+    }
+    if (quote?.scope_of_work && typeof quote.scope_of_work === 'string') {
       try {
-        return JSON.parse(quote.scope_of_work);
+        const parsed = JSON.parse(quote.scope_of_work);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       } catch {
-        return [];
+        // Ignore parse errors
       }
     }
-    return quote.scope_of_work;
+    if (extractionData?.job?.scope_of_work && Array.isArray(extractionData.job.scope_of_work)) {
+      return extractionData.job.scope_of_work;
+    }
+    return [];
   })();
 
   const extractionRequiresReview = intake?.status === 'needs_user_review' &&
@@ -1157,6 +1166,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                 <span className="text-tertiary text-xs">Not specified</span>
               )}
             </div>
+            {siteAddress && (
+              <div className="flex justify-between">
+                <span className="text-secondary">Site:</span>
+                <span className="font-medium text-primary">{siteAddress}</span>
+              </div>
+            )}
           </div>
         </Card>
 
