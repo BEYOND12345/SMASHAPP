@@ -1164,10 +1164,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <Card>
             <h3 className="font-semibold text-primary mb-3">Scope of Work</h3>
             <ul className="space-y-2">
-              {scopeOfWork.map((item: string, idx: number) => (
+              {scopeOfWork.map((item: any, idx: number) => (
                 <li key={idx} className="flex items-start gap-2 text-sm">
                   <span className="text-brand mt-1">•</span>
-                  <span className="text-secondary flex-1">{item}</span>
+                  <span className="text-secondary flex-1">{typeof item === 'object' ? JSON.stringify(item) : String(item)}</span>
                 </li>
               ))}
             </ul>
@@ -1188,15 +1188,16 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           ) : !hasLineItems && extractionData?.time?.labour_entries ? (
             <div className="space-y-3">
               {extractionData.time.labour_entries.map((entry: any, idx: number) => {
-                const hours = entry.hours?.value || entry.hours;
-                const days = entry.days?.value || entry.days;
-                const people = entry.people?.value || entry.people || 1;
+                const hours = typeof entry.hours === 'object' ? entry.hours?.value : entry.hours;
+                const days = typeof entry.days === 'object' ? entry.days?.value : entry.days;
+                const people = typeof entry.people === 'object' ? entry.people?.value : entry.people;
+                const peopleCount = people || 1;
 
                 let timeDescription = '';
-                if (hours) {
-                  timeDescription = `${hours * people} hours`;
-                } else if (days) {
-                  timeDescription = `${days * people} days`;
+                if (hours !== null && hours !== undefined) {
+                  timeDescription = `${hours * peopleCount} hours`;
+                } else if (days !== null && days !== undefined) {
+                  timeDescription = `${days * peopleCount} days`;
                 }
 
                 return (
@@ -1267,8 +1268,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           ) : !hasLineItems && extractionData?.materials?.items ? (
             <div className="space-y-3">
               {extractionData.materials.items.map((item: any, idx: number) => {
-                const quantity = item.quantity?.value || item.quantity;
-                const unit = item.unit?.value || item.unit;
+                const quantity = typeof item.quantity === 'object' ? item.quantity?.value : item.quantity;
+                const unit = typeof item.unit === 'object' ? item.unit?.value : item.unit;
 
                 return (
                   <div
@@ -1279,11 +1280,11 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                       <span className="font-medium text-primary flex-1 min-w-0">{item.description}</span>
                       <span className="text-sm text-tertiary flex-shrink-0 italic">Pricing...</span>
                     </div>
-                    {(quantity || unit) && (
+                    {(quantity !== null && quantity !== undefined) || unit ? (
                       <div className="text-sm text-secondary">
-                        {quantity && `${quantity} `}{unit && unit}
+                        {quantity !== null && quantity !== undefined && `${quantity} `}{unit && String(unit)}
                       </div>
-                    )}
+                    ) : null}
                     {item.notes && (
                       <p className="mt-1 text-xs text-secondary italic">{item.notes}</p>
                     )}
