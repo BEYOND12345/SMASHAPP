@@ -949,6 +949,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const customerName = quote?.customer?.name || extractionData?.customer?.name || null;
   const siteAddress = extractionData?.job?.site_address || null;
   const quoteTitle = quote?.title || 'Processing job';
+  const estimatedDaysMin = extractionData?.job?.estimated_days_min || null;
+  const estimatedDaysMax = extractionData?.job?.estimated_days_max || null;
+  const jobDate = extractionData?.job?.job_date || null;
 
   const scopeOfWork = (() => {
     if (quote?.scope_of_work && Array.isArray(quote.scope_of_work) && quote.scope_of_work.length > 0) {
@@ -1170,6 +1173,22 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
               <div className="flex justify-between">
                 <span className="text-secondary">Site:</span>
                 <span className="font-medium text-primary">{siteAddress}</span>
+              </div>
+            )}
+            {(estimatedDaysMin || estimatedDaysMax) && (
+              <div className="flex justify-between">
+                <span className="text-secondary">Timeframe:</span>
+                <span className="font-medium text-primary">
+                  {estimatedDaysMin && estimatedDaysMax && estimatedDaysMin !== estimatedDaysMax
+                    ? `${estimatedDaysMin}-${estimatedDaysMax} days`
+                    : `${estimatedDaysMax || estimatedDaysMin} days`}
+                </span>
+              </div>
+            )}
+            {jobDate && (
+              <div className="flex justify-between">
+                <span className="text-secondary">Start Date:</span>
+                <span className="font-medium text-primary">{jobDate}</span>
               </div>
             )}
           </div>
