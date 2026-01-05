@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
-const DRAFT_VERSION = "v2.4-2026-01-05-ai-pricing";
+const DRAFT_VERSION = "v2.5-2026-01-05-batched-ai-plus-customer-extraction";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -401,10 +401,25 @@ Deno.serve(async (req: Request) => {
 
         if (existingCustomer) {
           customerId = existingCustomer.id;
+          console.log(`[CUSTOMER_EXTRACT] Found existing customer by email: ${customerData.email}`);
         }
       }
 
-      if (!customerId && customerData.name) {
+      if (!customerId && customerData?.name) {
+        const { data: existingCustomerByName } = await supabaseAdmin
+          .from("customers")
+          .select("id")
+          .eq("org_id", profile.org_id)
+          .ilike("name", customerData.name)
+          .maybeSingle();
+
+        if (existingCustomerByName) {
+          customerId = existingCustomerByName.id;
+          console.log(`[CUSTOMER_EXTRACT] Found existing customer by name: ${customerData.name}`);
+        }
+      }
+
+      if (!customerId && customerData?.name) {
         const { data: newCustomer, error: customerError } = await supabaseAdmin
           .from("customers")
           .insert({
@@ -421,6 +436,7 @@ Deno.serve(async (req: Request) => {
         }
 
         customerId = newCustomer.id;
+        console.log(`[CUSTOMER_EXTRACT] Created new customer: ${customerData.name}`);
       }
     }
 
@@ -443,8 +459,17 @@ Deno.serve(async (req: Request) => {
       customerId = placeholderCustomer.id;
     }
 
+    const customerName = extracted.customer?.name;
+    const siteAddress = extracted.job?.site_address || extracted.job?.location;
+    console.log(`[CUSTOMER_EXTRACT] name=${customerName || 'none'} address=${siteAddress || 'none'}`);
+
     const quoteTitle = extracted.job?.title || "Voice Quote";
-    const quoteDescription = extracted.job?.summary || "";
+    let quoteDescription = extracted.job?.summary || "";
+
+    if (siteAddress && siteAddress.trim()) {
+      quoteDescription = `Site: ${siteAddress}${quoteDescription ? '\n\n' + quoteDescription : ''}`;
+    }
+
     const scopeOfWork = extracted.job?.scope_of_work || [];
 
     let quote: any;
@@ -577,6 +602,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (extracted.materials?.items) {
+      const catalogItems = [];
+      const needsAiEstimation = [];
+
       for (const material of extracted.materials.items) {
         let quantity = typeof material.quantity === "object" ? material.quantity?.value : material.quantity;
         const unit = typeof material.unit === "object" ? material.unit?.value : material.unit;
@@ -586,9 +614,6 @@ Deno.serve(async (req: Request) => {
           warnings.push(`Material "${material.description}" had no quantity, defaulted to 1`);
         }
 
-        let unitPriceCents = 0;
-        let notes = material.notes || null;
-        let needsReview = false;
         const catalogItemId = material.catalog_item_id || null;
         const matchConfidence = material.catalog_match_confidence || null;
 
@@ -620,35 +645,85 @@ Deno.serve(async (req: Request) => {
         if (material.unit_price_cents && material.unit_price_cents > 0) {
           const basePrice = material.unit_price_cents;
           const markupMultiplier = 1 + (profile.materials_markup_percent / 100);
-          unitPriceCents = Math.round(basePrice * markupMultiplier);
+          const unitPriceCents = Math.round(basePrice * markupMultiplier);
 
           const markupText = `Base: $${(basePrice / 100).toFixed(2)}, Markup: ${profile.materials_markup_percent}%`;
+          let notes = material.notes || null;
           notes = notes ? `${markupText} - ${notes}` : markupText;
+
+          if (catalogItemId && matchConfidence) {
+            const confidenceText = matchConfidence >= 0.8
+              ? 'From catalog'
+              : `Matched from catalog (${Math.round(matchConfidence * 100)}% confidence)`;
+            notes = `${confidenceText} - ${notes}`;
+          }
+
+          catalogItems.push({
+            material,
+            quantity,
+            unit: unit || 'unit',
+            unitPriceCents,
+            notes,
+            needsReview: false,
+            catalogItemId,
+          });
         } else if (material.estimated_cost_cents && material.estimated_cost_cents > 0) {
           const baseCost = material.estimated_cost_cents;
           const markupMultiplier = 1 + (profile.materials_markup_percent / 100);
-          unitPriceCents = Math.round(baseCost * markupMultiplier);
+          const unitPriceCents = Math.round(baseCost * markupMultiplier);
 
           const markupText = `Base estimate: $${(baseCost / 100).toFixed(2)}, Markup: ${profile.materials_markup_percent}%`;
+          let notes = material.notes || null;
           notes = notes ? `${markupText} - ${notes}` : markupText;
-        } else {
-          console.log(`[AI_PRICING] No catalog match or price for "${material.description}" - using AI estimation`);
 
-          const aiEstimate = await estimateMaterialPrice(
-            {
-              description: material.description,
-              quantity: quantity,
-              unit: unit || 'unit',
-            },
-            'Australia'
-          );
+          catalogItems.push({
+            material,
+            quantity,
+            unit: unit || 'unit',
+            unitPriceCents,
+            notes,
+            needsReview: false,
+            catalogItemId: null,
+          });
+        } else {
+          needsAiEstimation.push({
+            material,
+            quantity,
+            unit: unit || 'unit',
+            catalogItemId,
+            matchConfidence,
+          });
+        }
+      }
+
+      console.log(`[PRICING_BATCH] catalog_matches=${catalogItems.length} ai_estimates_needed=${needsAiEstimation.length}`);
+
+      if (needsAiEstimation.length > 0) {
+        const aiStart = Date.now();
+        const aiEstimates = await Promise.all(
+          needsAiEstimation.map(({ material, quantity, unit }) =>
+            estimateMaterialPrice(
+              {
+                description: material.description,
+                quantity: quantity,
+                unit: unit,
+              },
+              'Australia'
+            )
+          )
+        );
+        console.log(`[AI_PRICING_BATCH] Completed ${aiEstimates.length} estimates in ${Date.now() - aiStart}ms`);
+
+        for (let i = 0; i < needsAiEstimation.length; i++) {
+          const { material, quantity, unit, catalogItemId, matchConfidence } = needsAiEstimation[i];
+          const aiEstimate = aiEstimates[i];
 
           const basePrice = aiEstimate.unit_price_cents;
           const markupMultiplier = 1 + (profile.materials_markup_percent / 100);
-          unitPriceCents = Math.round(basePrice * markupMultiplier);
+          const unitPriceCents = Math.round(basePrice * markupMultiplier);
 
-          notes = aiEstimate.notes;
-          needsReview = aiEstimate.confidence === 'low';
+          let notes = aiEstimate.notes;
+          const needsReview = aiEstimate.confidence === 'low';
 
           console.log(`[AI_PRICING] ${material.description} → Base: $${(basePrice / 100).toFixed(2)}, After markup: $${(unitPriceCents / 100).toFixed(2)} (${aiEstimate.confidence} confidence)`);
 
@@ -656,15 +731,20 @@ Deno.serve(async (req: Request) => {
             const markupText = `Base: $${(basePrice / 100).toFixed(2)}, Markup: ${profile.materials_markup_percent}%`;
             notes = `${markupText} - ${notes}`;
           }
-        }
 
-        if (catalogItemId && matchConfidence) {
-          const confidenceText = matchConfidence >= 0.8
-            ? 'From catalog'
-            : `Matched from catalog (${Math.round(matchConfidence * 100)}% confidence)`;
-          notes = notes ? `${confidenceText} - ${notes}` : confidenceText;
+          catalogItems.push({
+            material,
+            quantity,
+            unit,
+            unitPriceCents,
+            notes,
+            needsReview,
+            catalogItemId,
+          });
         }
+      }
 
+      for (const { material, quantity, unit, unitPriceCents, notes, needsReview, catalogItemId } of catalogItems) {
         const lineTotalCents = Math.round(quantity * unitPriceCents) || 0;
 
         lineItems.push({
@@ -673,7 +753,7 @@ Deno.serve(async (req: Request) => {
           item_type: "materials",
           description: material.description,
           quantity: quantity,
-          unit: unit || 'unit',
+          unit: unit,
           unit_price_cents: unitPriceCents,
           line_total_cents: lineTotalCents,
           catalog_item_id: catalogItemId,
@@ -701,7 +781,7 @@ Deno.serve(async (req: Request) => {
         lineItems.push({
           org_id: profile.org_id,
           quote_id: quote.id,
-          item_type: "labour",
+          item_type: "fee",
           description: "Travel time",
           quantity: travelHours,
           unit: "hours",
