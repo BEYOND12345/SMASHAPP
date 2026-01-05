@@ -9,7 +9,7 @@ import { ProgressChecklist, ChecklistItem } from '../components/progresschecklis
 import { getQuoteLineItemsForQuote, QuoteLineItem } from '../lib/data/quoteLineItems';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
 const debugLog = (...args: any[]) => { if (DEBUG_MODE) console.log(...args); };
 const debugWarn = (...args: any[]) => { if (DEBUG_MODE) console.warn(...args); };
 const debugGroupCollapsed = (...args: any[]) => { if (DEBUG_MODE) console.groupCollapsed(...args); };
@@ -92,6 +92,16 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [quote, setQuote] = useState<QuoteData | null>(null);
   const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
   const [intake, setIntake] = useState<IntakeData | null>(null);
+
+  const effectiveQuoteId = intake?.created_quote_id || quoteId;
+
+  console.log('[REVIEWDRAFT_DEBUG]', {
+    intakeId,
+    quoteIdFromParams: quoteId,
+    'intake.created_quote_id': intake?.created_quote_id,
+    effectiveQuoteId,
+    lineItemsCount: lineItems.length
+  });
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(true);
   const [statusMessage, setStatusMessage] = useState(STATUS_MESSAGES[0]);
@@ -185,18 +195,99 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     };
   }, [quoteId, intakeId]);
 
-  const loadAllData = async () => {
-    try {
-      const startTime = Date.now();
+  useEffect(() => {
+    if (!intake?.created_quote_id) return;
+    if (intake.created_quote_id === quoteId) return;
 
-      debugLog('[ReviewDraft] FETCHING QUOTE with id:', quoteId);
+    console.log('[REVIEWDRAFT] created_quote_id arrived, switching to:', intake.created_quote_id);
+
+    const refetchWithNewQuoteId = async () => {
+      debugLog('[ReviewDraft] FETCHING QUOTE with effectiveQuoteId:', intake.created_quote_id);
       const quoteResult = await supabase
         .from('quotes')
         .select(`
           *,
           customer:customers!customer_id(name)
         `)
-        .eq('id', quoteId)
+        .eq('id', intake.created_quote_id)
+        .maybeSingle();
+
+      if (quoteResult.data) {
+        setQuote(quoteResult.data);
+      }
+
+      const lineItemsResult = await getQuoteLineItemsForQuote(supabase, intake.created_quote_id);
+      if (lineItemsResult.data) {
+        setLineItems(lineItemsResult.data);
+        updateChecklistFromActualData(quoteResult.data || quote!, lineItemsResult.data, intake);
+      }
+    };
+
+    refetchWithNewQuoteId();
+
+    cleanupSubscriptions();
+    setupRealtimeSubscriptions();
+  }, [intake?.created_quote_id]);
+
+  const loadAllData = async () => {
+    try {
+      const startTime = Date.now();
+
+      debugLog('[ReviewDraft] FETCHING INTAKE with id:', intakeId);
+      const intakeResult = await supabase
+        .from('voice_intakes')
+        .select('*')
+        .eq('id', intakeId)
+        .maybeSingle();
+
+      debugLog('[ReviewDraft] INTAKE FETCH RESULT:', {
+        has_data: !!intakeResult.data,
+        has_error: !!intakeResult.error,
+        error: intakeResult.error,
+        data_stage: intakeResult.data?.stage,
+        data_status: intakeResult.data?.status,
+        data_created_quote_id: intakeResult.data?.created_quote_id,
+      });
+
+      if (intakeResult.error) {
+        console.error('[ReviewDraft] Intake load error:', intakeResult.error);
+        setError('Failed to load voice intake');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        cleanupSubscriptions();
+        setLoading(false);
+        return;
+      }
+
+      if (!intakeResult.data) {
+        console.error('[ReviewDraft] Intake not found for id:', intakeId);
+        setError('Voice intake not found');
+        stopRefreshPolling();
+        stopStatusRotation();
+        stopTimeoutCheck();
+        cleanupSubscriptions();
+        setLoading(false);
+        return;
+      }
+
+      const loadedIntake = intakeResult.data;
+      const determinedEffectiveQuoteId = loadedIntake.created_quote_id || quoteId;
+
+      debugLog('[ReviewDraft] DETERMINED effectiveQuoteId:', {
+        from_intake: loadedIntake.created_quote_id,
+        from_params: quoteId,
+        effective: determinedEffectiveQuoteId,
+      });
+
+      debugLog('[ReviewDraft] FETCHING QUOTE with effectiveQuoteId:', determinedEffectiveQuoteId);
+      const quoteResult = await supabase
+        .from('quotes')
+        .select(`
+          *,
+          customer:customers!customer_id(name)
+        `)
+        .eq('id', determinedEffectiveQuoteId)
         .maybeSingle();
 
       debugLog('[ReviewDraft] QUOTE FETCH RESULT:', {
@@ -229,44 +320,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         return;
       }
 
-      debugLog('[ReviewDraft] FETCHING INTAKE with id:', intakeId);
-      const intakeResult = await supabase
-        .from('voice_intakes')
-        .select('*')
-        .eq('id', intakeId)
-        .maybeSingle();
-
-      debugLog('[ReviewDraft] INTAKE FETCH RESULT:', {
-        has_data: !!intakeResult.data,
-        has_error: !!intakeResult.error,
-        error: intakeResult.error,
-        data_stage: intakeResult.data?.stage,
-        data_status: intakeResult.data?.status,
-      });
-
-      if (intakeResult.error) {
-        console.error('[ReviewDraft] Intake load error:', intakeResult.error);
-        setError('Failed to load voice intake');
-        stopRefreshPolling();
-        stopStatusRotation();
-        stopTimeoutCheck();
-        cleanupSubscriptions();
-        setLoading(false);
-        return;
-      }
-
-      if (!intakeResult.data) {
-        console.error('[ReviewDraft] Intake not found for id:', intakeId);
-        setError('Voice intake not found');
-        stopRefreshPolling();
-        stopStatusRotation();
-        stopTimeoutCheck();
-        cleanupSubscriptions();
-        setLoading(false);
-        return;
-      }
-
-      const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
+      const lineItemsResult = await getQuoteLineItemsForQuote(supabase, determinedEffectiveQuoteId);
 
       if (lineItemsResult.error) {
         console.error('[ReviewDraft] Line items load error:', lineItemsResult.error);
@@ -277,6 +331,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       logDiagnostics('DATA_LOADED', {
         quote_org_id: quoteResult.data.org_id,
         user_id: user?.id,
+        effective_quote_id: determinedEffectiveQuoteId,
+        quote_id_from_params: quoteId,
+        intake_created_quote_id: loadedIntake.created_quote_id,
         line_items_count: lineItemsResult.data?.length || 0,
         line_items_query_error: lineItemsResult.error ? lineItemsResult.error.message : null,
         first_line_item: lineItemsResult.data?.[0] ? {
@@ -291,30 +348,33 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       debugLog('[ReviewDraft] SETTING STATE with data:', {
         quote_title: quoteResult.data.title,
         quote_id: quoteResult.data.id,
-        intake_stage: intakeResult.data?.stage,
-        intake_status: intakeResult.data?.status,
+        effective_quote_id: determinedEffectiveQuoteId,
+        intake_stage: loadedIntake.stage,
+        intake_status: loadedIntake.status,
+        intake_created_quote_id: loadedIntake.created_quote_id,
         line_items_count: lineItemsResult.data?.length || 0,
         real_items: lineItemsResult.data?.filter(item => !item.is_placeholder).length || 0,
       });
 
       setQuote(quoteResult.data);
       setLineItems(lineItemsResult.data || []);
-      setIntake(intakeResult.data);
-      updateChecklistFromActualData(quoteResult.data, lineItemsResult.data || [], intakeResult.data);
+      setIntake(loadedIntake);
+      updateChecklistFromActualData(quoteResult.data, lineItemsResult.data || [], loadedIntake);
       setLoading(false);
 
       const hasRealItems = lineItemsResult.data && lineItemsResult.data.length > 0 &&
         lineItemsResult.data.some(item => !item.is_placeholder);
       const realItemsCount = lineItemsResult.data?.filter(item => !item.is_placeholder).length || 0;
-      const isDraftDone = intakeResult.data?.stage === 'draft_done';
-      const hasCreatedQuoteId = !!intakeResult.data?.created_quote_id;
+      const isDraftDone = loadedIntake.stage === 'draft_done';
+      const hasCreatedQuoteId = !!loadedIntake.created_quote_id;
 
       debugLog('[ReviewDraft] INITIAL LOAD CHECK:', {
-        quote_id: quoteId,
+        quote_id_from_params: quoteId,
+        effective_quote_id: determinedEffectiveQuoteId,
         intake_id: intakeId,
-        intake_stage: intakeResult.data?.stage,
-        intake_status: intakeResult.data?.status,
-        intake_created_quote_id: intakeResult.data?.created_quote_id,
+        intake_stage: loadedIntake.stage,
+        intake_status: loadedIntake.status,
+        intake_created_quote_id: loadedIntake.created_quote_id,
         total_line_items: lineItemsResult.data?.length || 0,
         real_line_items: realItemsCount,
         has_real_items: hasRealItems,
@@ -325,9 +385,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
       if (isDraftDone && hasCreatedQuoteId) {
         debugLog('[ReviewDraft] PROCESSING COMPLETE ON MOUNT - Conditions met:', {
-          quote_id: quoteId,
-          intake_stage: intakeResult.data?.stage,
-          intake_created_quote_id: intakeResult.data?.created_quote_id,
+          effective_quote_id: determinedEffectiveQuoteId,
+          intake_stage: loadedIntake.stage,
+          intake_created_quote_id: loadedIntake.created_quote_id,
           real_items_count: realItemsCount,
           reason: 'draft_done stage + created_quote_id present',
         });
@@ -348,13 +408,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     debugLog('[ReviewDraft] REFRESH: Starting refresh cycle', {
       current_line_items: lineItems.length,
       current_stage: intake?.stage,
-    });
-
-    const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
-    debugLog('[ReviewDraft] REFRESH: Line items result:', {
-      has_data: !!lineItemsResult.data,
-      has_error: !!lineItemsResult.error,
-      count: lineItemsResult.data?.length || 0,
+      current_effective_quote_id: effectiveQuoteId,
     });
 
     debugLog('[ReviewDraft] REFRESH: Fetching intake with id:', intakeId);
@@ -369,6 +423,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       has_error: !!intakeResult.error,
       error: intakeResult.error,
       data_stage: intakeResult.data?.stage,
+      data_created_quote_id: intakeResult.data?.created_quote_id,
     });
 
     if (intakeResult.error) {
@@ -377,6 +432,17 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
 
     const currentIntake = intakeResult.data || intake;
+    const currentEffectiveQuoteId = currentIntake?.created_quote_id || quoteId;
+
+    debugLog('[ReviewDraft] REFRESH: Using effectiveQuoteId:', currentEffectiveQuoteId);
+
+    const lineItemsResult = await getQuoteLineItemsForQuote(supabase, currentEffectiveQuoteId);
+    debugLog('[ReviewDraft] REFRESH: Line items result:', {
+      has_data: !!lineItemsResult.data,
+      has_error: !!lineItemsResult.error,
+      count: lineItemsResult.data?.length || 0,
+    });
+
     const isDraftDone = currentIntake?.stage === 'draft_done';
     const hasCreatedQuoteId = !!currentIntake?.created_quote_id;
     const hasLineItems = lineItemsResult.data && lineItemsResult.data.length > 0;
@@ -384,7 +450,8 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     const realItemsCount = hasLineItems ? lineItemsResult.data.filter(item => !item.is_placeholder).length : 0;
 
     debugLog('[ReviewDraft] REFRESH CHECK:', {
-      quote_id: quoteId,
+      quote_id_from_params: quoteId,
+      effective_quote_id: currentEffectiveQuoteId,
       intake_id: intakeId,
       intake_stage: currentIntake?.stage,
       intake_status: currentIntake?.status,
@@ -431,7 +498,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
     if (isDraftDone && hasCreatedQuoteId) {
       debugLog('[ReviewDraft] PROCESSING COMPLETE - Conditions met:', {
-        quote_id: quoteId,
+        effective_quote_id: currentEffectiveQuoteId,
         intake_stage: currentIntake?.stage,
         intake_created_quote_id: currentIntake?.created_quote_id,
         real_items_count: realItemsCount,
@@ -567,16 +634,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         const freshIntake = freshIntakeResult.data;
         const freshStage = freshIntake.stage;
         const freshCreatedQuoteId = freshIntake.created_quote_id;
+        const freshEffectiveQuoteId = freshCreatedQuoteId || quoteId;
 
         let freshLineItemsCount = 0;
-        if (freshCreatedQuoteId) {
-          const lineItemsResult = await supabase
-            .from('quote_line_items')
-            .select('id', { count: 'exact', head: true })
-            .eq('quote_id', freshCreatedQuoteId);
+        const lineItemsResult = await supabase
+          .from('quote_line_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('quote_id', freshEffectiveQuoteId);
 
-          freshLineItemsCount = lineItemsResult.count || 0;
-        }
+        freshLineItemsCount = lineItemsResult.count || 0;
 
         let reason = 'unknown';
         if (freshStage !== 'draft_done') {
@@ -638,15 +704,19 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   const setupRealtimeSubscriptions = () => {
+    const subscriptionQuoteId = effectiveQuoteId;
+
+    debugLog('[REALTIME] Setting up subscriptions for effectiveQuoteId:', subscriptionQuoteId);
+
     quoteChannelRef.current = supabase
-      .channel(`quote:${quoteId}`)
+      .channel(`quote:${subscriptionQuoteId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'quotes',
-          filter: `id=eq.${quoteId}`
+          filter: `id=eq.${subscriptionQuoteId}`
         },
         (payload) => {
           debugLog('[REALTIME] Quote updated:', payload.new);
@@ -656,14 +726,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       .subscribe();
 
     lineItemsChannelRef.current = supabase
-      .channel(`line_items:${quoteId}`)
+      .channel(`line_items:${subscriptionQuoteId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'quote_line_items',
-          filter: `quote_id=eq.${quoteId}`
+          filter: `quote_id=eq.${subscriptionQuoteId}`
         },
         (payload) => {
           debugLog('[REALTIME] Line item inserted:', payload.new);
@@ -676,7 +746,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           event: 'UPDATE',
           schema: 'public',
           table: 'quote_line_items',
-          filter: `quote_id=eq.${quoteId}`
+          filter: `quote_id=eq.${subscriptionQuoteId}`
         },
         (payload) => {
           debugLog('[REALTIME] Line item updated:', payload.new);
@@ -1028,7 +1098,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           </Card>
         )}
 
-        {processingTimeout && !isDraftComplete && (
+        {processingTimeout && !isDraftComplete && !(intake?.stage === 'draft_done' && intake?.created_quote_id) && (
           <Card className="bg-yellow-50 border-yellow-200">
             <div className="text-center space-y-3">
               <p className="text-sm font-medium text-yellow-900">
@@ -1057,7 +1127,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                       Cancel
                     </Button>
                     <Button
-                      onClick={() => onContinue(quoteId)}
+                      onClick={() => onContinue(effectiveQuoteId)}
                     >
                       Continue to Edit
                     </Button>
@@ -1084,13 +1154,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-secondary">Title:</span>
-              {isDraftComplete ? (
-                quoteTitle && quoteTitle !== 'Processing job' ? (
-                  <span className="font-medium text-primary">{quoteTitle}</span>
-                ) : (
-                  <SkeletonLine width="120px" />
-                )
-              ) : isStillProcessing && quoteTitle === 'Processing job' ? (
+              {!quote || (isStillProcessing && quoteTitle === 'Processing job') ? (
                 <SkeletonLine width="120px" />
               ) : (
                 <span className="font-medium text-primary">{quoteTitle}</span>
@@ -1354,7 +1418,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             Cancel
           </Button>
           <Button
-            onClick={() => onContinue(quoteId)}
+            onClick={() => onContinue(effectiveQuoteId)}
             className="flex-1"
             disabled={!hasLineItems && !processingTimeout}
           >
