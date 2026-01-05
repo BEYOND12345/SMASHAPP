@@ -9,6 +9,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+if (typeof window !== 'undefined') {
+  (window as any).supabase = supabase;
+}
+
 export const uploadLogo = async (userId: string, file: File): Promise<string> => {
   const fileExt = file.name.split('.').pop();
   const fileName = `${userId}/logo.${fileExt}`;
