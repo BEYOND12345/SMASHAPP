@@ -9,6 +9,12 @@ import { ProgressChecklist, ChecklistItem } from '../components/progresschecklis
 import { getQuoteLineItemsForQuote, QuoteLineItem } from '../lib/data/quoteLineItems';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+const DEBUG_MODE = false;
+const debugLog = (...args: any[]) => { if (DEBUG_MODE) console.log(...args); };
+const debugWarn = (...args: any[]) => { if (DEBUG_MODE) console.warn(...args); };
+const debugGroupCollapsed = (...args: any[]) => { if (DEBUG_MODE) console.groupCollapsed(...args); };
+const debugGroupEnd = () => { if (DEBUG_MODE) console.groupEnd(); };
+
 interface ReviewDraftProps {
   quoteId: string;
   intakeId: string;
@@ -74,7 +80,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   onBack,
   onContinue,
 }) => {
-  console.log('[ReviewDraft] COMPONENT MOUNTED WITH PROPS:', {
+  debugLog('[ReviewDraft] COMPONENT MOUNTED WITH PROPS:', {
     quoteId,
     intakeId,
     quoteId_type: typeof quoteId,
@@ -124,9 +130,9 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       ...data,
     };
 
-    console.groupCollapsed(`[ReviewDraft] ${phase}`);
-    console.log('Diagnostic Info:', diagnosticInfo);
-    console.groupEnd();
+    debugGroupCollapsed(`[ReviewDraft] ${phase}`);
+    debugLog('Diagnostic Info:', diagnosticInfo);
+    debugGroupEnd();
   };
 
   useEffect(() => {
@@ -155,7 +161,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
     const renderTime = recordStopTime > 0 ? now - recordStopTime : 0;
 
-    console.warn(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} total_ms=${renderTime}`);
+    debugWarn(`[PERF] trace_id=${traceId} step=reviewdraft_mount intake_id=${intakeId} quote_id=${quoteId} total_ms=${renderTime}`);
 
     supabase.auth.getUser().then(({ data }) => {
       logDiagnostics('MOUNT', {
@@ -183,7 +189,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     try {
       const startTime = Date.now();
 
-      console.log('[ReviewDraft] FETCHING QUOTE with id:', quoteId);
+      debugLog('[ReviewDraft] FETCHING QUOTE with id:', quoteId);
       const quoteResult = await supabase
         .from('quotes')
         .select(`
@@ -193,7 +199,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         .eq('id', quoteId)
         .maybeSingle();
 
-      console.log('[ReviewDraft] QUOTE FETCH RESULT:', {
+      debugLog('[ReviewDraft] QUOTE FETCH RESULT:', {
         has_data: !!quoteResult.data,
         has_error: !!quoteResult.error,
         error: quoteResult.error,
@@ -223,14 +229,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         return;
       }
 
-      console.log('[ReviewDraft] FETCHING INTAKE with id:', intakeId);
+      debugLog('[ReviewDraft] FETCHING INTAKE with id:', intakeId);
       const intakeResult = await supabase
         .from('voice_intakes')
         .select('*')
         .eq('id', intakeId)
         .maybeSingle();
 
-      console.log('[ReviewDraft] INTAKE FETCH RESULT:', {
+      debugLog('[ReviewDraft] INTAKE FETCH RESULT:', {
         has_data: !!intakeResult.data,
         has_error: !!intakeResult.error,
         error: intakeResult.error,
@@ -282,7 +288,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         load_duration_ms: Date.now() - startTime,
       });
 
-      console.log('[ReviewDraft] SETTING STATE with data:', {
+      debugLog('[ReviewDraft] SETTING STATE with data:', {
         quote_title: quoteResult.data.title,
         quote_id: quoteResult.data.id,
         intake_stage: intakeResult.data?.stage,
@@ -303,7 +309,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       const isDraftDone = intakeResult.data?.stage === 'draft_done';
       const hasCreatedQuoteId = !!intakeResult.data?.created_quote_id;
 
-      console.log('[ReviewDraft] INITIAL LOAD CHECK:', {
+      debugLog('[ReviewDraft] INITIAL LOAD CHECK:', {
         quote_id: quoteId,
         intake_id: intakeId,
         intake_stage: intakeResult.data?.stage,
@@ -318,7 +324,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       });
 
       if (isDraftDone && hasCreatedQuoteId) {
-        console.log('[ReviewDraft] PROCESSING COMPLETE ON MOUNT - Conditions met:', {
+        debugLog('[ReviewDraft] PROCESSING COMPLETE ON MOUNT - Conditions met:', {
           quote_id: quoteId,
           intake_stage: intakeResult.data?.stage,
           intake_created_quote_id: intakeResult.data?.created_quote_id,
@@ -339,26 +345,26 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   };
 
   const refreshLineItems = async () => {
-    console.log('[ReviewDraft] REFRESH: Starting refresh cycle', {
+    debugLog('[ReviewDraft] REFRESH: Starting refresh cycle', {
       current_line_items: lineItems.length,
       current_stage: intake?.stage,
     });
 
     const lineItemsResult = await getQuoteLineItemsForQuote(supabase, quoteId);
-    console.log('[ReviewDraft] REFRESH: Line items result:', {
+    debugLog('[ReviewDraft] REFRESH: Line items result:', {
       has_data: !!lineItemsResult.data,
       has_error: !!lineItemsResult.error,
       count: lineItemsResult.data?.length || 0,
     });
 
-    console.log('[ReviewDraft] REFRESH: Fetching intake with id:', intakeId);
+    debugLog('[ReviewDraft] REFRESH: Fetching intake with id:', intakeId);
     const intakeResult = await supabase
       .from('voice_intakes')
       .select('*')
       .eq('id', intakeId)
       .maybeSingle();
 
-    console.log('[ReviewDraft] REFRESH: Intake fetch result:', {
+    debugLog('[ReviewDraft] REFRESH: Intake fetch result:', {
       has_data: !!intakeResult.data,
       has_error: !!intakeResult.error,
       error: intakeResult.error,
@@ -377,7 +383,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     const hasRealItems = hasLineItems && lineItemsResult.data.some(item => !item.is_placeholder);
     const realItemsCount = hasLineItems ? lineItemsResult.data.filter(item => !item.is_placeholder).length : 0;
 
-    console.log('[ReviewDraft] REFRESH CHECK:', {
+    debugLog('[ReviewDraft] REFRESH CHECK:', {
       quote_id: quoteId,
       intake_id: intakeId,
       intake_stage: currentIntake?.stage,
@@ -424,7 +430,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
 
     if (isDraftDone && hasCreatedQuoteId) {
-      console.log('[ReviewDraft] PROCESSING COMPLETE - Conditions met:', {
+      debugLog('[ReviewDraft] PROCESSING COMPLETE - Conditions met:', {
         quote_id: quoteId,
         intake_stage: currentIntake?.stage,
         intake_created_quote_id: currentIntake?.created_quote_id,
@@ -435,14 +441,14 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       markProcessingComplete();
 
       if (!hasLineItems) {
-        console.log('[REVIEWDRAFT_POLL] trace_id=' + traceIdRef.current + ' reason=waiting_for_line_items count=0');
+        debugLog('[REVIEWDRAFT_POLL] trace_id=' + traceIdRef.current + ' reason=waiting_for_line_items count=0');
       } else {
         setRefreshAttempts(0);
       }
       return true;
     }
 
-    console.log('[REVIEWDRAFT_POLL] trace_id=' + traceIdRef.current + ' reason=' +
+    debugLog('[REVIEWDRAFT_POLL] trace_id=' + traceIdRef.current + ' reason=' +
       (!isDraftDone ? 'stage_not_draft_done' : !hasCreatedQuoteId ? 'no_created_quote_id' : 'unknown') +
       ' stage=' + currentIntake?.stage + ' count=' + (lineItemsResult.data?.length || 0));
 
@@ -515,12 +521,12 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       const recordStopTime = parseInt(urlParams.get('record_stop_time') || '0');
       const totalTimeMs = recordStopTime > 0 ? now - recordStopTime : 0;
 
-      console.warn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${items.length} total_ms=${totalTimeMs}`);
+      debugWarn(`[PERF] trace_id=${traceIdRef.current} step=first_render_with_real_items intake_id=${intakeId} quote_id=${quoteId} line_items_count=${items.length} total_ms=${totalTimeMs}`);
     }
   };
 
   const markProcessingComplete = () => {
-    console.log('[ReviewDraft] ✅ MARKING PROCESSING COMPLETE', {
+    debugLog('[ReviewDraft] ✅ MARKING PROCESSING COMPLETE', {
       quote_id: quoteId,
       intake_id: intakeId,
       was_processing: processingStateRef.current.isActive,
@@ -581,7 +587,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           reason = 'waiting_for_line_items';
         }
 
-        console.log(`[REVIEWDRAFT_POLL] trace_id=${traceIdRef.current} reason=${reason} stage=${freshStage} quote_id=${freshCreatedQuoteId || 'null'} count=${freshLineItemsCount} attempt=${attempts}`);
+        debugLog(`[REVIEWDRAFT_POLL] trace_id=${traceIdRef.current} reason=${reason} stage=${freshStage} quote_id=${freshCreatedQuoteId || 'null'} count=${freshLineItemsCount} attempt=${attempts}`);
 
         logDiagnostics('POLLING_ATTEMPT', {
           attempt: attempts,
@@ -594,7 +600,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         });
 
         if (freshStage === 'draft_done' && freshCreatedQuoteId && freshLineItemsCount > 0) {
-          console.log('[ReviewDraft] Polling complete - all conditions met');
+          debugLog('[ReviewDraft] Polling complete - all conditions met');
           await refreshLineItems();
           stopRefreshPolling();
           return;
@@ -603,7 +609,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         await refreshLineItems();
 
         if (attempts >= MAX_ATTEMPTS) {
-          console.warn('[ReviewDraft] Polling timeout after 20 seconds');
+          debugWarn('[ReviewDraft] Polling timeout after 20 seconds');
           stopRefreshPolling();
         }
       } catch (err) {
@@ -625,7 +631,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     }
 
     refreshDebounceRef.current = setTimeout(async () => {
-      console.log('[ReviewDraft] Executing debounced refresh');
+      debugLog('[ReviewDraft] Executing debounced refresh');
       await refreshLineItems();
       refreshDebounceRef.current = null;
     }, 500);
@@ -643,7 +649,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           filter: `id=eq.${quoteId}`
         },
         (payload) => {
-          console.log('[REALTIME] Quote updated:', payload.new);
+          debugLog('[REALTIME] Quote updated:', payload.new);
           debouncedRefresh();
         }
       )
@@ -660,7 +666,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           filter: `quote_id=eq.${quoteId}`
         },
         (payload) => {
-          console.log('[REALTIME] Line item inserted:', payload.new);
+          debugLog('[REALTIME] Line item inserted:', payload.new);
           debouncedRefresh();
         }
       )
@@ -673,7 +679,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           filter: `quote_id=eq.${quoteId}`
         },
         (payload) => {
-          console.log('[REALTIME] Line item updated:', payload.new);
+          debugLog('[REALTIME] Line item updated:', payload.new);
           debouncedRefresh();
         }
       )
@@ -690,7 +696,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           filter: `id=eq.${intakeId}`
         },
         (payload) => {
-          console.log('[REALTIME] Intake updated:', {
+          debugLog('[REALTIME] Intake updated:', {
             stage: payload.new.stage,
             status: payload.new.status,
           });
@@ -732,7 +738,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const startTimeoutCheck = () => {
     timeoutTimerRef.current = setTimeout(() => {
       if (processingStateRef.current.isActive) {
-        console.warn('[ReviewDraft] Processing timeout - 45 seconds elapsed', {
+        debugWarn('[ReviewDraft] Processing timeout - 45 seconds elapsed', {
           has_line_items: lineItems.length > 0,
           intake_stage: intake?.stage,
         });
@@ -887,7 +893,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const materialItems = lineItems.filter(item => item.item_type === 'materials');
   const feeItems = lineItems.filter(item => item.item_type === 'fee');
 
-  console.log('[ReviewDraft] LINE ITEMS IN RENDER:', {
+  debugLog('[ReviewDraft] LINE ITEMS IN RENDER:', {
     total_count: lineItems.length,
     labour_count: labourItems.length,
     material_count: materialItems.length,
@@ -908,7 +914,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
 
   const isDraftComplete = intake?.stage === 'draft_done' && intake?.created_quote_id != null;
 
-  console.log('[ReviewDraft] RENDER STATE:', {
+  debugLog('[ReviewDraft] RENDER STATE:', {
     intake_stage: intake?.stage,
     intake_status: intake?.status,
     intake_created_quote_id: intake?.created_quote_id,
@@ -954,7 +960,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         </div>
 
         {showProcessingState && (
-          <Card className="bg-blue-50 border-blue-200">
+          <Card className="bg-blue-50 border-blue-200 transition-all duration-300 ease-out">
             <div className="flex items-start gap-3">
               <Loader2 size={20} className="text-blue-600 animate-spin flex-shrink-0 mt-0.5" />
               <div className="flex-1">
@@ -1073,12 +1079,18 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           </div>
         )}
 
-        <Card>
+        <Card className="transition-all duration-300 ease-out">
           <h3 className="font-semibold text-primary mb-3">Job Details</h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-secondary">Title:</span>
-              {isStillProcessing && quoteTitle === 'Processing job' ? (
+              {isDraftComplete ? (
+                quoteTitle && quoteTitle !== 'Processing job' ? (
+                  <span className="font-medium text-primary">{quoteTitle}</span>
+                ) : (
+                  <SkeletonLine width="120px" />
+                )
+              ) : isStillProcessing && quoteTitle === 'Processing job' ? (
                 <SkeletonLine width="120px" />
               ) : (
                 <span className="font-medium text-primary">{quoteTitle}</span>
@@ -1111,7 +1123,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           </Card>
         )}
 
-        <Card>
+        <Card className="transition-all duration-300 ease-out">
           <h3 className="font-semibold text-primary mb-3">Labour</h3>
           {!hasLineItems && !extractionData?.time?.labour_entries && isStillProcessing ? (
             <div className="space-y-3">
@@ -1187,7 +1199,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           )}
         </Card>
 
-        <Card>
+        <Card className="transition-all duration-300 ease-out">
           <h3 className="font-semibold text-primary mb-3">Materials</h3>
           {!hasLineItems && !extractionData?.materials?.items && isStillProcessing ? (
             <div className="space-y-3">

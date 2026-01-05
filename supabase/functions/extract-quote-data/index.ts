@@ -7,6 +7,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const DEBUG_MODE = false;
+const debugLog = (...args: any[]) => { if (DEBUG_MODE) console.log(...args); };
+const debugWarn = (...args: any[]) => { if (DEBUG_MODE) console.warn(...args); };
+
 interface ExtractRequest {
   intake_id: string;
   user_corrections_json?: any;
@@ -87,7 +91,7 @@ async function parseOrRepairJson(rawContent: string, authHeader: string, supabas
   try {
     return JSON.parse(rawContent);
   } catch (parseError) {
-    console.warn("[JSON_REPAIR] Initial parse failed, attempting repair", {
+    debugWarn("[JSON_REPAIR] Initial parse failed, attempting repair", {
       error: String(parseError),
       contentLength: rawContent.length,
       first200: rawContent.substring(0, 200),
@@ -135,7 +139,7 @@ async function parseOrRepairJson(rawContent: string, authHeader: string, supabas
         throw new Error("No content in repair response");
       }
 
-      console.log("[JSON_REPAIR] Repair successful");
+      debugLog("[JSON_REPAIR] Repair successful");
       return JSON.parse(repairedContent);
     } catch (repairError) {
       console.error("[JSON_REPAIR] Repair also failed", {
@@ -348,7 +352,7 @@ function enrichExtractedData(rawData: any, pricingProfile: any, transcript?: str
   if (!jobTitle || jobTitle.trim() === '' || jobTitle.toLowerCase() === 'processing job') {
     if (transcript) {
       jobTitle = generateFallbackTitle(rawData, transcript);
-      console.log('[TITLE_FALLBACK] Generated fallback title:', jobTitle);
+      debugLog('[TITLE_FALLBACK] Generated fallback title:', jobTitle);
     } else {
       jobTitle = null;
     }
@@ -430,7 +434,7 @@ Deno.serve(async (req: Request) => {
       throw new Error("Unauthorized");
     }
 
-    console.log("[AUTH] User authenticated", { user_id: user.id });
+    debugLog("[AUTH] User authenticated", { user_id: user.id });
 
     const { data: rateLimitResult, error: rateLimitError } = await supabase
       .rpc("check_rate_limit", {
@@ -443,7 +447,7 @@ Deno.serve(async (req: Request) => {
     if (rateLimitError) {
       console.error("[SECURITY] Rate limit check failed", { error: rateLimitError.message });
     } else if (rateLimitResult && !rateLimitResult.allowed) {
-      console.warn("[SECURITY] RATE_LIMIT user_id=" + user.id + " endpoint=extract-quote-data");
+      debugWarn("[SECURITY] RATE_LIMIT user_id=" + user.id + " endpoint=extract-quote-data");
       return new Response(
         JSON.stringify({
           success: false,
@@ -459,7 +463,7 @@ Deno.serve(async (req: Request) => {
 
     const { intake_id, user_corrections_json, trace_id }: ExtractRequest = await req.json();
 
-    console.log(`[PERF] trace_id=${trace_id || 'none'} step=extract_start intake_id=${intake_id}`);
+    debugLog(`[PERF] trace_id=${trace_id || 'none'} step=extract_start intake_id=${intake_id}`);
 
     if (!intake_id) {
       throw new Error("Missing intake_id");
@@ -478,7 +482,7 @@ Deno.serve(async (req: Request) => {
 
     let existingCustomer: any = null;
     if (intake.customer_id) {
-      console.log("[CUSTOMER] Using pre-selected customer:", intake.customer_id);
+      debugLog("[CUSTOMER] Using pre-selected customer:", intake.customer_id);
       const { data: customerData, error: customerError } = await supabase
         .from("customers")
         .select("id, name, email, phone")
@@ -487,9 +491,9 @@ Deno.serve(async (req: Request) => {
 
       if (!customerError && customerData) {
         existingCustomer = customerData;
-        console.log("[CUSTOMER] Found existing customer:", existingCustomer.name);
+        debugLog("[CUSTOMER] Found existing customer:", existingCustomer.name);
       } else {
-        console.warn("[CUSTOMER] Failed to load pre-selected customer, will extract from transcript");
+        debugWarn("[CUSTOMER] Failed to load pre-selected customer, will extract from transcript");
       }
     }
 
@@ -499,7 +503,7 @@ Deno.serve(async (req: Request) => {
     let postProcessDuration: number | undefined;
 
     if (user_corrections_json && intake.extraction_json) {
-      console.log("[PHASE_1.2] User corrections path - merging deterministically");
+      debugLog("[PHASE_1.2] User corrections path - merging deterministically");
       extractedData = JSON.parse(JSON.stringify(intake.extraction_json));
 
       if (user_corrections_json.labour_overrides && extractedData.time?.labour_entries) {
@@ -593,13 +597,13 @@ Deno.serve(async (req: Request) => {
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.overall_confidence = overallConfidence;
 
-      console.log(`[PHASE_1.2] Recalculated confidence: ${overallConfidence.toFixed(2)}`);
+      debugLog(`[PHASE_1.2] Recalculated confidence: ${overallConfidence.toFixed(2)}`);
     } else {
       if (!intake.transcript_text) {
         throw new Error("No transcript available for extraction");
       }
 
-      console.log("[PHASE_1.2] Starting extraction-only pipeline");
+      debugLog("[PHASE_1.2] Starting extraction-only pipeline");
 
       const { data: profileData, error: profileError } = await supabase
         .rpc("get_effective_pricing_profile", { p_user_id: user.id });
@@ -660,7 +664,7 @@ Deno.serve(async (req: Request) => {
       const extractionResult = await extractionResponse.json();
       extractionDuration = Date.now() - extractionStartTime;
 
-      console.log(`[PHASE_1.2] GPT extraction completed in ${extractionDuration}ms`);
+      debugLog(`[PHASE_1.2] GPT extraction completed in ${extractionDuration}ms`);
 
       if (!extractionResult?.choices?.[0]?.message?.content) {
         throw new Error("Invalid response from extraction model");
@@ -669,7 +673,7 @@ Deno.serve(async (req: Request) => {
       const rawContent = extractionResult.choices[0].message.content;
       const rawExtraction = await parseOrRepairJson(rawContent, authHeader, supabaseUrl);
 
-      console.log("[PHASE_1.2] Starting post-processing");
+      debugLog("[PHASE_1.2] Starting post-processing");
       const postProcessStartTime = Date.now();
 
       extractedData = enrichExtractedData(rawExtraction, minimalProfile, intake.transcript_text);
@@ -699,7 +703,7 @@ Deno.serve(async (req: Request) => {
       );
       catalogMatchDuration = Date.now() - catalogMatchStartTime;
 
-      console.log(`[PHASE_1.2] Catalog match SQL in ${catalogMatchDuration}ms`);
+      debugLog(`[PHASE_1.2] Catalog match SQL in ${catalogMatchDuration}ms`);
 
       extractedData.materials.items = enrichedMaterials;
 
@@ -720,10 +724,10 @@ Deno.serve(async (req: Request) => {
       extractedData.missing_fields = generateMissingFields(extractedData);
 
       postProcessDuration = Date.now() - postProcessStartTime;
-      console.log(`[PHASE_1.2] Post processing in ${postProcessDuration}ms`);
+      debugLog(`[PHASE_1.2] Post processing in ${postProcessDuration}ms`);
     }
 
-    console.log("[PHASE_1.2] Determining status based on quality checks");
+    debugLog("[PHASE_1.2] Determining status based on quality checks");
 
     const missingFields = extractedData.missing_fields || [];
     const assumptions = extractedData.assumptions || [];
@@ -739,7 +743,7 @@ Deno.serve(async (req: Request) => {
       Number.isNaN(Number(oc));
 
     if (bad) {
-      console.warn("[EXTRACTION_CONFIDENCE] DEFAULT_APPLIED", {
+      debugWarn("[EXTRACTION_CONFIDENCE] DEFAULT_APPLIED", {
         intake_id,
         previous: oc,
         applied: 0.5
@@ -779,7 +783,7 @@ Deno.serve(async (req: Request) => {
     const userHasConfirmed = user_corrections_json !== undefined && user_corrections_json !== null;
 
     if (userHasConfirmed) {
-      console.log("[REVIEW_FLOW] User corrections provided, honoring confirmation regardless of confidence");
+      debugLog("[REVIEW_FLOW] User corrections provided, honoring confirmation regardless of confidence");
       finalStatus = "extracted";
       requiresReview = false;
 
@@ -790,29 +794,29 @@ Deno.serve(async (req: Request) => {
     } else if (hasRequiredMissing) {
       finalStatus = "needs_user_review";
       requiresReview = true;
-      console.log("[REVIEW_FLOW] Status: needs_user_review (reason: required fields missing)");
+      debugLog("[REVIEW_FLOW] Status: needs_user_review (reason: required fields missing)");
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.requires_user_confirmation = true;
     } else if (hasCriticalLowConfidence) {
       finalStatus = "needs_user_review";
       requiresReview = true;
-      console.log("[REVIEW_FLOW] Status: needs_user_review (reason: critical fields below confidence threshold)");
+      debugLog("[REVIEW_FLOW] Status: needs_user_review (reason: critical fields below confidence threshold)");
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.requires_user_confirmation = true;
     } else if (hasLowConfidenceLabour) {
       finalStatus = "needs_user_review";
       requiresReview = true;
-      console.log("[REVIEW_FLOW] Status: needs_user_review (reason: labour hours confidence < 0.6)");
+      debugLog("[REVIEW_FLOW] Status: needs_user_review (reason: labour hours confidence < 0.6)");
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.requires_user_confirmation = true;
     } else if (overallConfidence < 0.7) {
       finalStatus = "needs_user_review";
       requiresReview = true;
-      console.log("[REVIEW_FLOW] Status: needs_user_review (reason: overall confidence < 0.7)");
+      debugLog("[REVIEW_FLOW] Status: needs_user_review (reason: overall confidence < 0.7)");
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.requires_user_confirmation = true;
     } else {
-      console.log("[REVIEW_FLOW] Status: extracted (all quality checks passed)");
+      debugLog("[REVIEW_FLOW] Status: extracted (all quality checks passed)");
       if (!extractedData.quality) extractedData.quality = {};
       extractedData.quality.requires_user_confirmation = false;
     }
@@ -834,7 +838,7 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to update intake: ${updateError.message}`);
     }
 
-    console.log("[PROGRESSIVE_UPDATE] Updating quote record with extracted data");
+    debugLog("[PROGRESSIVE_UPDATE] Updating quote record with extracted data");
 
     const { data: quoteData } = await supabase
       .from("quotes")
@@ -846,7 +850,7 @@ Deno.serve(async (req: Request) => {
       let finalCustomerId = quoteData.customer_id;
 
       if (!existingCustomer && extractedData.customer?.name) {
-        console.log("[PROGRESSIVE_UPDATE] Attempting to match/create customer from extracted name");
+        debugLog("[PROGRESSIVE_UPDATE] Attempting to match/create customer from extracted name");
 
         const { data: matchedCustomer } = await supabase
           .from("customers")
@@ -857,10 +861,10 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
 
         if (matchedCustomer) {
-          console.log("[PROGRESSIVE_UPDATE] Matched existing customer:", matchedCustomer.name);
+          debugLog("[PROGRESSIVE_UPDATE] Matched existing customer:", matchedCustomer.name);
           finalCustomerId = matchedCustomer.id;
         } else if (extractedData.customer.name) {
-          console.log("[PROGRESSIVE_UPDATE] Creating new customer:", extractedData.customer.name);
+          debugLog("[PROGRESSIVE_UPDATE] Creating new customer:", extractedData.customer.name);
           const { data: newCustomer, error: customerCreateError } = await supabase
             .from("customers")
             .insert({
@@ -874,7 +878,7 @@ Deno.serve(async (req: Request) => {
 
           if (!customerCreateError && newCustomer) {
             finalCustomerId = newCustomer.id;
-            console.log("[PROGRESSIVE_UPDATE] New customer created:", finalCustomerId);
+            debugLog("[PROGRESSIVE_UPDATE] New customer created:", finalCustomerId);
 
             await supabase
               .from("voice_intakes")
@@ -887,7 +891,7 @@ Deno.serve(async (req: Request) => {
       let finalTitle = extractedData.job?.title || "Processing job";
       if (!finalTitle || finalTitle === "Processing job") {
         finalTitle = generateFallbackTitle(extractedData, intake.transcript_text);
-        console.log("[PROGRESSIVE_UPDATE] Using fallback title:", finalTitle);
+        debugLog("[PROGRESSIVE_UPDATE] Using fallback title:", finalTitle);
       }
 
       const quoteUpdateData: any = {
@@ -908,12 +912,12 @@ Deno.serve(async (req: Request) => {
       if (quoteUpdateError) {
         console.error("[PROGRESSIVE_UPDATE] Failed to update quote:", quoteUpdateError);
       } else {
-        console.log("[PROGRESSIVE_UPDATE] Quote updated successfully with extracted data");
+        debugLog("[PROGRESSIVE_UPDATE] Quote updated successfully with extracted data");
       }
     }
 
     const totalDuration = Date.now() - startTime;
-    console.log(`[PERF] trace_id=${trace_id || 'none'} step=extract_complete intake_id=${intake_id} ms=${totalDuration} status=${finalStatus}`);
+    debugLog(`[PERF] trace_id=${trace_id || 'none'} step=extract_complete intake_id=${intake_id} ms=${totalDuration} status=${finalStatus}`);
 
     const performanceData: any = {
       total_duration_ms: totalDuration,
