@@ -126,12 +126,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // CRITICAL DEBUG: Verify transcript exists
+    console.log(`[${trace_id}] Transcript length: ${intake.transcript?.length || 0} chars`);
+    console.log(`[${trace_id}] Transcript preview: ${intake.transcript?.substring(0, 200) || 'EMPTY'}`);
+
     const systemPrompt = EXTRACTION_ONLY_PROMPT;
     const userPrompt = user_corrections_json
       ? `Original transcript:\n${intake.transcript}\n\nUser corrections:\n${JSON.stringify(user_corrections_json)}\n\nApply user corrections to the extracted data.`
       : `Transcript:\n${intake.transcript}`;
 
-    console.log(`[${trace_id}] Calling OpenAI...`);
+    console.log(`[${trace_id}] User prompt length: ${userPrompt.length} chars`);
+    console.log(`[${trace_id}] Calling OpenAI with model: gpt-4o-mini`);
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -160,9 +165,11 @@ Deno.serve(async (req: Request) => {
     const extractedText = openaiResult.choices[0]?.message?.content;
 
     if (!extractedText) {
+      console.error(`[${trace_id}] OpenAI returned no content! Full response:`, JSON.stringify(openaiResult));
       throw new Error("No content from OpenAI");
     }
 
+    console.log(`[${trace_id}] OpenAI response length: ${extractedText.length} chars`);
     console.log(`[${trace_id}] OpenAI response:`, extractedText);
 
     let extracted: any;
@@ -172,6 +179,13 @@ Deno.serve(async (req: Request) => {
       console.warn(`[${trace_id}] JSON parse error:`, parseError);
       throw new Error("Failed to parse extraction JSON");
     }
+
+    // CRITICAL DEBUG: Show what was extracted
+    console.log(`[${trace_id}] Extracted customer name: ${extracted.customer?.name || 'NULL'}`);
+    console.log(`[${trace_id}] Extracted job title: ${extracted.job?.title || 'EMPTY'}`);
+    console.log(`[${trace_id}] Extracted site address: ${extracted.job?.site_address || 'NULL'}`);
+    console.log(`[${trace_id}] Extracted materials count: ${extracted.materials?.items?.length || 0}`);
+    console.log(`[${trace_id}] Extracted labour entries: ${extracted.time?.labour_entries?.length || 0}`);
 
     await supabase
       .from("voice_intakes")
