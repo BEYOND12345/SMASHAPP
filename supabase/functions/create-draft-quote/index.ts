@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
-const DRAFT_VERSION = "v2.3-2026-01-03-source-field-fix";
+const DRAFT_VERSION = "v2.4-2026-01-05-ai-pricing";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,6 +12,82 @@ const corsHeaders = {
 interface CreateDraftRequest {
   intake_id: string;
   trace_id?: string;
+}
+
+async function estimateMaterialPrice(
+  material: {
+    description: string;
+    quantity: number;
+    unit: string;
+  },
+  region: string = 'Australia'
+): Promise<{ unit_price_cents: number; confidence: string; notes: string }> {
+  try {
+    const prompt = `You are a construction materials pricing expert. Estimate the unit price for this material in ${region}.
+
+Material: ${material.description}
+Quantity needed: ${material.quantity} ${material.unit}
+Region: ${region}
+
+Provide ONLY a JSON response in this exact format:
+{
+  "unit_price_cents": <number>,
+  "confidence": "<low|medium|high>",
+  "reasoning": "<brief explanation>"
+}
+
+Consider:
+- Current market prices in ${region}
+- Typical retail pricing for trades
+- Standard pack sizes and quantities
+- Regional pricing variations
+
+Be realistic and conservative. Return price in cents (e.g., $15.50 = 1550).`;
+
+    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiKey) {
+      console.error('[AI_PRICING_ERROR] OPENAI_API_KEY not configured');
+      return {
+        unit_price_cents: 1000,
+        confidence: 'low',
+        notes: 'AI pricing unavailable - default price applied. Please update with actual pricing.',
+      };
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 200,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const aiResponse = JSON.parse(data.choices[0].message.content);
+
+    return {
+      unit_price_cents: aiResponse.unit_price_cents,
+      confidence: aiResponse.confidence,
+      notes: `AI estimated (${aiResponse.confidence} confidence) - ${aiResponse.reasoning}. Please review and adjust if needed.`,
+    };
+  } catch (error) {
+    console.error('[AI_PRICING_ERROR]', error);
+    return {
+      unit_price_cents: 1000,
+      confidence: 'low',
+      notes: 'AI estimation failed - default price applied. Please update with actual pricing.',
+    };
+  }
 }
 
 interface PricingProfile {
@@ -512,11 +588,12 @@ Deno.serve(async (req: Request) => {
 
         let unitPriceCents = 0;
         let notes = material.notes || null;
+        let needsReview = false;
         const catalogItemId = material.catalog_item_id || null;
         const matchConfidence = material.catalog_match_confidence || null;
 
         if (catalogItemId && (!material.unit_price_cents || material.unit_price_cents === 0)) {
-          console.log("[QUOTE_CREATE] Fetching catalog price for item", { catalogItemId });
+          console.log("[CATALOG_MATCH] Fetching catalog price for item", { catalogItemId });
           const { data: catalogItem } = await supabaseAdmin
             .from("material_catalog_items")
             .select("unit_price_cents, typical_low_price_cents, typical_high_price_cents")
@@ -530,7 +607,8 @@ Deno.serve(async (req: Request) => {
               material.unit_price_cents = Math.round(
                 (catalogItem.typical_low_price_cents + catalogItem.typical_high_price_cents) / 2
               );
-              console.log("[QUOTE_CREATE] Using catalog price midpoint", {
+              console.log("[CATALOG_MATCH] Using catalog price midpoint", {
+                material: material.description,
                 low: catalogItem.typical_low_price_cents,
                 high: catalogItem.typical_high_price_cents,
                 midpoint: material.unit_price_cents
@@ -553,10 +631,31 @@ Deno.serve(async (req: Request) => {
 
           const markupText = `Base estimate: $${(baseCost / 100).toFixed(2)}, Markup: ${profile.materials_markup_percent}%`;
           notes = notes ? `${markupText} - ${notes}` : markupText;
-        } else if (material.needs_pricing) {
-          unitPriceCents = 0;
-          notes = `Needs pricing${notes ? ` - ${notes}` : ''}`;
-          warnings.push(`Material "${material.description}" needs pricing`);
+        } else {
+          console.log(`[AI_PRICING] No catalog match or price for "${material.description}" - using AI estimation`);
+
+          const aiEstimate = await estimateMaterialPrice(
+            {
+              description: material.description,
+              quantity: quantity,
+              unit: unit || 'unit',
+            },
+            'Australia'
+          );
+
+          const basePrice = aiEstimate.unit_price_cents;
+          const markupMultiplier = 1 + (profile.materials_markup_percent / 100);
+          unitPriceCents = Math.round(basePrice * markupMultiplier);
+
+          notes = aiEstimate.notes;
+          needsReview = aiEstimate.confidence === 'low';
+
+          console.log(`[AI_PRICING] ${material.description} → Base: $${(basePrice / 100).toFixed(2)}, After markup: $${(unitPriceCents / 100).toFixed(2)} (${aiEstimate.confidence} confidence)`);
+
+          if (profile.materials_markup_percent > 0) {
+            const markupText = `Base: $${(basePrice / 100).toFixed(2)}, Markup: ${profile.materials_markup_percent}%`;
+            notes = `${markupText} - ${notes}`;
+          }
         }
 
         if (catalogItemId && matchConfidence) {
@@ -580,6 +679,7 @@ Deno.serve(async (req: Request) => {
           catalog_item_id: catalogItemId,
           position: position++,
           notes: notes,
+          is_needs_review: needsReview,
         });
       }
     }
@@ -897,6 +997,10 @@ Deno.serve(async (req: Request) => {
 
     if (intake_id) {
       try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
         await supabaseAdmin
           .from("voice_intakes")
           .update({
