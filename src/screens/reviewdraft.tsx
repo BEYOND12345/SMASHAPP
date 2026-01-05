@@ -114,7 +114,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   ]);
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklistFadingOut, setChecklistFadingOut] = useState(false);
-  const [processingTimeout, setProcessingTimeout] = useState(false);
+  const [showSlowProcessingWarning, setShowSlowProcessingWarning] = useState(false);
   const [refreshAttempts, setRefreshAttempts] = useState(0);
   const [showPricingWarning, setShowPricingWarning] = useState(false);
 
@@ -616,7 +616,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     stopRefreshPolling();
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 10;
+    const MAX_ATTEMPTS = 30; // 30 attempts = 60 seconds
     const POLL_INTERVAL = 2000;
 
     refreshIntervalRef.current = setInterval(async () => {
@@ -679,7 +679,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         await refreshLineItems();
 
         if (attempts >= MAX_ATTEMPTS) {
-          debugWarn('[ReviewDraft] Polling timeout after 20 seconds');
+          debugWarn('[ReviewDraft] Polling complete after 60 seconds');
           stopRefreshPolling();
         }
       } catch (err) {
@@ -812,25 +812,20 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const startTimeoutCheck = () => {
     timeoutTimerRef.current = setTimeout(() => {
       if (processingStateRef.current.isActive) {
-        debugWarn('[ReviewDraft] Processing timeout - 45 seconds elapsed', {
+        debugWarn('[ReviewDraft] Processing taking longer than expected - 45 seconds elapsed', {
           has_line_items: lineItems.length > 0,
           intake_stage: intake?.stage,
         });
 
-        logDiagnostics('TIMEOUT', {
+        logDiagnostics('SLOW_PROCESSING_WARNING', {
           refresh_attempts: refreshAttempts,
           processing_duration_ms: Date.now() - processingStateRef.current.startTime,
           line_items_count: lineItems.length,
         });
 
-        setProcessingTimeout(true);
-        setIsProcessing(false);
-        stopStatusRotation();
-        stopRefreshPolling();
-
-        if (lineItems.length === 0) {
-          setError('Could not extract job details with confidence. You can still proceed to edit the quote manually.');
-        }
+        setShowSlowProcessingWarning(true);
+        // DON'T stop polling or processing - let it continue
+        // DON'T set error - this is just informational
       }
     }, 45000);
   };
@@ -1102,52 +1097,30 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           </Card>
         )}
 
-        {processingTimeout && !isDraftComplete && !(intake?.stage === 'draft_done' && intake?.created_quote_id) && (
-          <Card className="bg-yellow-50 border-yellow-200">
-            <div className="text-center space-y-3">
-              <p className="text-sm font-medium text-yellow-900">
-                {hasLineItems ? 'Processing is taking longer than expected' : 'Unable to extract details automatically'}
-              </p>
-              <p className="text-xs text-yellow-700">
-                {hasLineItems
-                  ? 'Some details may still be loading. You can continue or wait a moment and refresh.'
-                  : 'The recording may not have contained clear job details. You can still create the quote manually in the next step.'}
-              </p>
-              <div className="flex gap-2 justify-center">
-                {hasLineItems ? (
-                  <Button
-                    variant="secondary"
-                    onClick={() => window.location.reload()}
-                    className="mt-2"
-                  >
-                    Refresh Page
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      variant="secondary"
-                      onClick={onBack}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={() => onContinue(effectiveQuoteId)}
-                    >
-                      Continue to Edit
-                    </Button>
-                  </>
-                )}
+        {showSlowProcessingWarning && !isDraftComplete && (
+          <Card className="bg-blue-50 border-blue-200">
+            <div className="flex items-start gap-3">
+              <Loader2 size={20} className="text-blue-600 animate-spin flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900 mb-1">
+                  Still processing your quote
+                </p>
+                <p className="text-xs text-blue-700">
+                  {hasLineItems
+                    ? 'Taking longer than usual. You can continue editing now, or wait for all details to appear.'
+                    : 'Processing is taking longer than expected. New details will appear automatically when ready, or you can continue to add them manually.'}
+                </p>
               </div>
             </div>
           </Card>
         )}
 
-        {isStillProcessing && showChecklist && !processingTimeout && (
+        {isStillProcessing && showChecklist && !showSlowProcessingWarning && (
           <div className={`py-2 ${checklistFadingOut ? 'animate-fade-slide-out' : ''}`}>
             <ProgressChecklist items={checklistItems} className="max-w-xs mx-auto" />
             {refreshAttempts > 0 && (
               <p className="text-xs text-tertiary text-center mt-2">
-                Loading details... (attempt {refreshAttempts}/10)
+                Loading details... (attempt {refreshAttempts}/30)
               </p>
             )}
           </div>
@@ -1424,9 +1397,13 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           <Button
             onClick={() => onContinue(effectiveQuoteId)}
             className="flex-1"
-            disabled={!hasLineItems && !processingTimeout}
+            disabled={!effectiveQuoteId}
           >
-            {hasLineItems ? 'Confirm Job and Build Quote' : processingTimeout ? 'Continue to Edit' : 'Preparing details...'}
+            {isDraftComplete && hasLineItems
+              ? 'Review and Edit Quote'
+              : showSlowProcessingWarning || hasLineItems
+              ? 'Continue with Current Details'
+              : 'Processing...'}
           </Button>
         </div>
       </div>
