@@ -1349,33 +1349,122 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
           )}
         </Card>
 
-        <Card>
-          <h3 className="font-semibold text-primary mb-3">Fees</h3>
-          {!hasLineItems ? (
-            <div className="space-y-3">
-              <SkeletonRow />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {feeItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="pb-3 border-b border-border last:border-0 last:pb-0"
-                >
-                  <div className="flex justify-between items-start mb-1 gap-3">
-                    <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
-                    <span className="font-semibold text-primary flex-shrink-0">
-                      {formatCents(item.line_total_cents)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {feeItems.length === 0 && (
-                <p className="text-sm text-tertiary">No fees</p>
-              )}
-            </div>
-          )}
-        </Card>
+        {(feeItems.some(item => item.description?.toLowerCase().includes('callout')) || !hasLineItems) && (
+          <Card>
+            <h3 className="font-semibold text-primary mb-3">Call-out Fee</h3>
+            {!hasLineItems ? (
+              <div className="space-y-3">
+                <SkeletonRow />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {feeItems.filter(item => item.description?.toLowerCase().includes('callout')).map((item) => {
+                  const quantity = typeof item.quantity === 'object' ? (item.quantity as any)?.value : item.quantity;
+                  const unit = typeof item.unit === 'object' ? (item.unit as any)?.value : item.unit;
+                  return (
+                    <div
+                      key={item.id}
+                      className="pb-3 border-b border-border last:border-0 last:pb-0"
+                    >
+                      <div className="flex justify-between items-start mb-1 gap-3">
+                        <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                        <span className="font-semibold text-primary flex-shrink-0">
+                          {formatCents(item.line_total_cents)}
+                        </span>
+                      </div>
+                      {quantity && unit && item.unit_price_cents && (
+                        <div className="text-sm text-secondary">
+                          {quantity} {unit} × {formatCents(item.unit_price_cents)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {feeItems.filter(item => item.description?.toLowerCase().includes('callout')).length === 0 && (
+                  <p className="text-sm text-tertiary">No call-out fee</p>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {(feeItems.some(item => item.description?.toLowerCase().includes('travel')) || !hasLineItems) && (
+          <Card>
+            <h3 className="font-semibold text-primary mb-3">Travel Time</h3>
+            {!hasLineItems ? (
+              <div className="space-y-3">
+                <SkeletonRow />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {feeItems.filter(item => item.description?.toLowerCase().includes('travel')).map((item) => {
+                  const quantity = typeof item.quantity === 'object' ? (item.quantity as any)?.value : item.quantity;
+                  const unit = typeof item.unit === 'object' ? (item.unit as any)?.value : item.unit;
+                  return (
+                    <div
+                      key={item.id}
+                      className="pb-3 border-b border-border last:border-0 last:pb-0"
+                    >
+                      <div className="flex justify-between items-start mb-1 gap-3">
+                        <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                        <span className="font-semibold text-primary flex-shrink-0">
+                          {formatCents(item.line_total_cents)}
+                        </span>
+                      </div>
+                      {quantity && unit && item.unit_price_cents && (
+                        <div className="text-sm text-secondary">
+                          {quantity} {unit} × {formatCents(item.unit_price_cents)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {feeItems.filter(item => item.description?.toLowerCase().includes('travel')).length === 0 && (
+                  <p className="text-sm text-tertiary">No travel time</p>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {(feeItems.some(item => item.description?.toLowerCase().includes('material')) || !hasLineItems) && (
+          <Card>
+            <h3 className="font-semibold text-primary mb-3">Materials Collection</h3>
+            {!hasLineItems ? (
+              <div className="space-y-3">
+                <SkeletonRow />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {feeItems.filter(item => item.description?.toLowerCase().includes('material')).map((item) => {
+                  const quantity = typeof item.quantity === 'object' ? (item.quantity as any)?.value : item.quantity;
+                  const unit = typeof item.unit === 'object' ? (item.unit as any)?.value : item.unit;
+                  return (
+                    <div
+                      key={item.id}
+                      className="pb-3 border-b border-border last:border-0 last:pb-0"
+                    >
+                      <div className="flex justify-between items-start mb-1 gap-3">
+                        <span className="font-medium text-primary flex-1 min-w-0 truncate">{item.description}</span>
+                        <span className="font-semibold text-primary flex-shrink-0">
+                          {formatCents(item.line_total_cents)}
+                        </span>
+                      </div>
+                      {quantity && unit && item.unit_price_cents && (
+                        <div className="text-sm text-secondary">
+                          {quantity} {unit} × {formatCents(item.unit_price_cents)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {feeItems.filter(item => item.description?.toLowerCase().includes('material')).length === 0 && (
+                  <p className="text-sm text-tertiary">No materials collection fee</p>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
 
         <div className="pt-4 pb-2 border-t border-border/50">
           <p className="text-xs text-tertiary mb-3 text-center">Estimated totals</p>

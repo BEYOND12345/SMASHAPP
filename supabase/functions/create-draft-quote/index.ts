@@ -50,7 +50,7 @@ Be realistic and conservative. Return price in cents (e.g., $15.50 = 1550).`;
       return {
         unit_price_cents: 1000,
         confidence: 'low',
-        notes: 'AI pricing unavailable - default price applied. Please update with actual pricing.',
+        notes: 'Default price - please update',
       };
     }
 
@@ -78,14 +78,14 @@ Be realistic and conservative. Return price in cents (e.g., $15.50 = 1550).`;
     return {
       unit_price_cents: aiResponse.unit_price_cents,
       confidence: aiResponse.confidence,
-      notes: `AI estimated (${aiResponse.confidence} confidence) - ${aiResponse.reasoning}. Please review and adjust if needed.`,
+      notes: `Estimate - please check pricing`,
     };
   } catch (error) {
     console.error('[AI_PRICING_ERROR]', error);
     return {
       unit_price_cents: 1000,
       confidence: 'low',
-      notes: 'AI estimation failed - default price applied. Please update with actual pricing.',
+      notes: 'Default price - please update',
     };
   }
 }
