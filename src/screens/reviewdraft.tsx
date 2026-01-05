@@ -947,7 +947,17 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const customerName = quote?.customer?.name || null;
   const quoteTitle = quote?.title || 'Processing job';
   const extractionData = intake?.extraction_json;
-  const scopeOfWork = quote?.scope_of_work || [];
+  const scopeOfWork = (() => {
+    if (!quote?.scope_of_work) return [];
+    if (typeof quote.scope_of_work === 'string') {
+      try {
+        return JSON.parse(quote.scope_of_work);
+      } catch {
+        return [];
+      }
+    }
+    return quote.scope_of_work;
+  })();
 
   const extractionRequiresReview = intake?.status === 'needs_user_review' &&
     extractionData?.quality?.requires_user_confirmation === true;
