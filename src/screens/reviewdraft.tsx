@@ -1047,7 +1047,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                   Processing your quote
                 </p>
                 <p className="text-xs text-blue-700">
-                  Extracting materials, calculating costs, and building line items. This usually takes 5-10 seconds.
+                  Materials are estimates. Please check details below.
                 </p>
               </div>
             </div>
@@ -1100,7 +1100,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
                   Pricing needed
                 </p>
                 <p className="text-xs text-blue-700">
-                  Some materials couldn't be matched to the catalog. You'll be able to add pricing in the next step.
+                  Please add pricing in the next step.
                 </p>
               </div>
             </div>

@@ -810,23 +810,27 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (profile.bunnings_run_enabled && extracted.fees?.materials_pickup?.enabled) {
-      const pickupMinutes = extracted.fees.materials_pickup.duration_minutes || profile.bunnings_run_minutes_default;
-      const pickupHours = pickupMinutes / 60;
-      const lineTotalCents = Math.round(pickupHours * profile.hourly_rate_cents);
+    if (extracted.fees?.materials_supply_hours) {
+      let supplyHours = typeof extracted.fees.materials_supply_hours === "object"
+        ? extracted.fees.materials_supply_hours?.value
+        : extracted.fees.materials_supply_hours;
 
-      lineItems.push({
-        org_id: profile.org_id,
-        quote_id: quote.id,
-        item_type: "labour",
-        description: "Materials pickup",
-        quantity: pickupHours,
-        unit: "hours",
-        unit_price_cents: profile.hourly_rate_cents,
-        line_total_cents: lineTotalCents,
-        position: position++,
-        notes: `Time to collect materials (${pickupMinutes} minutes)`,
-      });
+      if (supplyHours && supplyHours > 0) {
+        const lineTotalCents = Math.round(supplyHours * profile.hourly_rate_cents);
+
+        lineItems.push({
+          org_id: profile.org_id,
+          quote_id: quote.id,
+          item_type: "fee",
+          description: "Materials supply",
+          quantity: supplyHours,
+          unit: "hours",
+          unit_price_cents: profile.hourly_rate_cents,
+          line_total_cents: lineTotalCents,
+          position: position++,
+          notes: "Time to pick up and supply materials",
+        });
+      }
     }
 
     if (extracted.fees?.callout_fee_cents || profile.callout_fee_cents) {
