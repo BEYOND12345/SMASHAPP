@@ -13,7 +13,7 @@ interface ExtractionMetadata {
 
 interface VoiceRecorderProps {
   onCancel: () => void;
-  onSuccess: (intakeId: string, quoteId: string, traceId: string, recordStopTime: number) => void;
+  onSuccess: (intakeId: string, quoteId: string, traceId: string, recordStopTime: number, jobId?: string) => void;
   customerId?: string;
   autoStart?: boolean;
 }
@@ -667,7 +667,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onCancel, onSucces
           let extractResponse;
           try {
             extractResponse = await fetch(
-              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data`,
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-quote-data-v2`,
               {
                 method: 'POST',
                 headers: {

@@ -6,6 +6,7 @@ import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { formatCents } from '../lib/utils/calculations';
 import { ProgressChecklist, ChecklistItem } from '../components/progresschecklist';
+import { ExtractionChecklist } from '../components/ExtractionChecklist';
 import { getQuoteLineItemsForQuote, QuoteLineItem } from '../lib/data/quoteLineItems';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -92,6 +93,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [quote, setQuote] = useState<QuoteData | null>(null);
   const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
   const [intake, setIntake] = useState<IntakeData | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
 
   const effectiveQuoteId = intake?.created_quote_id || quoteId;
 
@@ -198,6 +200,42 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
       stopTimeoutCheck();
     };
   }, [quoteId, intakeId]);
+
+  useEffect(() => {
+    const findJob = async () => {
+      if (!intakeId) return;
+
+      console.log('[ReviewDraft] Looking up job for intake:', intakeId);
+
+      const { data: job, error } = await supabase
+        .from('quote_generation_jobs')
+        .select('id, status, progress_percent')
+        .eq('intake_id', intakeId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[ReviewDraft] Failed to lookup job:', error);
+        return;
+      }
+
+      if (job) {
+        console.log('[ReviewDraft] Found job:', job.id, 'with progress:', job.progress_percent);
+        setJobId(job.id);
+      } else {
+        console.log('[ReviewDraft] No job found yet for intake:', intakeId);
+      }
+    };
+
+    findJob();
+
+    const checkInterval = setInterval(() => {
+      if (!jobId) {
+        findJob();
+      }
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
+  }, [intakeId, jobId]);
 
   useEffect(() => {
     if (!intake?.created_quote_id) return;
@@ -1049,6 +1087,10 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
         <div className="text-center py-2">
           <p className="text-xs text-tertiary">Check the job details before turning this into a quote.</p>
         </div>
+
+        {jobId && isProcessing && (
+          <ExtractionChecklist jobId={jobId} />
+        )}
 
         {showProcessingState && (
           <Card className="bg-blue-50 border-blue-200 transition-all duration-300 ease-out">
