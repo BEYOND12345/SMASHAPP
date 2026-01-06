@@ -13,77 +13,36 @@ interface ExtractRequest {
   trace_id?: string;
 }
 
-const PROMPT_LINES = [
-  "You are an expert trade quoting assistant.",
-  "Extract only what the user said. Do not invent pricing. Do not invent catalog items.",
-  "Return only valid JSON. No markdown. No comments. No extra keys.",
-  "Use null for unknown values. Never output NaN. Never output Infinity.",
-  "Do not perform catalog matching. Do not output catalog_item_id.",
-  "Do not output unit_price_cents. Do not output estimated_cost_cents.",
-  "Keep content short. Use concise strings.",
-  "",
-  "EXTRACTION RULES:",
-  "1. VAGUE DURATIONS: couple hours equals 2 hours, few days equals 3 days",
-  "2. VAGUE QUANTITIES: couple equals 2, few equals 3, some equals 5",
-  "3. RANGES: three or four days store min 3 max 4 use max for estimates",
-  "4. UNIT NORMALIZATION: metres meters m lm all equal m, square metres sqm m2 all equal sqm",
-  "5. Extract all scope of work tasks as separate items in array",
-  "6. JOB TITLE EXTRACTION (CRITICAL):",
-  "   - Extract from first 1-2 sentences describing the main work",
-  "   - Examples: 'Deck replacement at house in Sydney' → 'Deck replacement'",
-  "   - Examples: 'Need new kitchen cabinets installed' → 'Kitchen cabinet installation'",
-  "   - Examples: 'Fix leaking roof' → 'Roof leak repair'",
-  "   - Examples: 'Quote for painting exterior' → 'Exterior painting'",
-  "   - ALWAYS extract a title. Never return null. Be concise (3-6 words).",
-  "7. CUSTOMER & SITE EXTRACTION:",
-  "   - Customer name: Look for 'for NAME', 'customer NAME', NAME's house, possessive forms",
-  "   - Site address: Extract any mention of location, address, suburb, street, or site",
-  "   - Examples: 'Kate's place' → name: Kate, 'work at 123 Smith St' → site_address: 123 Smith St",
-  "   - Examples: 'job for John in Newtown' → name: John, site_address: Newtown",
-  "8. TIMELINE EXTRACTION:",
-  "   - Extract natural language descriptions of duration and timing",
-  "   - Examples: '2 to 3 days', 'about 40 hours', 'next week', 'couple of days'",
-  "   - Store in timeline_description field as spoken",
-  "9. FEES EXTRACTION:",
-  "   - travel_hours: Time to travel to site (look for 'travel time', 'drive there and back')",
-  "   - materials_supply_hours: Time to pick up/supply materials, trips to hardware store",
-  "   - Look for: 'pick up materials', 'trip to Bunnings', 'supply materials', 'get supplies'",
-  "",
-  "Return ONLY this exact JSON structure:",
-  "{",
-  '  "customer": { "name": string|null, "email": string|null, "phone": string|null },',
-  '  "job": {',
-  '    "title": string,',
-  '    "summary": string|null,',
-  '    "site_address": string|null,',
-  '    "timeline_description": string|null,',
-  '    "estimated_days_min": number|null,',
-  '    "estimated_days_max": number|null,',
-  '    "job_date": string|null,',
-  '    "scope_of_work": string[]',
-  "  },",
-  '  "time": {',
-  '    "labour_entries": [',
-  '      { "description": string, "hours": number|null, "days": number|null, "people": number|null, "note": string|null }',
-  "    ]",
-  "  },",
-  '  "materials": {',
-  '    "items": [',
-  '      { "description": string, "quantity": number|null, "unit": string|null, "notes": string|null }',
-  "    ]",
-  "  },",
-  '  "fees": {',
-  '    "travel_hours": number|null,',
-  '    "materials_supply_hours": number|null,',
-  '    "callout_fee_cents": number|null',
-  "  },",
-  '  "assumptions": [',
-  '    { "field": string, "assumption": string, "confidence": number|null, "source": string|null }',
-  "  ]",
-  "}"
-];
+const SYSTEM_PROMPT = `Extract job details from this tradie's voice note. Return ONLY valid JSON:
+{
+  "customer": { "name": string|null, "email": string|null, "phone": string|null },
+  "job": {
+    "title": string,
+    "summary": string|null,
+    "site_address": string|null,
+    "timeline_description": string|null,
+    "estimated_days_min": number|null,
+    "estimated_days_max": number|null,
+    "scope_of_work": string[]
+  },
+  "time": {
+    "labour_entries": [
+      { "description": string, "hours": number|null, "days": number|null, "people": number|null, "note": string|null }
+    ]
+  },
+  "materials": {
+    "items": [
+      { "description": string, "quantity": number|null, "unit": string|null, "notes": string|null }
+    ]
+  },
+  "fees": {
+    "travel_hours": number|null,
+    "materials_supply_hours": number|null,
+    "callout_fee_cents": number|null
+  }
+}
 
-const EXTRACTION_ONLY_PROMPT = PROMPT_LINES.join("\n");
+If information is missing, use null. Be generous with scope description.`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -130,10 +89,9 @@ Deno.serve(async (req: Request) => {
     console.log(`[${trace_id}] Transcript length: ${intake.transcript_text?.length || 0} chars`);
     console.log(`[${trace_id}] Transcript preview: ${intake.transcript_text?.substring(0, 200) || 'EMPTY'}`);
 
-    const systemPrompt = EXTRACTION_ONLY_PROMPT;
     const userPrompt = user_corrections_json
       ? `Original transcript:\n${intake.transcript_text}\n\nUser corrections:\n${JSON.stringify(user_corrections_json)}\n\nApply user corrections to the extracted data.`
-      : `Transcript:\n${intake.transcript_text}`;
+      : intake.transcript_text;
 
     console.log(`[${trace_id}] User prompt length: ${userPrompt.length} chars`);
     console.log(`[${trace_id}] User prompt preview: ${userPrompt.substring(0, 300)}`);
@@ -142,7 +100,7 @@ Deno.serve(async (req: Request) => {
     const openaiRequestBody = {
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt }
       ],
       temperature: 0.1,
