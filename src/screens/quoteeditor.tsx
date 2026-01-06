@@ -74,6 +74,18 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
   const dirtyFields = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    console.log('[QuoteEditor] MOUNTED with quoteId:', quoteId);
+  }, []);
+
+  useEffect(() => {
+    console.log('[QuoteEditor] useEffect triggered, quoteId:', quoteId);
+
+    if (!quoteId) {
+      console.error('[QuoteEditor] No quoteId provided!');
+      return;
+    }
+
+    console.log('[QuoteEditor] Calling loadQuoteData...');
     loadQuoteData();
   }, [quoteId]);
 
@@ -87,28 +99,53 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
   }, [showSuccessAnimation]);
 
   const loadQuoteData = async () => {
+    console.log('[QuoteEditor] loadQuoteData START, quoteId:', quoteId);
+
     try {
       setLoading(true);
 
+      console.log('[QuoteEditor] Querying quotes table for id:', quoteId);
       const { data: quoteData, error: quoteError } = await supabase
         .from('quotes')
         .select('*')
         .eq('id', quoteId)
         .maybeSingle();
 
-      if (quoteError) throw quoteError;
-      if (!quoteData) throw new Error('Quote not found');
+      console.log('[QuoteEditor] Quote query result:', { quoteData, quoteError });
+
+      if (quoteError) {
+        console.error('[QuoteEditor] Quote query error:', quoteError);
+        throw quoteError;
+      }
+
+      if (!quoteData) {
+        console.error('[QuoteEditor] No quote found for id:', quoteId);
+        throw new Error('Quote not found');
+      }
+
+      console.log('[QuoteEditor] Quote loaded:', {
+        id: quoteData.id,
+        title: quoteData.title,
+        site_address: quoteData.site_address,
+        customer_id: quoteData.customer_id,
+        subtotal_cents: quoteData.subtotal_cents,
+        total_cents: quoteData.total_cents
+      });
 
       setQuote(quoteData);
 
-      const { data: customerData } = await supabase
+      console.log('[QuoteEditor] Querying customer for id:', quoteData.customer_id);
+      const { data: customerData, error: customerError } = await supabase
         .from('customers')
         .select('*')
         .eq('id', quoteData.customer_id)
         .maybeSingle();
 
+      console.log('[QuoteEditor] Customer query result:', { customerData, customerError });
+
       setCustomer(customerData);
 
+      console.log('[QuoteEditor] Querying line items for quote_id:', quoteId);
       const { data: lineItemsData, error: lineItemsError } = await supabase
         .from('quote_line_items')
         .select('*')
@@ -116,13 +153,25 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
         .eq('is_placeholder', false)
         .order('position', { ascending: true });
 
-      if (lineItemsError) throw lineItemsError;
+      console.log('[QuoteEditor] Line items query result:', {
+        items: lineItemsData,
+        count: lineItemsData?.length || 0,
+        error: lineItemsError
+      });
+
+      if (lineItemsError) {
+        console.error('[QuoteEditor] Line items query error:', lineItemsError);
+        throw lineItemsError;
+      }
 
       setLineItems(lineItemsData || []);
+
+      console.log('[QuoteEditor] loadQuoteData COMPLETE - Quote:', quoteData?.title, 'Items:', lineItemsData?.length || 0);
     } catch (err) {
-      console.error('Failed to load quote:', err);
+      console.error('[QuoteEditor] loadQuoteData ERROR:', err);
     } finally {
       setLoading(false);
+      console.log('[QuoteEditor] Loading state set to false');
     }
   };
 
