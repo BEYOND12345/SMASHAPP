@@ -4,6 +4,7 @@ import { ChevronLeft, Trash2, Check, Plus, X, Edit3, Share2, FileDown, Link2, Ma
 import { supabase } from '../lib/supabase';
 import { formatCents } from '../lib/utils/calculations';
 import { BottomSheet } from '../components/bottomsheet';
+import { ExtractionChecklist } from '../components/ExtractionChecklist';
 
 interface QuoteEditorProps {
   quoteId: string;
@@ -57,6 +58,7 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(fromRecording);
+  const [jobId, setJobId] = useState<string | null>(null);
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
@@ -76,7 +78,23 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
 
   useEffect(() => {
     console.log('[QuoteEditor] MOUNTED with quoteId:', quoteId);
-  }, []);
+
+    if (voiceQuoteId) {
+      const fetchJobId = async () => {
+        const { data } = await supabase
+          .from('voice_intakes')
+          .select('job_id')
+          .eq('created_quote_id', voiceQuoteId)
+          .maybeSingle();
+
+        if (data?.job_id) {
+          console.log('[QuoteEditor] Found job_id:', data.job_id);
+          setJobId(data.job_id);
+        }
+      };
+      fetchJobId();
+    }
+  }, [voiceQuoteId]);
 
   useEffect(() => {
     console.log('[QuoteEditor] useEffect triggered, quoteId:', quoteId);
@@ -420,9 +438,13 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
   if (loading) {
     return (
       <Layout showNav={true}>
-        <Header title="Loading..." left={<button onClick={onBack}><ChevronLeft /></button>} />
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand" />
+        <Header title={voiceQuoteId ? "Processing Quote..." : "Loading..."} left={<button onClick={onBack}><ChevronLeft /></button>} />
+        <div className="flex items-center justify-center h-full p-6">
+          {voiceQuoteId && jobId ? (
+            <ExtractionChecklist jobId={jobId} />
+          ) : (
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand" />
+          )}
         </div>
       </Layout>
     );

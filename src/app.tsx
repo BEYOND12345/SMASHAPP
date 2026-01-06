@@ -635,20 +635,12 @@ const App: React.FC = () => {
     const totalMs = Date.now() - recordStopTime;
     console.warn(`[PERF] trace_id=${traceId} step=app_handle_recording_finished intake_id=${intakeId} quote_id=${quoteId} total_ms=${totalMs}`);
 
-    // Store trace data for ReviewDraft
-    const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('trace_id', traceId);
-    urlParams.set('record_stop_time', recordStopTime.toString());
-    urlParams.set('intake_id', intakeId);
-    urlParams.set('quote_id', quoteId);
-    window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
-
-    // Navigate to ReviewDraft to show real-time progress
     setState(prev => ({
       ...prev,
       voiceIntakeId: intakeId,
       voiceQuoteId: quoteId,
-      currentScreen: 'ReviewDraft'
+      selectedEstimateId: quoteId,
+      currentScreen: 'QuoteEditor'
     }));
   };
 
