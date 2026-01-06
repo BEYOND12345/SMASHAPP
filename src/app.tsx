@@ -643,12 +643,12 @@ const App: React.FC = () => {
     urlParams.set('quote_id', quoteId);
     window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
 
-    // Navigate directly to QuoteEditor with quote shell
+    // Navigate to ReviewDraft to show real-time progress
     setState(prev => ({
       ...prev,
       voiceIntakeId: intakeId,
       voiceQuoteId: quoteId,
-      currentScreen: 'QuoteEditor'
+      currentScreen: 'ReviewDraft'
     }));
   };
 
@@ -1266,65 +1266,13 @@ const App: React.FC = () => {
             intakeId={state.voiceIntakeId}
             onBack={() => navigate('EstimatesList')}
             onContinue={async (quoteId) => {
-              try {
-                const { data: quoteData, error } = await supabase
-                  .from('quotes')
-                  .select(`
-                    *,
-                    customer:customers!customer_id(*),
-                    line_items:quote_line_items(*)
-                  `)
-                  .eq('id', quoteId)
-                  .maybeSingle();
-
-                if (error || !quoteData) {
-                  console.error('Failed to load quote:', error);
-                  alert('Failed to load quote');
-                  return;
-                }
-
-                const estimate: Estimate = {
-                  id: quoteData.id,
-                  jobTitle: quoteData.title || '',
-                  clientName: quoteData.customer?.name || '',
-                  clientAddress: '',
-                  clientEmail: quoteData.customer?.email || '',
-                  clientPhone: quoteData.customer?.phone || '',
-                  timeline: '2-3 days',
-                  scopeOfWork: Array.isArray(quoteData.scope_of_work) && quoteData.scope_of_work.length > 0
-                    ? quoteData.scope_of_work
-                    : (quoteData.description ? [quoteData.description] : []),
-                  materials: quoteData.line_items
-                    ?.filter((item: any) => item.item_type === 'materials')
-                    .map((item: any) => ({
-                      id: item.id,
-                      name: item.description,
-                      quantity: item.quantity,
-                      unit: item.unit,
-                      rate: item.unit_price_cents / 100,
-                    })) || [],
-                  labour: {
-                    hours: quoteData.line_items
-                      ?.filter((item: any) => item.item_type === 'labour')
-                      .reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
-                    rate: quoteData.line_items
-                      ?.find((item: any) => item.item_type === 'labour')?.unit_price_cents / 100 || 0,
-                  },
-                  status: JobStatus.DRAFT,
-                  date: new Date(quoteData.created_at).toLocaleDateString(),
-                  gstRate: 0.10,
-                };
-
-                setState(prev => ({
-                  ...prev,
-                  selectedEstimateId: quoteId,
-                  estimates: [...prev.estimates.filter(e => e.id !== quoteId), estimate],
-                }));
-                navigate('EditEstimate');
-              } catch (err) {
-                console.error('Error loading quote:', err);
-                alert('Failed to load quote');
-              }
+              console.log('[App] ReviewDraft continue, navigating to QuoteEditor with quoteId:', quoteId);
+              setState(prev => ({
+                ...prev,
+                voiceQuoteId: quoteId,
+                selectedEstimateId: quoteId,
+                currentScreen: 'QuoteEditor'
+              }));
             }}
           />
         ) : null;

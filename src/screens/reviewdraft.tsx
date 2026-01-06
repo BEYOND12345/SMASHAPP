@@ -890,8 +890,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
             </button>
           }
         />
-        <div className="flex items-center justify-center h-full">
-          <Loader2 className="animate-spin text-brand" size={40} />
+        <div className="flex items-center justify-center h-full p-6">
+          {jobId ? (
+            <ExtractionChecklist jobId={jobId} />
+          ) : (
+            <div className="text-center">
+              <Loader2 className="animate-spin text-brand mx-auto mb-4" size={40} />
+              <p className="text-sm text-tertiary">Initializing quote processing...</p>
+            </div>
+          )}
         </div>
       </Layout>
     );
