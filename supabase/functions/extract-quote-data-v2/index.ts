@@ -229,7 +229,7 @@ Deno.serve(async (req: Request) => {
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     if (jobId) {
-      console.log(`[${trace_id}] ✓ Step 1/6: Location`);
+      console.log(`[${trace_id}] \u2713 Step 1/6: Location`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
         p_step: "location",
@@ -239,7 +239,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (jobId) {
-      console.log(`[${trace_id}] ✓ Step 2/6: Customer`);
+      console.log(`[${trace_id}] \u2713 Step 2/6: Customer`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
         p_step: "customer",
@@ -249,7 +249,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (jobId) {
-      console.log(`[${trace_id}] ✓ Step 3/6: Scope`);
+      console.log(`[${trace_id}] \u2713 Step 3/6: Scope`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
         p_step: "scope",
@@ -259,7 +259,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (jobId) {
-      console.log(`[${trace_id}] ✓ Step 4/6: Materials`);
+      console.log(`[${trace_id}] \u2713 Step 4/6: Materials`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
         p_step: "materials",
@@ -269,7 +269,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (jobId) {
-      console.log(`[${trace_id}] ✓ Step 5/6: Labour`);
+      console.log(`[${trace_id}] \u2713 Step 5/6: Labour`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
         p_step: "labour",
@@ -279,7 +279,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (jobId) {
-      console.log(`[${trace_id}] ✓ Step 6/6: Fees`);
+      console.log(`[${trace_id}] \u2713 Step 6/6: Fees`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
         p_step: "fees",
@@ -302,17 +302,7 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to save extraction: ${updateError.message}`);
     }
 
-    if (jobId) {
-      await supabase
-        .from("quote_generation_jobs")
-        .update({
-          status: "complete",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", jobId);
-    }
-
-    console.log(`[${trace_id}] Extract complete`);
+    console.log(`[${trace_id}] Extraction done - create-draft-quote will mark job complete after building quote`);
 
     return new Response(
       JSON.stringify({
