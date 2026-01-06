@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { formatCents } from '../lib/utils/calculations';
 import { BottomSheet } from '../components/bottomsheet';
 import { ExtractionChecklist } from '../components/ExtractionChecklist';
+import { useJobProgress } from '../hooks/useJobProgress';
 
 interface QuoteEditorProps {
   quoteId: string;
@@ -75,6 +76,8 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
 
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
   const dirtyFields = useRef<Set<string>>(new Set());
+
+  const jobProgress = useJobProgress(jobId);
 
   useEffect(() => {
     console.log('[QuoteEditor] MOUNTED with quoteId:', quoteId);
@@ -194,7 +197,9 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
     };
   }, [voiceQuoteId, jobId]);
 
-  const loadQuoteData = async () => {
+  const hasReloadedRef = useRef(false);
+
+  const loadQuoteData = useCallback(async () => {
     console.log('[QuoteEditor] loadQuoteData START, quoteId:', quoteId);
 
     try {
@@ -269,7 +274,15 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
       setLoading(false);
       console.log('[QuoteEditor] Loading state set to false');
     }
-  };
+  }, [quoteId]);
+
+  useEffect(() => {
+    if (jobProgress.isComplete && !hasReloadedRef.current) {
+      console.log('[QuoteEditor] Job complete - reloading quote data');
+      hasReloadedRef.current = true;
+      loadQuoteData();
+    }
+  }, [jobProgress.isComplete, loadQuoteData]);
 
   const debouncedSave = useCallback(async () => {
     if (dirtyFields.current.size === 0) return;
