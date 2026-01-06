@@ -8,6 +8,7 @@ import { formatCents } from '../lib/utils/calculations';
 import { ProgressChecklist, ChecklistItem } from '../components/progresschecklist';
 import { ExtractionChecklist } from '../components/ExtractionChecklist';
 import { getQuoteLineItemsForQuote, QuoteLineItem } from '../lib/data/quoteLineItems';
+import { useJobProgress } from '../hooks/useJobProgress';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const DEBUG_MODE = true;
@@ -94,6 +95,7 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
   const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
   const [intake, setIntake] = useState<IntakeData | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const { isComplete: jobIsComplete } = useJobProgress(jobId);
 
   const effectiveQuoteId = intake?.created_quote_id || quoteId;
 
@@ -270,6 +272,15 @@ export const ReviewDraft: React.FC<ReviewDraftProps> = ({
     cleanupSubscriptions();
     setupRealtimeSubscriptions();
   }, [intake?.created_quote_id]);
+
+  useEffect(() => {
+    if (jobIsComplete && effectiveQuoteId && quote && lineItems.length > 0) {
+      console.log('[ReviewDraft] Job complete! Auto-navigating to QuoteEditor...');
+      setTimeout(() => {
+        onContinue(effectiveQuoteId);
+      }, 1000);
+    }
+  }, [jobIsComplete, effectiveQuoteId, quote, lineItems.length]);
 
   const loadAllData = async () => {
     try {

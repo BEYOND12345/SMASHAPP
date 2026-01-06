@@ -19,7 +19,9 @@ export function useJobProgress(jobId: string | null): JobProgress {
   useEffect(() => {
     if (!jobId) return;
 
-    const fetchInitialState = async () => {
+    let pollingInterval: NodeJS.Timeout;
+
+    const fetchJobStatus = async () => {
       const { data } = await supabase
         .from('quote_generation_jobs')
         .select('*')
@@ -30,12 +32,18 @@ export function useJobProgress(jobId: string | null): JobProgress {
         setProgress(data.progress_percent || 0);
         setCurrentStep(data.current_step);
         setStepsCompleted(data.steps_completed || []);
-        setIsComplete(data.status === 'complete');
         setQuoteId(data.quote_id);
+
+        if (data.status === 'complete') {
+          setIsComplete(true);
+          if (pollingInterval) clearInterval(pollingInterval);
+        }
       }
     };
 
-    fetchInitialState();
+    fetchJobStatus();
+
+    pollingInterval = setInterval(fetchJobStatus, 800);
 
     const subscription = supabase
       .channel(`job:${jobId}`)
@@ -56,12 +64,14 @@ export function useJobProgress(jobId: string | null): JobProgress {
 
           if (job.status === 'complete') {
             setIsComplete(true);
+            if (pollingInterval) clearInterval(pollingInterval);
           }
         }
       )
       .subscribe();
 
     return () => {
+      if (pollingInterval) clearInterval(pollingInterval);
       subscription.unsubscribe();
     };
   }, [jobId]);
