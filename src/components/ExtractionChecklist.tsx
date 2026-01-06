@@ -18,11 +18,21 @@ const CHECKLIST_ITEMS: ChecklistItem[] = [
 ];
 
 export const ExtractionChecklist: React.FC<{ jobId: string }> = ({ jobId }) => {
-  const { progress, currentStep, stepsCompleted } = useJobProgress(jobId);
+  const { progress, currentStep, stepsCompleted, error } = useJobProgress(jobId);
+
+  if (error) {
+    return (
+      <div className="extraction-checklist error">
+        <div className="error-icon">❌</div>
+        <h3 className="checklist-title">Failed to Process</h3>
+        <p className="error-message">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="extraction-checklist">
-      <h3 className="checklist-title">Extracting Details...</h3>
+      <h3 className="checklist-title">Building your quote...</h3>
 
       <div className="checklist-items">
         {CHECKLIST_ITEMS.map((item) => {
@@ -35,7 +45,7 @@ export const ExtractionChecklist: React.FC<{ jobId: string }> = ({ jobId }) => {
               className={`checklist-item ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''}`}
             >
               <div className="check-icon">
-                {isComplete ? '✓' : isCurrent ? '⏳' : '○'}
+                {isComplete ? '✅' : isCurrent ? '🔄' : '⭕'}
               </div>
               <span className="item-icon">{item.icon}</span>
               <span className="item-label">{item.label}</span>

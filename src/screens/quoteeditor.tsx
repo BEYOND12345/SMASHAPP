@@ -81,15 +81,43 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
 
     if (voiceQuoteId) {
       const fetchJobId = async () => {
-        const { data } = await supabase
+        const { data: intake } = await supabase
           .from('voice_intakes')
-          .select('job_id')
+          .select('id')
           .eq('created_quote_id', voiceQuoteId)
           .maybeSingle();
 
-        if (data?.job_id) {
-          console.log('[QuoteEditor] Found job_id:', data.job_id);
-          setJobId(data.job_id);
+        if (intake) {
+          console.log('[QuoteEditor] Found intake:', intake.id);
+
+          const { data: job } = await supabase
+            .from('quote_generation_jobs')
+            .select('id')
+            .eq('intake_id', intake.id)
+            .maybeSingle();
+
+          if (job) {
+            console.log('[QuoteEditor] Found job_id:', job.id);
+            setJobId(job.id);
+          } else {
+            console.log('[QuoteEditor] Job not created yet, will keep checking...');
+
+            const pollForJob = setInterval(async () => {
+              const { data: newJob } = await supabase
+                .from('quote_generation_jobs')
+                .select('id')
+                .eq('intake_id', intake.id)
+                .maybeSingle();
+
+              if (newJob) {
+                console.log('[QuoteEditor] Job created:', newJob.id);
+                setJobId(newJob.id);
+                clearInterval(pollForJob);
+              }
+            }, 500);
+
+            setTimeout(() => clearInterval(pollForJob), 10000);
+          }
         }
       };
       fetchJobId();
@@ -118,52 +146,53 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
   }, [showSuccessAnimation]);
 
   useEffect(() => {
-    if (!voiceQuoteId) return;
+    if (!voiceQuoteId || !jobId) return;
 
-    console.log('[QuoteEditor] VOICE QUOTE: Setting up polling for background processing');
+    console.log('[QuoteEditor] VOICE QUOTE: Listening for job completion');
 
-    let pollCount = 0;
-    const maxPolls = 15; // 15 polls × 3 seconds = 45 seconds max
+    const checkJobStatus = async () => {
+      const { data: job } = await supabase
+        .from('quote_generation_jobs')
+        .select('status')
+        .eq('id', jobId)
+        .maybeSingle();
 
-    const pollInterval = setInterval(async () => {
-      pollCount++;
-      console.log(`[QuoteEditor] Poll attempt ${pollCount}/${maxPolls}`);
-
-      const { data: freshQuote } = await supabase
-        .from('quotes')
-        .select('title, subtotal_cents')
-        .eq('id', voiceQuoteId)
-        .single();
-
-      console.log('[QuoteEditor] Poll result:', {
-        title: freshQuote?.title,
-        subtotal: freshQuote?.subtotal_cents,
-        isStillPlaceholder: freshQuote?.title === 'Processing job'
-      });
-
-      // Stop polling if quote has real data
-      if (freshQuote &&
-          freshQuote.title !== 'Processing job' &&
-          freshQuote.subtotal_cents > 0) {
-
-        console.log('[QuoteEditor] ✅ REAL DATA DETECTED! Reloading quote...');
-        clearInterval(pollInterval);
+      if (job?.status === 'complete') {
+        console.log('[QuoteEditor] Job complete! Reloading quote data...');
         await loadQuoteData();
-        return;
       }
+    };
 
-      // Stop polling after max attempts
-      if (pollCount >= maxPolls) {
-        console.warn('[QuoteEditor] ⏱️ Polling timeout - processing may have failed');
-        clearInterval(pollInterval);
-      }
-    }, 3000); // Poll every 3 seconds
+    const pollInterval = setInterval(checkJobStatus, 1000);
+
+    const channel = supabase
+      .channel(`quote-editor-job-${jobId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'quote_generation_jobs',
+          filter: `id=eq.${jobId}`
+        },
+        (payload) => {
+          const job = payload.new as any;
+          console.log('[QuoteEditor] Job update:', job.status, job.progress_percent);
+
+          if (job.status === 'complete') {
+            console.log('[QuoteEditor] Job complete (realtime)! Reloading quote data...');
+            loadQuoteData();
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      console.log('[QuoteEditor] Cleaning up polling interval');
+      console.log('[QuoteEditor] Cleaning up job listener');
       clearInterval(pollInterval);
+      channel.unsubscribe();
     };
-  }, [voiceQuoteId]); // Only run this for voice quotes
+  }, [voiceQuoteId, jobId]);
 
   const loadQuoteData = async () => {
     console.log('[QuoteEditor] loadQuoteData START, quoteId:', quoteId);

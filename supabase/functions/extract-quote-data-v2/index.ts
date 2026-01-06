@@ -90,7 +90,6 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[${trace_id}] Extract starting for intake_id: ${intake_id}`);
 
-    // Fetch intake data
     const { data: intake, error: intakeError } = await supabase
       .from("voice_intakes")
       .select("*, quotes!voice_intakes_created_quote_id_fkey(org_id, id)")
@@ -109,7 +108,6 @@ Deno.serve(async (req: Request) => {
     const userId = intake.user_id;
     const quoteId = intake.created_quote_id;
 
-    // Check if job already exists for this intake
     const { data: existingJob } = await supabase
       .from("quote_generation_jobs")
       .select("id, status, progress_percent")
@@ -132,7 +130,6 @@ Deno.serve(async (req: Request) => {
       jobId = existingJob.id;
       console.log(`[${trace_id}] Using existing job: ${jobId}`);
     } else {
-      // Create new job
       const { data: newJob, error: jobError } = await supabase
         .from("quote_generation_jobs")
         .insert({
@@ -149,14 +146,12 @@ Deno.serve(async (req: Request) => {
 
       if (jobError || !newJob) {
         console.error(`[${trace_id}] Failed to create job:`, jobError);
-        // Continue without job tracking rather than failing
       } else {
         jobId = newJob.id;
         console.log(`[${trace_id}] Created job: ${jobId}`);
       }
     }
 
-    // Update progress: Starting extraction
     if (jobId) {
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
@@ -171,16 +166,7 @@ Deno.serve(async (req: Request) => {
       ? `Original transcript:\n${intake.transcript_text}\n\nUser corrections:\n${JSON.stringify(user_corrections_json)}\n\nApply user corrections to the extracted data.`
       : `Transcript:\n${intake.transcript_text}`;
 
-    // Update progress: Calling OpenAI
-    if (jobId) {
-      await supabase.rpc("update_job_progress", {
-        p_job_id: jobId,
-        p_step: "openai_call",
-        p_progress: 25,
-      });
-    }
-
-    console.log(`[${trace_id}] Calling OpenAI...`);
+    console.log(`[${trace_id}] Calling OpenAI (this will take 8-10 seconds)...`);
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -205,15 +191,6 @@ Deno.serve(async (req: Request) => {
       throw new Error(`OpenAI API error: ${errorText}`);
     }
 
-    // Update progress: Parsing response
-    if (jobId) {
-      await supabase.rpc("update_job_progress", {
-        p_job_id: jobId,
-        p_step: "parsing_response",
-        p_progress: 50,
-      });
-    }
-
     const openaiResult = await openaiResponse.json();
     const extractedText = openaiResult.choices[0]?.message?.content;
 
@@ -230,19 +207,6 @@ Deno.serve(async (req: Request) => {
       throw new Error("Failed to parse extraction JSON");
     }
 
-    // Update progress: Validating data
-    if (jobId) {
-      await supabase.rpc("update_job_progress", {
-        p_job_id: jobId,
-        p_step: "validating",
-        p_progress: 75,
-        p_partial_data: JSON.stringify({
-          customer: extracted.customer,
-          job: extracted.job,
-        }),
-      });
-    }
-
     console.log(`[${trace_id}] Extracted:`, {
       customer: extracted.customer?.name || 'NULL',
       title: extracted.job?.title || 'EMPTY',
@@ -250,7 +214,6 @@ Deno.serve(async (req: Request) => {
       labour: extracted.time?.labour_entries?.length || 0,
     });
 
-    // Validate extraction has some data
     const hasData = (
       extracted.job?.title ||
       extracted.customer?.name ||
@@ -263,17 +226,68 @@ Deno.serve(async (req: Request) => {
       throw new Error("Extraction returned empty data");
     }
 
-    // Update progress: Saving results
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
     if (jobId) {
+      console.log(`[${trace_id}] ✓ Step 1/6: Location`);
       await supabase.rpc("update_job_progress", {
         p_job_id: jobId,
-        p_step: "extraction_complete",
-        p_progress: 90,
-        p_partial_data: JSON.stringify(extracted),
+        p_step: "location",
+        p_progress: 17,
       });
+      await delay(800);
     }
 
-    // Save extraction to voice_intakes
+    if (jobId) {
+      console.log(`[${trace_id}] ✓ Step 2/6: Customer`);
+      await supabase.rpc("update_job_progress", {
+        p_job_id: jobId,
+        p_step: "customer",
+        p_progress: 34,
+      });
+      await delay(800);
+    }
+
+    if (jobId) {
+      console.log(`[${trace_id}] ✓ Step 3/6: Scope`);
+      await supabase.rpc("update_job_progress", {
+        p_job_id: jobId,
+        p_step: "scope",
+        p_progress: 51,
+      });
+      await delay(800);
+    }
+
+    if (jobId) {
+      console.log(`[${trace_id}] ✓ Step 4/6: Materials`);
+      await supabase.rpc("update_job_progress", {
+        p_job_id: jobId,
+        p_step: "materials",
+        p_progress: 68,
+      });
+      await delay(800);
+    }
+
+    if (jobId) {
+      console.log(`[${trace_id}] ✓ Step 5/6: Labour`);
+      await supabase.rpc("update_job_progress", {
+        p_job_id: jobId,
+        p_step: "labour",
+        p_progress: 85,
+      });
+      await delay(800);
+    }
+
+    if (jobId) {
+      console.log(`[${trace_id}] ✓ Step 6/6: Fees`);
+      await supabase.rpc("update_job_progress", {
+        p_job_id: jobId,
+        p_step: "fees",
+        p_progress: 100,
+      });
+      await delay(500);
+    }
+
     const { error: updateError } = await supabase
       .from("voice_intakes")
       .update({
@@ -288,13 +302,14 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to save extraction: ${updateError.message}`);
     }
 
-    // Mark extraction step complete (quote creation will mark job fully complete)
     if (jobId) {
-      await supabase.rpc("update_job_progress", {
-        p_job_id: jobId,
-        p_step: "extraction_done",
-        p_progress: 95,
-      });
+      await supabase
+        .from("quote_generation_jobs")
+        .update({
+          status: "complete",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", jobId);
     }
 
     console.log(`[${trace_id}] Extract complete`);
@@ -311,7 +326,6 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error("Extract error:", error);
 
-    // Mark job as failed
     if (jobId) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
