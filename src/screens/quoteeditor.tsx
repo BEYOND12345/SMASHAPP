@@ -4,8 +4,6 @@ import { ChevronLeft, Trash2, Check, Plus, X, Edit3, Share2, FileDown, Link2, Ma
 import { supabase } from '../lib/supabase';
 import { formatCents } from '../lib/utils/calculations';
 import { BottomSheet } from '../components/bottomsheet';
-import { ExtractionChecklist } from '../components/ExtractionChecklist';
-import { useJobProgress } from '../hooks/useJobProgress';
 
 interface QuoteEditorProps {
   quoteId: string;
@@ -59,7 +57,7 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(fromRecording);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [intakeId, setIntakeId] = useState<string | null>(null);
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
@@ -77,13 +75,11 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
   const dirtyFields = useRef<Set<string>>(new Set());
 
-  const jobProgress = useJobProgress(jobId);
-
   useEffect(() => {
     console.log('[QuoteEditor] MOUNTED with quoteId:', quoteId);
 
     if (voiceQuoteId) {
-      const fetchJobId = async () => {
+      const fetchIntakeId = async () => {
         const { data: intake } = await supabase
           .from('voice_intakes')
           .select('id')
@@ -92,38 +88,10 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
 
         if (intake) {
           console.log('[QuoteEditor] Found intake:', intake.id);
-
-          const { data: job } = await supabase
-            .from('quote_generation_jobs')
-            .select('id')
-            .eq('intake_id', intake.id)
-            .maybeSingle();
-
-          if (job) {
-            console.log('[QuoteEditor] Found job_id:', job.id);
-            setJobId(job.id);
-          } else {
-            console.log('[QuoteEditor] Job not created yet, will keep checking...');
-
-            const pollForJob = setInterval(async () => {
-              const { data: newJob } = await supabase
-                .from('quote_generation_jobs')
-                .select('id')
-                .eq('intake_id', intake.id)
-                .maybeSingle();
-
-              if (newJob) {
-                console.log('[QuoteEditor] Job created:', newJob.id);
-                setJobId(newJob.id);
-                clearInterval(pollForJob);
-              }
-            }, 500);
-
-            setTimeout(() => clearInterval(pollForJob), 10000);
-          }
+          setIntakeId(intake.id);
         }
       };
-      fetchJobId();
+      fetchIntakeId();
     }
   }, [voiceQuoteId]);
 
@@ -147,55 +115,6 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
       return () => clearTimeout(timer);
     }
   }, [showSuccessAnimation]);
-
-  useEffect(() => {
-    if (!voiceQuoteId || !jobId) return;
-
-    console.log('[QuoteEditor] VOICE QUOTE: Listening for job completion');
-
-    const checkJobStatus = async () => {
-      const { data: job } = await supabase
-        .from('quote_generation_jobs')
-        .select('status')
-        .eq('id', jobId)
-        .maybeSingle();
-
-      if (job?.status === 'complete') {
-        console.log('[QuoteEditor] Job complete! Reloading quote data...');
-        await loadQuoteData();
-      }
-    };
-
-    const pollInterval = setInterval(checkJobStatus, 1000);
-
-    const channel = supabase
-      .channel(`quote-editor-job-${jobId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'quote_generation_jobs',
-          filter: `id=eq.${jobId}`
-        },
-        (payload) => {
-          const job = payload.new as any;
-          console.log('[QuoteEditor] Job update:', job.status, job.progress_percent);
-
-          if (job.status === 'complete') {
-            console.log('[QuoteEditor] Job complete (realtime)! Reloading quote data...');
-            loadQuoteData();
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      console.log('[QuoteEditor] Cleaning up job listener');
-      clearInterval(pollInterval);
-      channel.unsubscribe();
-    };
-  }, [voiceQuoteId, jobId]);
 
   const hasReloadedRef = useRef(false);
 
@@ -277,12 +196,28 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
   }, [quoteId]);
 
   useEffect(() => {
-    if (jobProgress.isComplete && !hasReloadedRef.current) {
-      console.log('[QuoteEditor] Job complete - reloading quote data');
-      hasReloadedRef.current = true;
-      loadQuoteData();
-    }
-  }, [jobProgress.isComplete, loadQuoteData]);
+    if (!intakeId) return;
+
+    console.log('[QuoteEditor] VOICE QUOTE: Polling intake status');
+
+    const checkIntakeStatus = async () => {
+      const { data: intake } = await supabase
+        .from('voice_intakes')
+        .select('stage, status')
+        .eq('id', intakeId)
+        .maybeSingle();
+
+      if (intake?.stage === 'draft_done' && !hasReloadedRef.current) {
+        console.log('[QuoteEditor] Voice intake complete! Reloading quote data...');
+        hasReloadedRef.current = true;
+        await loadQuoteData();
+      }
+    };
+
+    const interval = setInterval(checkIntakeStatus, 2000);
+
+    return () => clearInterval(interval);
+  }, [intakeId, loadQuoteData]);
 
   const debouncedSave = useCallback(async () => {
     if (dirtyFields.current.size === 0) return;
@@ -482,11 +417,10 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voice
       <Layout showNav={true}>
         <Header title={voiceQuoteId ? "Processing Quote..." : "Loading..."} left={<button onClick={onBack}><ChevronLeft /></button>} />
         <div className="flex items-center justify-center h-full p-6">
-          {voiceQuoteId && jobId ? (
-            <ExtractionChecklist jobId={jobId} />
-          ) : (
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand" />
-          )}
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand mx-auto mb-4" />
+            <p className="text-gray-600">Processing your voice recording...</p>
+          </div>
         </div>
       </Layout>
     );
