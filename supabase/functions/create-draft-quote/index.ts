@@ -1055,6 +1055,21 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[STAGE_TRACKING] intake_id=${intake_id} stage=draft_done status=${finalIntakeStatus}`);
 
+    // Complete job tracking (if job exists)
+    const { data: job } = await supabaseAdmin
+      .from("quote_generation_jobs")
+      .select("id")
+      .eq("intake_id", intake_id)
+      .maybeSingle();
+
+    if (job) {
+      await supabaseAdmin.rpc("complete_job", {
+        p_job_id: job.id,
+        p_quote_id: quote.id,
+      });
+      console.log(`[JOB_TRACKING] job_id=${job.id} marked as complete for quote_id=${quote.id}`);
+    }
+
     const totalDuration = Date.now() - startTime;
     console.log(`[PERF] trace_id=${trace_id || 'none'} step=create_draft_complete intake_id=${intake_id} quote_id=${quote.id} ms=${totalDuration} line_items_count=${lineItems.length}`);
 
@@ -1111,6 +1126,21 @@ Deno.serve(async (req: Request) => {
           .eq("id", intake_id);
 
         console.log(`[STAGE_TRACKING] intake_id=${intake_id} stage=failed error="${errorMessage}"`);
+
+        // Mark job as failed (if job exists)
+        const { data: job } = await supabaseAdmin
+          .from("quote_generation_jobs")
+          .select("id")
+          .eq("intake_id", intake_id)
+          .maybeSingle();
+
+        if (job) {
+          await supabaseAdmin.rpc("mark_job_failed", {
+            p_job_id: job.id,
+            p_error_message: errorMessage,
+          });
+          console.log(`[JOB_TRACKING] job_id=${job.id} marked as failed`);
+        }
       } catch (updateError) {
         console.error("[STAGE_TRACKING] Failed to update stage to failed:", updateError);
       }
