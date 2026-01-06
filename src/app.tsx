@@ -16,6 +16,7 @@ import { PublicQuoteView } from './screens/publicquoteview';
 import { PublicInvoiceView } from './screens/publicinvoiceview';
 import { Settings } from './screens/settings';
 import { MaterialsCatalog } from './screens/materialscatalog';
+import { VoiceRecorder } from './screens/voicerecorder';
 import { supabase } from './lib/supabase';
 import { parsePublicRoute } from './lib/utils/routeHelpers';
 
@@ -1011,6 +1012,9 @@ const App: React.FC = () => {
       case 'MaterialsCatalog':
         return <MaterialsCatalog onBack={() => navigate('Settings')} />;
 
+      case 'VoiceRecorder':
+        return <VoiceRecorder onBack={() => navigate('EstimatesList')} />;
+
       case 'PublicQuoteView':
         return selectedEstimate && state.user ? (
           <PublicQuoteView
@@ -1038,10 +1042,12 @@ const App: React.FC = () => {
         return state.activeTab === 'estimates' ? (
           <EstimatesList
             estimates={state.estimates}
+            onNewEstimate={() => navigate('VoiceRecorder')}
             onSelectEstimate={handleSelectEstimate}
             activeTab={state.activeTab}
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
+            onQuickRecord={() => navigate('VoiceRecorder')}
           />
         ) : state.activeTab === 'invoices' ? (
           <InvoicesList
