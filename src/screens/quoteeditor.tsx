@@ -12,14 +12,16 @@ interface QuoteEditorProps {
 
 interface LineItem {
   id: string;
-  item_type: 'material' | 'labour' | 'fee';
+  item_type: 'labour' | 'materials' | 'service' | 'fee' | 'discount';
   description: string;
   quantity: number | null;
   unit: string | null;
-  rate_cents: number | null;
-  total_cents: number;
-  is_ai_estimated: boolean;
+  unit_price_cents: number | null;
+  line_total_cents: number;
+  is_placeholder: boolean;
+  is_needs_review: boolean;
   catalog_item_id: string | null;
+  position: number;
 }
 
 interface Quote {
@@ -194,7 +196,7 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
       description: item.description,
       quantity: item.quantity?.toString() || '',
       unit: item.unit || '',
-      rate: item.rate_cents ? (item.rate_cents / 100).toFixed(2) : '',
+      rate: item.unit_price_cents ? (item.unit_price_cents / 100).toFixed(2) : '',
     });
     setShowLineItemSheet(true);
   };
@@ -213,8 +215,8 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
           description: editLineForm.description,
           quantity,
           unit: editLineForm.unit || null,
-          rate_cents: rateCents,
-          total_cents: totalCents,
+          unit_price_cents: rateCents,
+          line_total_cents: totalCents,
         })
         .eq('id', editingLineItem.id);
 
@@ -339,7 +341,7 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
     );
   }
 
-  const materials = lineItems.filter(item => item.item_type === 'material');
+  const materials = lineItems.filter(item => item.item_type === 'materials');
   const labour = lineItems.filter(item => item.item_type === 'labour');
   const fees = lineItems.filter(item => item.item_type === 'fee');
 
@@ -531,19 +533,19 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-[14px] text-primary font-medium">{item.description}</span>
-                          {item.is_ai_estimated && (
-                            <span className="text-[11px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">AI</span>
+                          {item.is_needs_review && (
+                            <span className="text-[11px] bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">Review</span>
                           )}
                           {item.catalog_item_id && (
                             <span className="text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded">Catalog</span>
                           )}
                         </div>
                         <div className="text-[13px] text-secondary mt-0.5">
-                          {item.quantity} {item.unit} × {formatCents(item.rate_cents || 0)}
+                          {item.quantity} {item.unit} × {formatCents(item.unit_price_cents || 0)}
                         </div>
                       </div>
                       <div className="text-[14px] font-semibold text-primary">
-                        {formatCents(item.total_cents)}
+                        {formatCents(item.line_total_cents)}
                       </div>
                     </button>
                     <button
@@ -571,11 +573,11 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
                       <div className="flex-1">
                         <span className="text-[14px] text-primary font-medium block">{item.description}</span>
                         <span className="text-[13px] text-secondary">
-                          {item.quantity} {item.unit} × {formatCents(item.rate_cents || 0)}
+                          {item.quantity} {item.unit} × {formatCents(item.unit_price_cents || 0)}
                         </span>
                       </div>
                       <div className="text-[14px] font-semibold text-primary">
-                        {formatCents(item.total_cents)}
+                        {formatCents(item.line_total_cents)}
                       </div>
                     </button>
                     <button
@@ -602,7 +604,7 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
                     >
                       <span className="flex-1 text-[14px] text-primary font-medium">{item.description}</span>
                       <div className="text-[14px] font-semibold text-primary">
-                        {formatCents(item.total_cents)}
+                        {formatCents(item.line_total_cents)}
                       </div>
                     </button>
                     <button
