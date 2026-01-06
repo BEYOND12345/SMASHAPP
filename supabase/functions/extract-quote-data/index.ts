@@ -13,7 +13,9 @@ interface ExtractRequest {
   trace_id?: string;
 }
 
-const SYSTEM_PROMPT = `Extract job details from this tradie's voice note. Return ONLY valid JSON:
+const SYSTEM_PROMPT = `You are extracting job details from a tradie's voice note.
+
+RETURN ONLY THIS EXACT JSON STRUCTURE (no markdown, no code blocks):
 {
   "customer": { "name": string|null, "email": string|null, "phone": string|null },
   "job": {
@@ -42,11 +44,17 @@ const SYSTEM_PROMPT = `Extract job details from this tradie's voice note. Return
   }
 }
 
-CRITICAL: For EVERY material, you MUST estimate unit_price_cents (Australian retail price in cents). Never use null for prices. Examples:
-- "10 steps" → estimate $200-300 per step → unit_price_cents: 25000
-- "paint" → estimate $50/can → unit_price_cents: 5000
-- "timber" → estimate $8/metre → unit_price_cents: 800
-Be conservative and realistic with Australian trade material pricing.`;
+FOR EVERY MATERIAL ITEM:
+- unit_price_cents is REQUIRED (Australian retail price in cents)
+- NEVER use null, 0, or omit unit_price_cents
+- Estimate conservatively based on typical Australian trade pricing
+
+Examples:
+- Steps/pavers: 20000-30000 cents each ($200-300)
+- Paint (4L): 8000 cents ($80)
+- Timber (per metre): 800 cents ($8)
+- Cement bag (20kg): 1500 cents ($15)
+- Pool chemicals: 5000 cents ($50)`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -142,7 +150,15 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[${trace_id}] Extracted customer: ${extracted.customer?.name || 'NULL'}`);
     console.log(`[${trace_id}] Extracted title: ${extracted.job?.title || 'EMPTY'}`);
-    console.log(`[${trace_id}] Materials with pricing: ${extracted.materials?.items?.filter((m: any) => m.unit_price_cents && m.unit_price_cents > 0).length || 0}/${extracted.materials?.items?.length || 0}`);
+    
+    const materialsWithPrices = extracted.materials?.items?.filter((m: any) => m.unit_price_cents && m.unit_price_cents > 0).length || 0;
+    const totalMaterials = extracted.materials?.items?.length || 0;
+    console.log(`[${trace_id}] Materials with pricing: ${materialsWithPrices}/${totalMaterials}`);
+    
+    if (totalMaterials > 0 && materialsWithPrices === 0) {
+      console.error(`[${trace_id}] CRITICAL: OpenAI did not provide prices for ANY materials!`);
+      console.error(`[${trace_id}] Sample material:`, JSON.stringify(extracted.materials.items[0]));
+    }
 
     const hasData = (
       extracted.job?.title ||
@@ -170,7 +186,7 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to save extraction: ${updateError.message}`);
     }
 
-    console.log(`[${trace_id}] Extract complete - eliminated ${extracted.materials?.items?.length || 0} downstream AI pricing calls`);
+    console.log(`[${trace_id}] Extract complete - eliminated ${materialsWithPrices} downstream AI pricing calls`);
 
     return new Response(
       JSON.stringify({

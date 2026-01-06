@@ -622,6 +622,9 @@ Deno.serve(async (req: Request) => {
       const catalogItems = [];
       const needsAiEstimation = [];
 
+      console.log(`[PRICING_DEBUG] Extracted materials count: ${extracted.materials.items.length}`);
+      console.log(`[PRICING_DEBUG] Sample material data:`, JSON.stringify(extracted.materials.items[0]));
+
       for (const material of extracted.materials.items) {
         let quantity = typeof material.quantity === "object" ? material.quantity?.value : material.quantity;
         const unit = typeof material.unit === "object" ? material.unit?.value : material.unit;
@@ -635,6 +638,7 @@ Deno.serve(async (req: Request) => {
         const matchConfidence = material.catalog_match_confidence || null;
 
         // Priority 1: Use unit_price_cents from extraction (AI already estimated it)
+        console.log(`[PRICING_DEBUG] Material "${material.description}" unit_price_cents=${material.unit_price_cents}`);
         if (!material.unit_price_cents || material.unit_price_cents === 0) {
           // Priority 2: Try catalog lookup
           if (catalogItemId) {
