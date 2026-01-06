@@ -8,6 +8,7 @@ import { BottomSheet } from '../components/bottomsheet';
 interface QuoteEditorProps {
   quoteId: string;
   onBack: () => void;
+  voiceQuoteId?: string;
 }
 
 interface LineItem {
@@ -46,7 +47,7 @@ interface Customer {
   phone: string | null;
 }
 
-export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => {
+export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack, voiceQuoteId }) => {
   const fromRecording = true; // TODO: Make this a prop if needed
 
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -97,6 +98,54 @@ export const QuoteEditor: React.FC<QuoteEditorProps> = ({ quoteId, onBack }) => 
       return () => clearTimeout(timer);
     }
   }, [showSuccessAnimation]);
+
+  useEffect(() => {
+    if (!voiceQuoteId) return;
+
+    console.log('[QuoteEditor] VOICE QUOTE: Setting up polling for background processing');
+
+    let pollCount = 0;
+    const maxPolls = 15; // 15 polls × 3 seconds = 45 seconds max
+
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      console.log(`[QuoteEditor] Poll attempt ${pollCount}/${maxPolls}`);
+
+      const { data: freshQuote } = await supabase
+        .from('quotes')
+        .select('title, subtotal_cents')
+        .eq('id', voiceQuoteId)
+        .single();
+
+      console.log('[QuoteEditor] Poll result:', {
+        title: freshQuote?.title,
+        subtotal: freshQuote?.subtotal_cents,
+        isStillPlaceholder: freshQuote?.title === 'Processing job'
+      });
+
+      // Stop polling if quote has real data
+      if (freshQuote &&
+          freshQuote.title !== 'Processing job' &&
+          freshQuote.subtotal_cents > 0) {
+
+        console.log('[QuoteEditor] ✅ REAL DATA DETECTED! Reloading quote...');
+        clearInterval(pollInterval);
+        await loadQuoteData();
+        return;
+      }
+
+      // Stop polling after max attempts
+      if (pollCount >= maxPolls) {
+        console.warn('[QuoteEditor] ⏱️ Polling timeout - processing may have failed');
+        clearInterval(pollInterval);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => {
+      console.log('[QuoteEditor] Cleaning up polling interval');
+      clearInterval(pollInterval);
+    };
+  }, [voiceQuoteId]); // Only run this for voice quotes
 
   const loadQuoteData = async () => {
     console.log('[QuoteEditor] loadQuoteData START, quoteId:', quoteId);

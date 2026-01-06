@@ -1248,6 +1248,7 @@ const App: React.FC = () => {
         return (
           <QuoteEditor
             quoteId={state.voiceQuoteId}
+            voiceQuoteId={state.voiceQuoteId}
             onBack={() => navigate('EstimatesList')}
           />
         );
