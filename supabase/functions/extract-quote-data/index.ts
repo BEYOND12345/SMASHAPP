@@ -54,7 +54,8 @@ Examples:
 - Paint (4L): 8000 cents ($80)
 - Timber (per metre): 800 cents ($8)
 - Cement bag (20kg): 1500 cents ($15)
-- Pool chemicals: 5000 cents ($50)`;
+- Pool chemicals: 5000 cents ($50)
+- Sheet of wood (plywood 2400x1200x12mm): 6000 cents ($60)`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -103,10 +104,11 @@ Deno.serve(async (req: Request) => {
       ? `Original transcript:\n${intake.transcript_text}\n\nUser corrections:\n${JSON.stringify(user_corrections_json)}\n\nApply user corrections to the extracted data.`
       : intake.transcript_text;
 
-    console.log(`[${trace_id}] Calling OpenAI with model: gpt-4o-mini`);
+    console.log(`[${trace_id}] Calling OpenAI with model: gpt-4o`);
+    const startTime = Date.now();
 
     const openaiRequestBody = {
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt }
@@ -138,7 +140,8 @@ Deno.serve(async (req: Request) => {
       throw new Error("No content from OpenAI");
     }
 
-    console.log(`[${trace_id}] OpenAI response length: ${extractedText.length} chars`);
+    const openaiMs = Date.now() - startTime;
+    console.log(`[${trace_id}] OpenAI response in ${openaiMs}ms, length: ${extractedText.length} chars`);
 
     let extracted: any;
     try {
@@ -186,7 +189,7 @@ Deno.serve(async (req: Request) => {
       throw new Error(`Failed to save extraction: ${updateError.message}`);
     }
 
-    console.log(`[${trace_id}] Extract complete - eliminated ${materialsWithPrices} downstream AI pricing calls`);
+    console.log(`[${trace_id}] Extract complete in ${openaiMs}ms - with ${materialsWithPrices} priced materials`);
 
     return new Response(
       JSON.stringify({
