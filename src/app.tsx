@@ -8,9 +8,6 @@ import { InvoicesList } from './screens/invoiceslist';
 import { CustomersList } from './screens/customerslist';
 import { CustomerProfile } from './screens/customerprofile';
 import { EditEstimate } from './screens/editestimate';
-import { VoiceRecorder } from './screens/voicerecorder';
-import { EditTranscript } from './screens/edittranscript';
-import { Processing } from './screens/processing';
 import { EstimatePreview } from './screens/estimatepreview';
 import { JobCard } from './screens/jobcard';
 import { SendEstimate } from './screens/sendestimate';
@@ -18,10 +15,7 @@ import { InvoicePreview } from './screens/invoicepreview';
 import { PublicQuoteView } from './screens/publicquoteview';
 import { PublicInvoiceView } from './screens/publicinvoiceview';
 import { Settings } from './screens/settings';
-import { ReviewQuote } from './screens/reviewquote';
-import { ReviewDraft } from './screens/reviewdraft';
 import { MaterialsCatalog } from './screens/materialscatalog';
-import { QuoteEditor } from './screens/quoteeditor';
 import { supabase } from './lib/supabase';
 import { parsePublicRoute } from './lib/utils/routeHelpers';
 
@@ -53,7 +47,7 @@ const MOCK_ESTIMATES: Estimate[] = [
 ];
 
 const App: React.FC = () => {
-  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices' | 'customers'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean; voiceQuoteId?: string; voiceIntakeId?: string; voiceCustomerId?: string; autoStartRecording?: boolean }>({
+  const [state, setState] = useState<AppState & { sendingType?: 'estimate' | 'invoice'; activeTab: 'estimates' | 'invoices' | 'customers'; editReturnScreen?: 'EstimatePreview' | 'InvoicePreview'; loading: boolean }>({
     currentScreen: 'Login',
     selectedEstimateId: null,
     selectedInvoiceId: null,
@@ -66,11 +60,7 @@ const App: React.FC = () => {
     sendingType: 'estimate',
     activeTab: 'estimates',
     editReturnScreen: 'EstimatePreview',
-    loading: true,
-    voiceQuoteId: undefined,
-    voiceIntakeId: undefined,
-    voiceCustomerId: undefined,
-    autoStartRecording: false
+    loading: true
   });
 
   // Load quotes from database
@@ -386,11 +376,7 @@ const App: React.FC = () => {
           sendingType: 'estimate',
           activeTab: 'estimates',
           editReturnScreen: 'EstimatePreview',
-          loading: false,
-          voiceQuoteId: undefined,
-          voiceIntakeId: undefined,
-          voiceCustomerId: undefined,
-          autoStartRecording: false
+          loading: false
         });
       }
     });
@@ -595,92 +581,11 @@ const App: React.FC = () => {
       sendingType: 'estimate',
       activeTab: 'estimates',
       editReturnScreen: 'EstimatePreview',
-      loading: false,
-      voiceQuoteId: undefined,
-      voiceIntakeId: undefined,
-      voiceCustomerId: undefined,
-      autoStartRecording: false
+      loading: false
     });
   };
 
   // Actions
-  const handleNewEstimate = () => {
-    setState(prev => ({
-      ...prev,
-      voiceCustomerId: undefined,
-      autoStartRecording: false,
-      currentScreen: 'VoiceRecorder'
-    }));
-  };
-
-  const handleQuickRecord = () => {
-    setState(prev => ({
-      ...prev,
-      voiceCustomerId: undefined,
-      autoStartRecording: true,
-      currentScreen: 'VoiceRecorder'
-    }));
-  };
-
-  const handleStartRecording = (clientName: string, _address: string, customerId?: string) => {
-    setState(prev => ({
-      ...prev,
-      voiceCustomerId: customerId,
-      autoStartRecording: false,
-      currentScreen: 'VoiceRecorder'
-    }));
-  };
-
-  const handleRecordingFinished = (intakeId: string, quoteId: string, traceId: string, recordStopTime: number) => {
-    const totalMs = Date.now() - recordStopTime;
-    console.warn(`[PERF] trace_id=${traceId} step=app_handle_recording_finished intake_id=${intakeId} quote_id=${quoteId} total_ms=${totalMs}`);
-
-    setState(prev => ({
-      ...prev,
-      voiceIntakeId: intakeId,
-      voiceQuoteId: quoteId,
-      selectedEstimateId: quoteId,
-      currentScreen: 'QuoteEditor'
-    }));
-  };
-
-  const handleTranscriptContinue = (intakeId: string) => {
-    setState(prev => ({
-      ...prev,
-      voiceIntakeId: intakeId,
-      currentScreen: 'Processing'
-    }));
-  };
-
-  const handleProcessingFinished = (quoteId: string, intakeId: string) => {
-    console.log('[App] handleProcessingFinished called with quoteId:', quoteId, 'intakeId:', intakeId);
-
-    if (!quoteId) {
-      console.log('[App] No quoteId, routing to ReviewQuote for user review');
-      setState(prev => ({
-        ...prev,
-        voiceIntakeId: intakeId,
-        currentScreen: 'ReviewQuote'
-      }));
-    } else {
-      console.log('[App] Quote created, routing to ReviewDraft');
-      setState(prev => ({
-        ...prev,
-        voiceQuoteId: quoteId,
-        voiceIntakeId: intakeId,
-        currentScreen: 'ReviewDraft'
-      }));
-    }
-  };
-
-  const handleReviewQuoteConfirmed = () => {
-    console.log('[App] ReviewQuote confirmed, going back to Processing to create quote');
-    setState(prev => ({
-      ...prev,
-      currentScreen: 'Processing'
-    }));
-  };
-
   const handleSelectEstimate = (id: string) => {
     setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }));
   };
@@ -1055,16 +960,6 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, selectedCustomerId: id, currentScreen: 'CustomerProfile' }));
   };
 
-  const handleNewQuoteForCustomer = (customerId: string) => {
-    // Go directly to voice recorder with customer pre-selected
-    setState(prev => ({
-      ...prev,
-      voiceCustomerId: customerId,
-      autoStartRecording: false,
-      currentScreen: 'VoiceRecorder'
-    }));
-  };
-
   const handleDeleteCustomer = async (customerId: string) => {
     try {
       console.log('[App] Deleting customer:', customerId);
@@ -1143,27 +1038,22 @@ const App: React.FC = () => {
         return state.activeTab === 'estimates' ? (
           <EstimatesList
             estimates={state.estimates}
-            onNewEstimate={handleNewEstimate}
             onSelectEstimate={handleSelectEstimate}
             activeTab={state.activeTab}
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
-            onQuickRecord={handleQuickRecord}
           />
         ) : state.activeTab === 'invoices' ? (
           <InvoicesList
             invoices={state.invoices}
-            onNewEstimate={handleNewEstimate}
             onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
             activeTab={state.activeTab}
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
             onProfileClick={() => navigate('Settings')}
-            onQuickRecord={handleQuickRecord}
           />
         ) : (
           <CustomersList
             customers={state.customers}
-            onNewEstimate={handleNewEstimate}
             onSelectCustomer={handleSelectCustomer}
             activeTab={state.activeTab}
             onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
@@ -1179,7 +1069,6 @@ const App: React.FC = () => {
             quotes={state.estimates}
             invoices={state.invoices}
             onBack={() => setState(prev => ({ ...prev, currentScreen: 'EstimatesList', activeTab: 'customers' }))}
-            onNewQuote={handleNewQuoteForCustomer}
             onSelectQuote={(id) => setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }))}
             onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
             onDeleteCustomer={handleDeleteCustomer}
@@ -1193,79 +1082,6 @@ const App: React.FC = () => {
             returnScreen={state.editReturnScreen}
             onBack={() => navigate(state.editReturnScreen || 'EstimatePreview')}
             onSave={(estimate) => handleEstimateSave(estimate, state.editReturnScreen)}
-          />
-        ) : null;
-
-      case 'VoiceRecorder':
-        return <VoiceRecorder
-          onCancel={() => navigate('EstimatesList')}
-          onSuccess={handleRecordingFinished}
-          customerId={state.voiceCustomerId}
-          autoStart={state.autoStartRecording}
-        />;
-
-      case 'EditTranscript':
-        return state.voiceIntakeId ? (
-          <EditTranscript
-            intakeId={state.voiceIntakeId}
-            onCancel={() => navigate('EstimatesList')}
-            onContinue={handleTranscriptContinue}
-          />
-        ) : null;
-
-      case 'Processing':
-        return state.voiceIntakeId ? (
-          <Processing
-            intakeId={state.voiceIntakeId}
-            onComplete={handleProcessingFinished}
-          />
-        ) : null;
-
-      case 'ReviewQuote':
-        return state.voiceIntakeId ? (
-          <ReviewQuote
-            intakeId={state.voiceIntakeId}
-            onBack={() => navigate('EstimatesList')}
-            onConfirmed={handleReviewQuoteConfirmed}
-          />
-        ) : null;
-
-      case 'QuoteEditor':
-        console.log('[App] Rendering QuoteEditor with voiceQuoteId:', state.voiceQuoteId);
-        if (!state.voiceQuoteId) {
-          console.error('[App] Missing voiceQuoteId, redirecting to EstimatesList');
-          setTimeout(() => navigate('EstimatesList'), 0);
-          return null;
-        }
-        return (
-          <QuoteEditor
-            quoteId={state.voiceQuoteId}
-            voiceQuoteId={state.voiceQuoteId}
-            onBack={() => navigate('EstimatesList')}
-          />
-        );
-
-      case 'ReviewDraft':
-        console.log('[App] Rendering ReviewDraft with voiceQuoteId:', state.voiceQuoteId, 'voiceIntakeId:', state.voiceIntakeId);
-        if (!state.voiceQuoteId || !state.voiceIntakeId) {
-          console.error('[App] Missing voiceQuoteId or voiceIntakeId, redirecting to EstimatesList');
-          setTimeout(() => navigate('EstimatesList'), 0);
-          return null;
-        }
-        return state.voiceQuoteId && state.voiceIntakeId ? (
-          <ReviewDraft
-            quoteId={state.voiceQuoteId}
-            intakeId={state.voiceIntakeId}
-            onBack={() => navigate('EstimatesList')}
-            onContinue={async (quoteId) => {
-              console.log('[App] ReviewDraft continue, navigating to QuoteEditor with quoteId:', quoteId);
-              setState(prev => ({
-                ...prev,
-                voiceQuoteId: quoteId,
-                selectedEstimateId: quoteId,
-                currentScreen: 'QuoteEditor'
-              }));
-            }}
           />
         ) : null;
 
