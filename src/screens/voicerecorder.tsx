@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square } from 'lucide-react';
+import { Mic, Square, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface VoiceRecorderProps {
@@ -16,6 +16,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isStoppingRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -31,13 +32,22 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const startRecording = async () => {
     try {
       console.log('[VoiceRecorder] Requesting microphone access...');
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        }
+      });
       streamRef.current = stream;
       console.log('[VoiceRecorder] Microphone access granted');
 
       audioChunksRef.current = [];
+      isStoppingRef.current = false;
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
         ? 'audio/webm'
         : MediaRecorder.isTypeSupported('audio/mp4')
         ? 'audio/mp4'
@@ -65,6 +75,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       recorder.onstop = async () => {
         console.log('[VoiceRecorder] Recording stopped, total chunks:', audioChunksRef.current.length);
 
+        if (isStoppingRef.current) {
+          return;
+        }
+        isStoppingRef.current = true;
+
         if (audioChunksRef.current.length === 0) {
           console.error('[VoiceRecorder] No audio data captured');
           alert('No audio was captured. Please try again.');
@@ -90,8 +105,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
         alert('Recording error: ' + event.error);
       };
 
-      recorder.start(100);
-      console.log('[VoiceRecorder] Recorder.start() called with 100ms timeslice');
+      recorder.start(1000);
+      console.log('[VoiceRecorder] Recorder.start() called with 1000ms timeslice');
 
       setIsRecording(true);
       setRecordingTime(0);
@@ -100,7 +115,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       timerIntervalRef.current = window.setInterval(() => {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
         setRecordingTime(elapsed);
-        console.log('[VoiceRecorder] Timer tick:', elapsed);
 
         if (elapsed >= 60) {
           console.log('[VoiceRecorder] Max time reached, stopping...');
@@ -116,19 +130,18 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   };
 
   const stopRecording = () => {
-    console.log('[VoiceRecorder] stopRecording called, isRecording:', isRecording);
+    console.log('[VoiceRecorder] stopRecording called');
 
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      console.log('[VoiceRecorder] Stopping MediaRecorder, state:', mediaRecorderRef.current.state);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      console.log('[VoiceRecorder] Stopping MediaRecorder');
       mediaRecorderRef.current.stop();
+      setIsRecording(false);
     }
-
-    setIsRecording(false);
   };
 
   const uploadAudio = async (audioBlob: Blob) => {
@@ -191,7 +204,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
       setTimeout(() => {
         onBack();
-      }, 2000);
+      }, 1500);
 
     } catch (error: any) {
       console.error('[VoiceRecorder] Upload failed:', error);
@@ -221,9 +234,137 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       }
 
       console.log('[VoiceRecorder] Recording saved to database:', data);
+
+      await processRecording(data.id, audioUrl);
     } catch (error) {
       console.error('[VoiceRecorder] Database save failed:', error);
       throw error;
+    }
+  };
+
+  const processRecording = async (voiceQuoteId: string, audioUrl: string) => {
+    try {
+      console.log('[VoiceRecorder] Starting transcription for:', voiceQuoteId);
+
+      await supabase
+        .from('voice_quotes')
+        .update({ status: 'transcribing' })
+        .eq('id', voiceQuoteId);
+
+      const audioResponse = await fetch(audioUrl);
+      const audioBlob = await audioResponse.blob();
+
+      const formData = new FormData();
+      formData.append('endpoint', 'audio/transcriptions');
+      formData.append('file', audioBlob, 'audio.webm');
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'en');
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session');
+
+      const transcriptionResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!transcriptionResponse.ok) {
+        throw new Error('Transcription failed');
+      }
+
+      const transcriptionData = await transcriptionResponse.json();
+      const transcript = transcriptionData.text;
+
+      console.log('[VoiceRecorder] Transcript:', transcript);
+
+      await supabase
+        .from('voice_quotes')
+        .update({
+          status: 'transcribed',
+          transcript: transcript
+        })
+        .eq('id', voiceQuoteId);
+
+      await extractQuoteData(voiceQuoteId, transcript);
+
+    } catch (error) {
+      console.error('[VoiceRecorder] Processing failed:', error);
+      await supabase
+        .from('voice_quotes')
+        .update({ status: 'failed' })
+        .eq('id', voiceQuoteId);
+    }
+  };
+
+  const extractQuoteData = async (voiceQuoteId: string, transcript: string) => {
+    try {
+      console.log('[VoiceRecorder] Extracting quote data...');
+
+      await supabase
+        .from('voice_quotes')
+        .update({ status: 'extracting' })
+        .eq('id', voiceQuoteId);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session');
+
+      const extractionResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            endpoint: 'chat/completions',
+            body: {
+              model: 'gpt-4o-mini',
+              messages: [
+                {
+                  role: 'system',
+                  content: 'You are a helpful assistant that extracts structured quote information from transcripts. Extract customer name, job title, materials (with quantities), and labor hours. Return JSON only.'
+                },
+                {
+                  role: 'user',
+                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this structure:\n{\n  "customerName": "string",\n  "jobTitle": "string",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number\n}`
+                }
+              ],
+              response_format: { type: 'json_object' }
+            }
+          }),
+        }
+      );
+
+      if (!extractionResponse.ok) {
+        throw new Error('Extraction failed');
+      }
+
+      const extractionData = await extractionResponse.json();
+      const quoteData = JSON.parse(extractionData.choices[0].message.content);
+
+      console.log('[VoiceRecorder] Extracted data:', quoteData);
+
+      await supabase
+        .from('voice_quotes')
+        .update({
+          status: 'extracted',
+          quote_data: quoteData
+        })
+        .eq('id', voiceQuoteId);
+
+    } catch (error) {
+      console.error('[VoiceRecorder] Extraction failed:', error);
+      await supabase
+        .from('voice_quotes')
+        .update({ status: 'failed' })
+        .eq('id', voiceQuoteId);
     }
   };
 
@@ -234,82 +375,71 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col">
+    <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
       <div className="flex-1 flex items-center justify-center p-5">
         <div className="w-full max-w-md">
-          <div className="bg-white rounded-[24px] p-6 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+          <div className="bg-white rounded-3xl p-8 shadow-sm">
 
             <div className="flex items-center justify-between mb-8">
               <h1 className="text-2xl font-bold text-[#0f172a]">Voice Quote</h1>
               <button
                 onClick={onBack}
-                className="text-[15px] font-medium text-[#64748b] hover:text-[#0f172a] transition-colors"
+                disabled={isUploading}
+                className="text-[15px] font-medium text-[#64748b] hover:text-[#0f172a] transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
             </div>
 
             <div className="text-center">
-              <p className="text-[15px] font-medium text-[#64748b] mb-8">
-                {isUploading ? 'Saving recording...' :
+              <p className="text-[15px] text-[#64748b] mb-12">
+                {isUploading ? 'Processing recording...' :
                  uploadSuccess ? 'Recording saved!' :
                  'Speak naturally. We\'ll build the quote.'}
               </p>
 
               {uploadSuccess ? (
-                <div className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center bg-[#10b981] text-white text-4xl">
-                  ✓
+                <div className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center bg-[#10b981] text-white mb-6">
+                  <Check size={60} strokeWidth={3} />
                 </div>
               ) : isUploading ? (
-                <div className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center bg-[#e2e8f0]">
-                  <div className="w-8 h-8 border-4 border-[#64748b] border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center bg-[#f1f5f9] mb-6">
+                  <div className="w-12 h-12 border-4 border-[#94a3b8] border-t-[#0f172a] rounded-full animate-spin"></div>
                 </div>
               ) : (
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
                   disabled={isUploading}
-                  className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center text-4xl transition-all duration-200 active:scale-[0.98] shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center transition-all duration-200 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed mb-6"
                   style={{
                     background: isRecording ? '#ef4444' : '#d4ff00',
                     color: isRecording ? 'white' : '#1a2e05',
-                    animation: isRecording ? 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' : 'none'
                   }}
                 >
-                  {isRecording ? <Square size={40} fill="white" /> : <Mic size={40} />}
+                  {isRecording ? <Square size={48} fill="white" /> : <Mic size={48} />}
                 </button>
               )}
 
               {isRecording && (
-                <div className="mt-4">
-                  <div className="text-2xl font-bold text-[#ef4444]">
+                <div className="space-y-2">
+                  <div className="text-4xl font-bold text-[#0f172a] tabular-nums">
                     {formatTime(recordingTime)}
                   </div>
-                  <div className="text-sm text-[#64748b] mt-1">
-                    {recordingTime >= 60 ? 'Maximum recording time reached' : `${60 - recordingTime}s remaining`}
+                  <div className="text-sm text-[#64748b]">
+                    {60 - recordingTime}s remaining
                   </div>
                 </div>
               )}
 
               {!isRecording && !isUploading && !uploadSuccess && (
-                <div className="mt-6 text-sm text-[#64748b]">
-                  <p>Maximum recording time: 60 seconds</p>
+                <div className="text-sm text-[#94a3b8]">
+                  <p>Maximum: 60 seconds</p>
                 </div>
               )}
             </div>
           </div>
         </div>
       </div>
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.7;
-          }
-        }
-      `}</style>
     </div>
   );
 };

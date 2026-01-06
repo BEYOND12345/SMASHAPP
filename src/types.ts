@@ -43,6 +43,7 @@ export type ScreenName =
   | 'EstimatesList'
   | 'EditEstimate'
   | 'VoiceRecorder'
+  | 'VoiceQuotesList'
   | 'EditTranscript'
   | 'Processing'
   | 'ReviewQuote'
