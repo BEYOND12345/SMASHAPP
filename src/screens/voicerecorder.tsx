@@ -329,11 +329,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
               messages: [
                 {
                   role: 'system',
-                  content: 'You are a helpful assistant that extracts structured quote information from transcripts. Extract customer name, job title, materials (with quantities), and labor hours. Return JSON only.'
+                  content: 'You are a helpful assistant that extracts structured quote information from voice transcripts. Extract all available information including customer name, job title/description, job location/address, materials with quantities, and labor hours. If a field is not mentioned, use null. Return JSON only.'
                 },
                 {
                   role: 'user',
-                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this structure:\n{\n  "customerName": "string",\n  "jobTitle": "string",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number\n}`
+                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null (brief description of the work)",\n  "jobLocation": "string or null (address or location)",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null\n}`
                 }
               ],
               response_format: { type: 'json_object' }
