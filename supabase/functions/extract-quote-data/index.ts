@@ -30,16 +30,16 @@ const PROMPT_LINES = [
   "5. Extract all scope of work tasks as separate items in array",
   "6. JOB TITLE EXTRACTION (CRITICAL):",
   "   - Extract from first 1-2 sentences describing the main work",
-  "   - Examples: 'Deck replacement at house in Sydney' \u2192 'Deck replacement'",
-  "   - Examples: 'Need new kitchen cabinets installed' \u2192 'Kitchen cabinet installation'",
-  "   - Examples: 'Fix leaking roof' \u2192 'Roof leak repair'",
-  "   - Examples: 'Quote for painting exterior' \u2192 'Exterior painting'",
+  "   - Examples: 'Deck replacement at house in Sydney' → 'Deck replacement'",
+  "   - Examples: 'Need new kitchen cabinets installed' → 'Kitchen cabinet installation'",
+  "   - Examples: 'Fix leaking roof' → 'Roof leak repair'",
+  "   - Examples: 'Quote for painting exterior' → 'Exterior painting'",
   "   - ALWAYS extract a title. Never return null. Be concise (3-6 words).",
   "7. CUSTOMER & SITE EXTRACTION:",
   "   - Customer name: Look for 'for NAME', 'customer NAME', NAME's house, possessive forms",
   "   - Site address: Extract any mention of location, address, suburb, street, or site",
-  "   - Examples: 'Kate's place' \u2192 name: Kate, 'work at 123 Smith St' \u2192 site_address: 123 Smith St",
-  "   - Examples: 'job for John in Newtown' \u2192 name: John, site_address: Newtown",
+  "   - Examples: 'Kate's place' → name: Kate, 'work at 123 Smith St' → site_address: 123 Smith St",
+  "   - Examples: 'job for John in Newtown' → name: John, site_address: Newtown",
   "8. TIMELINE EXTRACTION:",
   "   - Extract natural language descriptions of duration and timing",
   "   - Examples: '2 to 3 days', 'about 40 hours', 'next week', 'couple of days'",
@@ -136,7 +136,26 @@ Deno.serve(async (req: Request) => {
       : `Transcript:\n${intake.transcript_text}`;
 
     console.log(`[${trace_id}] User prompt length: ${userPrompt.length} chars`);
+    console.log(`[${trace_id}] User prompt preview: ${userPrompt.substring(0, 300)}`);
     console.log(`[${trace_id}] Calling OpenAI with model: gpt-4o-mini`);
+
+    const openaiRequestBody = {
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.1,
+      response_format: { type: "json_object" }
+    };
+
+    console.log(`[${trace_id}] OpenAI request body: ${JSON.stringify({
+      model: openaiRequestBody.model,
+      message_count: openaiRequestBody.messages.length,
+      system_length: openaiRequestBody.messages[0].content.length,
+      user_length: openaiRequestBody.messages[1].content.length,
+      temperature: openaiRequestBody.temperature
+    })}`);
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -144,15 +163,7 @@ Deno.serve(async (req: Request) => {
         "Authorization": `Bearer ${openaiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.1,
-        response_format: { type: "json_object" }
-      }),
+      body: JSON.stringify(openaiRequestBody),
     });
 
     if (!openaiResponse.ok) {
@@ -187,14 +198,35 @@ Deno.serve(async (req: Request) => {
     console.log(`[${trace_id}] Extracted materials count: ${extracted.materials?.items?.length || 0}`);
     console.log(`[${trace_id}] Extracted labour entries: ${extracted.time?.labour_entries?.length || 0}`);
 
-    await supabase
+    // VALIDATE: Check if OpenAI returned empty data
+    const hasData = (
+      extracted.job?.title ||
+      extracted.customer?.name ||
+      (extracted.materials?.items?.length > 0 && extracted.materials.items[0]?.description) ||
+      (extracted.time?.labour_entries?.length > 0)
+    );
+
+    if (!hasData) {
+      console.error(`[${trace_id}] WARNING: OpenAI returned completely empty extraction!`);
+      console.error(`[${trace_id}] Transcript was: ${intake.transcript_text}`);
+      console.error(`[${trace_id}] Full extracted object: ${JSON.stringify(extracted, null, 2)}`);
+      throw new Error("OpenAI extraction returned empty data - check prompt or model");
+    }
+
+    // CRITICAL FIX: Use 'stage' not 'processing_stage'
+    const { error: updateError } = await supabase
       .from("voice_intakes")
       .update({
         extraction_json: extracted,
         status: "extracted",
-        processing_stage: "extracted"
+        stage: "extracted"
       })
       .eq("id", intake_id);
+
+    if (updateError) {
+      console.error(`[${trace_id}] Database update failed:`, updateError);
+      throw new Error(`Failed to save extraction: ${updateError.message}`);
+    }
 
     console.log(`[${trace_id}] Extract complete, saved to voice_intake`);
 
