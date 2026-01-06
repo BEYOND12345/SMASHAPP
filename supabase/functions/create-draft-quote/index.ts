@@ -634,29 +634,38 @@ Deno.serve(async (req: Request) => {
         const catalogItemId = material.catalog_item_id || null;
         const matchConfidence = material.catalog_match_confidence || null;
 
-        if (catalogItemId && (!material.unit_price_cents || material.unit_price_cents === 0)) {
-          console.log("[CATALOG_MATCH] Fetching catalog price for item", { catalogItemId });
-          const { data: catalogItem } = await supabaseAdmin
-            .from("material_catalog_items")
-            .select("unit_price_cents, typical_low_price_cents, typical_high_price_cents")
-            .eq("id", catalogItemId)
-            .maybeSingle();
+        // Priority 1: Use unit_price_cents from extraction (AI already estimated it)
+        if (!material.unit_price_cents || material.unit_price_cents === 0) {
+          // Priority 2: Try catalog lookup
+          if (catalogItemId) {
+            console.log("[CATALOG_MATCH] Fetching catalog price for item", { catalogItemId });
+            const { data: catalogItem } = await supabaseAdmin
+              .from("material_catalog_items")
+              .select("unit_price_cents, typical_low_price_cents, typical_high_price_cents")
+              .eq("id", catalogItemId)
+              .maybeSingle();
 
-          if (catalogItem) {
-            if (catalogItem.unit_price_cents) {
-              material.unit_price_cents = catalogItem.unit_price_cents;
-            } else if (catalogItem.typical_low_price_cents && catalogItem.typical_high_price_cents) {
-              material.unit_price_cents = Math.round(
-                (catalogItem.typical_low_price_cents + catalogItem.typical_high_price_cents) / 2
-              );
-              console.log("[CATALOG_MATCH] Using catalog price midpoint", {
-                material: material.description,
-                low: catalogItem.typical_low_price_cents,
-                high: catalogItem.typical_high_price_cents,
-                midpoint: material.unit_price_cents
-              });
+            if (catalogItem) {
+              if (catalogItem.unit_price_cents) {
+                material.unit_price_cents = catalogItem.unit_price_cents;
+              } else if (catalogItem.typical_low_price_cents && catalogItem.typical_high_price_cents) {
+                material.unit_price_cents = Math.round(
+                  (catalogItem.typical_low_price_cents + catalogItem.typical_high_price_cents) / 2
+                );
+                console.log("[CATALOG_MATCH] Using catalog price midpoint", {
+                  material: material.description,
+                  low: catalogItem.typical_low_price_cents,
+                  high: catalogItem.typical_high_price_cents,
+                  midpoint: material.unit_price_cents
+                });
+              }
             }
           }
+        } else {
+          console.log("[PRICING] Using AI-extracted price from transcript", {
+            material: material.description,
+            price_cents: material.unit_price_cents
+          });
         }
 
         if (material.unit_price_cents && material.unit_price_cents > 0) {
@@ -713,7 +722,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      console.log(`[PRICING_BATCH] catalog_matches=${catalogItems.length} ai_estimates_needed=${needsAiEstimation.length}`);
+      console.log(`[PRICING_BATCH] catalog_matches=${catalogItems.length} ai_estimates_needed=${needsAiEstimation.length} (should be 0 if extraction worked)`);
 
       if (needsAiEstimation.length > 0) {
         const aiStart = Date.now();
