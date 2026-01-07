@@ -16,34 +16,34 @@ interface ProgressChecklistProps {
 
 export const ProgressChecklist: React.FC<ProgressChecklistProps> = ({ items, className = '' }) => {
   return (
-    <div className={`bg-white/50 backdrop-blur-sm rounded-lg p-4 ${className}`}>
-      <div className="space-y-3.5">
+    <div className={`${className}`}>
+      <div className="space-y-2 text-left">
         {items.map((item) => (
-          <div key={item.id} className="flex items-center gap-3">
+          <div key={item.id} className="flex items-center gap-2">
             {item.state === 'waiting' && (
-              <Circle size={18} className="text-tertiary opacity-40 flex-shrink-0" strokeWidth={2} />
+              <Circle size={16} className="text-[#94a3b8] flex-shrink-0" strokeWidth={2} />
             )}
             {item.state === 'in_progress' && (
               <CircleDot
-                size={18}
-                className="text-secondary flex-shrink-0 animate-pulse-slow"
+                size={16}
+                className="text-[#0f172a] flex-shrink-0 animate-pulse"
                 strokeWidth={2}
               />
             )}
             {item.state === 'complete' && (
               <CheckCircle2
-                size={18}
-                className="text-brand flex-shrink-0 animate-scale-in"
+                size={16}
+                className="text-[#10b981] flex-shrink-0"
                 strokeWidth={2}
               />
             )}
             <span
               className={`text-[14px] transition-colors duration-300 ${
                 item.state === 'waiting'
-                  ? 'text-tertiary opacity-50'
+                  ? 'text-[#94a3b8]'
                   : item.state === 'in_progress'
-                  ? 'text-secondary'
-                  : 'text-primary font-normal'
+                  ? 'text-[#0f172a] font-medium'
+                  : 'text-[#0f172a]'
               }`}
             >
               {item.label}

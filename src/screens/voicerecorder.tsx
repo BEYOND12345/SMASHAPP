@@ -14,11 +14,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const [checklistItems, setChecklistItems] = useState([
-    { label: 'Customer name', checked: false },
-    { label: 'Job description', checked: false },
-    { label: 'Location/Address', checked: false },
-    { label: 'Materials needed', checked: false },
-    { label: 'Labor estimate', checked: false },
+    { id: 'customer', label: 'Customer name', state: 'waiting' as const },
+    { id: 'description', label: 'Job description', state: 'waiting' as const },
+    { id: 'location', label: 'Location/Address', state: 'waiting' as const },
+    { id: 'materials', label: 'Materials needed', state: 'waiting' as const },
+    { id: 'labor', label: 'Labor estimate', state: 'waiting' as const },
   ]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -361,20 +361,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       console.log('[VoiceRecorder] Extracted data:', quoteData);
 
       setChecklistItems(prev => prev.map(item => {
-        if (item.label === 'Customer name' && quoteData.customerName) {
-          return { ...item, checked: true };
+        if (item.id === 'customer' && quoteData.customerName) {
+          return { ...item, state: 'complete' as const };
         }
-        if (item.label === 'Job description' && quoteData.jobTitle) {
-          return { ...item, checked: true };
+        if (item.id === 'description' && quoteData.jobTitle) {
+          return { ...item, state: 'complete' as const };
         }
-        if (item.label === 'Location/Address' && quoteData.jobLocation) {
-          return { ...item, checked: true };
+        if (item.id === 'location' && quoteData.jobLocation) {
+          return { ...item, state: 'complete' as const };
         }
-        if (item.label === 'Materials needed' && quoteData.materials?.length > 0) {
-          return { ...item, checked: true };
+        if (item.id === 'materials' && quoteData.materials?.length > 0) {
+          return { ...item, state: 'complete' as const };
         }
-        if (item.label === 'Labor estimate' && quoteData.laborHours) {
-          return { ...item, checked: true };
+        if (item.id === 'labor' && quoteData.laborHours) {
+          return { ...item, state: 'complete' as const };
         }
         return item;
       }));
