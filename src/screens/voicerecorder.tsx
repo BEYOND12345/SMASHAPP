@@ -14,12 +14,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const [checklistItems, setChecklistItems] = useState([
-    { id: 'location', label: 'Location/Address', state: 'waiting' as const },
-    { id: 'customer', label: 'Customer name', state: 'waiting' as const },
-    { id: 'description', label: 'Job description', state: 'waiting' as const },
-    { id: 'materials', label: 'Materials needed', state: 'waiting' as const },
-    { id: 'labor', label: 'Labor estimate', state: 'waiting' as const },
-    { id: 'fees', label: 'Additional fees', state: 'waiting' as const },
+    { id: 'location', label: '1. Job address', state: 'waiting' as const },
+    { id: 'customer', label: '2. Customer name', state: 'waiting' as const },
+    { id: 'description', label: '3. Scope of work', state: 'waiting' as const },
+    { id: 'materials', label: '4. Materials needed', state: 'waiting' as const },
+    { id: 'labor', label: '5. Time to complete', state: 'waiting' as const },
+    { id: 'fees', label: '6. Additional charges', state: 'waiting' as const },
   ]);
 
   const [currentVoiceQuoteId, setCurrentVoiceQuoteId] = useState<string | null>(null);

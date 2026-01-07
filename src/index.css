@@ -26,7 +26,7 @@
     animation: slide-up 0.3s ease-out;
   }
   .animate-pulse-slow {
-    animation: pulse-slow 2s ease-in-out infinite;
+    animation: pulse-slow 1.5s ease-in-out infinite;
   }
   .animate-scale-in {
     animation: scale-in 200ms ease-out;

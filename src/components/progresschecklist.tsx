@@ -17,32 +17,37 @@ interface ProgressChecklistProps {
 export const ProgressChecklist: React.FC<ProgressChecklistProps> = ({ items, className = '' }) => {
   return (
     <div className={`${className}`}>
-      <div className="space-y-2 text-left">
+      <div className="space-y-1">
         {items.map((item) => (
-          <div key={item.id} className="flex items-center gap-2">
+          <div
+            key={item.id}
+            className={`
+              flex items-center gap-3 px-4 rounded-lg min-h-[56px] transition-all duration-200 ease-out
+              ${item.state === 'in_progress' ? 'bg-[#10b981]/10 animate-pulse-slow' : ''}
+              ${item.state === 'complete' ? 'bg-[#d4ff00]' : ''}
+            `}
+          >
             {item.state === 'waiting' && (
-              <Circle size={16} className="text-[#94a3b8] flex-shrink-0" strokeWidth={2} />
+              <Circle size={20} className="text-[#94a3b8] flex-shrink-0" strokeWidth={2} />
             )}
             {item.state === 'in_progress' && (
               <CircleDot
-                size={16}
-                className="text-[#10b981] flex-shrink-0 animate-pulse"
+                size={20}
+                className="text-[#10b981] flex-shrink-0"
                 strokeWidth={2}
               />
             )}
             {item.state === 'complete' && (
               <CheckCircle2
-                size={16}
-                className="text-[#10b981] flex-shrink-0"
-                strokeWidth={2}
+                size={20}
+                className="text-[#1a2e05] flex-shrink-0"
+                strokeWidth={2.5}
               />
             )}
             <span
-              className={`text-[14px] transition-colors duration-300 ${
+              className={`text-[15px] font-medium transition-colors duration-200 ${
                 item.state === 'waiting'
                   ? 'text-[#94a3b8]'
-                  : item.state === 'in_progress'
-                  ? 'text-[#0f172a] font-medium'
                   : 'text-[#0f172a]'
               }`}
             >
