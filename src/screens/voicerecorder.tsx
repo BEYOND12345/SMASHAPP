@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ProgressChecklist } from '../components/progresschecklist';
 
 interface VoiceRecorderProps {
   onBack: () => void;
@@ -11,6 +12,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+
+  const [checklistItems, setChecklistItems] = useState([
+    { label: 'Customer name', checked: false },
+    { label: 'Job description', checked: false },
+    { label: 'Location/Address', checked: false },
+    { label: 'Materials needed', checked: false },
+    { label: 'Labor estimate', checked: false },
+  ]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -351,6 +360,25 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
       console.log('[VoiceRecorder] Extracted data:', quoteData);
 
+      setChecklistItems(prev => prev.map(item => {
+        if (item.label === 'Customer name' && quoteData.customerName) {
+          return { ...item, checked: true };
+        }
+        if (item.label === 'Job description' && quoteData.jobTitle) {
+          return { ...item, checked: true };
+        }
+        if (item.label === 'Location/Address' && quoteData.jobLocation) {
+          return { ...item, checked: true };
+        }
+        if (item.label === 'Materials needed' && quoteData.materials?.length > 0) {
+          return { ...item, checked: true };
+        }
+        if (item.label === 'Labor estimate' && quoteData.laborHours) {
+          return { ...item, checked: true };
+        }
+        return item;
+      }));
+
       await supabase
         .from('voice_quotes')
         .update({
@@ -421,13 +449,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
               )}
 
               {isRecording && (
-                <div className="space-y-2">
-                  <div className="text-4xl font-bold text-[#0f172a] tabular-nums">
-                    {formatTime(recordingTime)}
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="text-4xl font-bold text-[#0f172a] tabular-nums">
+                      {formatTime(recordingTime)}
+                    </div>
+                    <div className="text-sm text-[#64748b]">
+                      {60 - recordingTime}s remaining
+                    </div>
                   </div>
-                  <div className="text-sm text-[#64748b]">
-                    {60 - recordingTime}s remaining
-                  </div>
+
+                  <ProgressChecklist items={checklistItems} />
                 </div>
               )}
 
