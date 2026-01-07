@@ -21,7 +21,7 @@ export const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="min-h-screen w-full flex justify-center bg-[#f1f5f9] font-sans text-primary">
       <div className="w-full max-w-[390px] h-[100dvh] bg-[#FAFAFA] flex flex-col shadow-2xl relative isolate">
-        <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col relative">
+        <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col">
           <main className={`flex-1 ${className}`}>
             {children}
           </main>
