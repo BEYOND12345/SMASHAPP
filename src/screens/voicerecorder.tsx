@@ -543,11 +543,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
                   disabled={isUploading}
                   className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center transition-all duration-200 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed mb-6"
                   style={{
-                    background: isRecording ? '#ef4444' : '#d4ff00',
-                    color: isRecording ? 'white' : '#1a2e05',
+                    background: isRecording ? '#ef4444' : '#84cc16',
                   }}
                 >
-                  {isRecording ? <Square size={48} fill="white" /> : <Mic size={48} />}
+                  {isRecording ? (
+                    <Square size={48} fill="white" />
+                  ) : (
+                    <Mic size={48} strokeWidth={2} className="text-white" />
+                  )}
                 </button>
               )}
 
