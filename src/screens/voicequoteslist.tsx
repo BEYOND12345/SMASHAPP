@@ -139,10 +139,11 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
   };
 
   return (
+    <>
     <Layout
       activeTab={activeTab}
       onTabChange={onTabChange}
-      className="bg-[#FAFAFA] relative pb-32"
+      className="bg-[#FAFAFA] pb-32"
       fab={<FAB onClick={() => setShowRecorder(true)} />}
     >
         <Header
@@ -249,14 +250,18 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
             ))
           )}
         </div>
-      {showRecorder && (
-        <div className="absolute inset-0 z-[60] bg-white">
+    </Layout>
+
+    {showRecorder && (
+      <div className="fixed inset-0 z-[100] bg-[#f1f5f9] flex justify-center">
+        <div className="w-full max-w-[390px] h-[100dvh] bg-white shadow-2xl">
           <VoiceRecorder onBack={() => {
             setShowRecorder(false);
             loadVoiceQuotes();
           }} />
         </div>
-      )}
-    </Layout>
+      </div>
+    )}
+    </>
   );
 };
