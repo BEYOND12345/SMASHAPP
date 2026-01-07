@@ -506,57 +506,56 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="h-full w-full bg-[#FAFAFA] flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto py-8 px-5">
+    <div className="h-full w-full bg-[#FAFAFA] flex flex-col">
+      <div className="flex items-center justify-between px-6 py-5 shrink-0">
+        <h1 className="text-2xl font-bold text-[#0f172a]">Voice Quote</h1>
+        <button
+          onClick={onBack}
+          disabled={isUploading}
+          className="text-[15px] font-medium text-[#64748b] hover:text-[#0f172a] transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-8">
         <div className="w-full max-w-md mx-auto">
-          <div className="bg-white rounded-3xl p-8 shadow-sm w-full">
-
-            <div className="flex items-center justify-between mb-8">
-              <h1 className="text-2xl font-bold text-[#0f172a]">Voice Quote</h1>
-              <button
-                onClick={onBack}
-                disabled={isUploading}
-                className="text-[15px] font-medium text-[#64748b] hover:text-[#0f172a] transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-
+          <div className="bg-white rounded-3xl p-6 shadow-sm w-full">
             <div className="text-center">
-              <p className="text-[15px] text-[#64748b] mb-8">
+              <p className="text-[15px] text-[#64748b] mb-6">
                 {isUploading ? 'Processing recording...' :
                  uploadSuccess ? 'Recording saved!' :
                  'Speak naturally. We\'ll build the quote.'}
               </p>
 
               {uploadSuccess ? (
-                <div className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center bg-[#10b981] text-white mb-6">
-                  <Check size={60} strokeWidth={3} />
+                <div className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center bg-[#10b981] text-white mb-5">
+                  <Check size={50} strokeWidth={3} />
                 </div>
               ) : isUploading ? (
-                <div className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center bg-[#f1f5f9] mb-6">
-                  <div className="w-12 h-12 border-4 border-[#94a3b8] border-t-[#0f172a] rounded-full animate-spin"></div>
+                <div className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center bg-[#f1f5f9] mb-5">
+                  <div className="w-10 h-10 border-4 border-[#94a3b8] border-t-[#0f172a] rounded-full animate-spin"></div>
                 </div>
               ) : (
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
                   disabled={isUploading}
-                  className="w-[120px] h-[120px] rounded-full mx-auto flex items-center justify-center transition-all duration-200 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+                  className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center transition-all duration-200 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed mb-5"
                   style={{
                     background: isRecording ? '#ef4444' : '#84cc16',
                   }}
                 >
                   {isRecording ? (
-                    <Square size={48} fill="white" />
+                    <Square size={40} fill="white" />
                   ) : (
-                    <Mic size={48} strokeWidth={2} className="text-white" />
+                    <Mic size={40} strokeWidth={2} className="text-white" />
                   )}
                 </button>
               )}
 
               {isRecording && (
-                <div className="space-y-2 mb-6">
-                  <div className="text-4xl font-bold text-[#0f172a] tabular-nums">
+                <div className="space-y-1.5 mb-5">
+                  <div className="text-3xl font-bold text-[#0f172a] tabular-nums">
                     {formatTime(recordingTime)}
                   </div>
                   <div className="text-sm text-[#64748b]">
@@ -566,7 +565,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
               )}
 
               {!isRecording && !isUploading && !uploadSuccess && (
-                <div className="text-sm text-[#94a3b8] mb-6">
+                <div className="text-sm text-[#94a3b8] mb-5">
                   <p>Maximum: 60 seconds</p>
                 </div>
               )}
