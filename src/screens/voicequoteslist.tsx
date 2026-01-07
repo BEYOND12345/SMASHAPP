@@ -250,7 +250,7 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
           )}
         </div>
       {showRecorder && (
-        <div className="fixed inset-0 z-[60] bg-white">
+        <div className="absolute inset-0 z-[60] bg-white">
           <VoiceRecorder onBack={() => {
             setShowRecorder(false);
             loadVoiceQuotes();
