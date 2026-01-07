@@ -89,38 +89,28 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       
       console.log('POLLING RESULT:', data);
 
-      // Update checklist items based on quote_data
+      // Update checklist items when quote_data is found
       if (data && data.quote_data) {
         const qd = data.quote_data;
         
         setChecklistItems(prev => prev.map(item => {
-          // Skip if already complete
           if (item.status === 'complete') return item;
           
-          // Check each item
-          if (item.id === 1 && qd.jobLocation) {
-            return { ...item, status: 'detecting' };
-          }
-          if (item.id === 2 && qd.customerName) {
-            return { ...item, status: 'detecting' };
-          }
-          if (item.id === 3 && qd.scope && qd.scope.length > 0) {
-            return { ...item, status: 'detecting' };
-          }
-          if (item.id === 4 && qd.materials && qd.materials.length > 0) {
-            return { ...item, status: 'detecting' };
-          }
-          if (item.id === 5 && qd.laborHours) {
-            return { ...item, status: 'detecting' };
-          }
-          if (item.id === 6 && qd.fees && qd.fees.length > 0) {
-            return { ...item, status: 'detecting' };
-          }
+          let shouldDetect = false;
+          if (item.id === 1 && qd.jobLocation) shouldDetect = true;
+          if (item.id === 2 && qd.customerName) shouldDetect = true;
+          if (item.id === 3 && qd.scope?.length > 0) shouldDetect = true;
+          if (item.id === 4 && qd.materials?.length > 0) shouldDetect = true;
+          if (item.id === 5 && qd.laborHours) shouldDetect = true;
+          if (item.id === 6 && qd.fees?.length > 0) shouldDetect = true;
           
+          if (shouldDetect && item.status === 'waiting') {
+            return { ...item, status: 'detecting' };
+          }
           return item;
         }));
         
-        // After 1200ms, change 'detecting' items to 'complete'
+        // After 1200ms, change detecting to complete
         setTimeout(() => {
           setChecklistItems(prev => prev.map(item => 
             item.status === 'detecting' ? { ...item, status: 'complete' } : item
