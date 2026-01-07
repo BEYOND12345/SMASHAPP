@@ -506,7 +506,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="h-screen bg-[#FAFAFA] flex flex-col overflow-hidden">
+    <div className="absolute inset-0 bg-[#FAFAFA] flex flex-col overflow-hidden">
       <div className="flex-1 flex items-center justify-center p-5 overflow-y-auto">
         <div className="w-full max-w-md my-auto">
           <div className="bg-white rounded-3xl p-8 shadow-sm">
