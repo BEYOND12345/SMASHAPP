@@ -26,7 +26,7 @@ export const ProgressChecklist: React.FC<ProgressChecklistProps> = ({ items, cla
             {item.state === 'in_progress' && (
               <CircleDot
                 size={16}
-                className="text-[#0f172a] flex-shrink-0 animate-pulse"
+                className="text-[#10b981] flex-shrink-0 animate-pulse"
                 strokeWidth={2}
               />
             )}

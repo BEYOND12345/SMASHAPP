@@ -14,12 +14,18 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const [checklistItems, setChecklistItems] = useState([
+    { id: 'location', label: 'Location/Address', state: 'waiting' as const },
     { id: 'customer', label: 'Customer name', state: 'waiting' as const },
     { id: 'description', label: 'Job description', state: 'waiting' as const },
-    { id: 'location', label: 'Location/Address', state: 'waiting' as const },
     { id: 'materials', label: 'Materials needed', state: 'waiting' as const },
     { id: 'labor', label: 'Labor estimate', state: 'waiting' as const },
+    { id: 'fees', label: 'Additional fees', state: 'waiting' as const },
   ]);
+
+  const [currentVoiceQuoteId, setCurrentVoiceQuoteId] = useState<string | null>(null);
+  const pollingIntervalRef = useRef<number | null>(null);
+  const pollingStartTimeRef = useRef<number | null>(null);
+  const detectionTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -32,11 +38,28 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      detectionTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
+
+  useEffect(() => {
+    const allComplete = checklistItems.every(item => item.state === 'complete');
+
+    if (allComplete && currentVoiceQuoteId && pollingIntervalRef.current) {
+      console.log('[VoiceRecorder] All checklist items complete, navigating...');
+      stopPolling();
+
+      setTimeout(() => {
+        window.location.href = `/voice-quote/editor/${currentVoiceQuoteId}`;
+      }, 1000);
+    }
+  }, [checklistItems, currentVoiceQuoteId]);
 
   const startRecording = async () => {
     try {
@@ -244,6 +267,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
       console.log('[VoiceRecorder] Recording saved to database:', data);
 
+      setCurrentVoiceQuoteId(data.id);
+      startPolling(data.id);
+
       await processRecording(data.id, audioUrl);
     } catch (error) {
       console.error('[VoiceRecorder] Database save failed:', error);
@@ -360,25 +386,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
       console.log('[VoiceRecorder] Extracted data:', quoteData);
 
-      setChecklistItems(prev => prev.map(item => {
-        if (item.id === 'customer' && quoteData.customerName) {
-          return { ...item, state: 'complete' as const };
-        }
-        if (item.id === 'description' && quoteData.jobTitle) {
-          return { ...item, state: 'complete' as const };
-        }
-        if (item.id === 'location' && quoteData.jobLocation) {
-          return { ...item, state: 'complete' as const };
-        }
-        if (item.id === 'materials' && quoteData.materials?.length > 0) {
-          return { ...item, state: 'complete' as const };
-        }
-        if (item.id === 'labor' && quoteData.laborHours) {
-          return { ...item, state: 'complete' as const };
-        }
-        return item;
-      }));
-
       await supabase
         .from('voice_quotes')
         .update({
@@ -400,6 +407,102 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const startPolling = (voiceQuoteId: string) => {
+    console.log('[VoiceRecorder] Starting polling for voice quote:', voiceQuoteId);
+    pollingStartTimeRef.current = Date.now();
+
+    const pollVoiceQuote = async () => {
+      try {
+        const elapsed = Date.now() - (pollingStartTimeRef.current || 0);
+        if (elapsed > 60000) {
+          console.log('[VoiceRecorder] Polling timeout reached (60s)');
+          stopPolling();
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('voice_quotes')
+          .select('status, quote_data')
+          .eq('id', voiceQuoteId)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[VoiceRecorder] Polling error:', error);
+          return;
+        }
+
+        if (!data) {
+          console.error('[VoiceRecorder] Voice quote not found');
+          stopPolling();
+          return;
+        }
+
+        console.log('[VoiceRecorder] Poll result - status:', data.status, 'has data:', !!data.quote_data);
+
+        const quoteData = data.quote_data;
+        if (quoteData) {
+          updateChecklistFromData(quoteData);
+        }
+
+        if (data.status === 'extracted') {
+          console.log('[VoiceRecorder] Extraction complete, waiting for all checklist items...');
+        }
+      } catch (error) {
+        console.error('[VoiceRecorder] Polling exception:', error);
+      }
+    };
+
+    pollVoiceQuote();
+    pollingIntervalRef.current = window.setInterval(pollVoiceQuote, 2000);
+  };
+
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      console.log('[VoiceRecorder] Stopping polling');
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  };
+
+  const updateChecklistFromData = (quoteData: any) => {
+    setChecklistItems(prev => prev.map(item => {
+      if (item.state === 'complete') return item;
+
+      let shouldComplete = false;
+
+      if (item.id === 'location' && quoteData.jobLocation) {
+        shouldComplete = true;
+      } else if (item.id === 'customer' && quoteData.customerName) {
+        shouldComplete = true;
+      } else if (item.id === 'description' && quoteData.scope?.length > 0) {
+        shouldComplete = true;
+      } else if (item.id === 'materials' && quoteData.materials?.length > 0) {
+        shouldComplete = true;
+      } else if (item.id === 'labor' && quoteData.laborHours) {
+        shouldComplete = true;
+      } else if (item.id === 'fees' && quoteData.fees?.length > 0) {
+        shouldComplete = true;
+      }
+
+      if (shouldComplete && item.state === 'waiting') {
+        console.log('[VoiceRecorder] Detected data for:', item.label);
+
+        const timeout = window.setTimeout(() => {
+          setChecklistItems(current => current.map(i =>
+            i.id === item.id ? { ...i, state: 'complete' as const } : i
+          ));
+          detectionTimeoutsRef.current.delete(item.id);
+        }, 1200);
+
+        detectionTimeoutsRef.current.set(item.id, timeout);
+
+        return { ...item, state: 'in_progress' as const };
+      }
+
+      return item;
+    }));
   };
 
   return (
