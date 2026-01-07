@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { ProgressChecklist } from '../components/progresschecklist';
 
 interface VoiceRecorderProps {
   onBack: () => void;
@@ -14,12 +13,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const [checklistItems, setChecklistItems] = useState([
-    { id: 'location', label: '1. Job address', state: 'waiting' as const },
-    { id: 'customer', label: '2. Customer name', state: 'waiting' as const },
-    { id: 'description', label: '3. Scope of work', state: 'waiting' as const },
-    { id: 'materials', label: '4. Materials needed', state: 'waiting' as const },
-    { id: 'labor', label: '5. Time to complete', state: 'waiting' as const },
-    { id: 'fees', label: '6. Additional charges', state: 'waiting' as const },
+    { id: 1, label: 'Job address', status: 'waiting' },
+    { id: 2, label: 'Customer name', status: 'waiting' },
+    { id: 3, label: 'Scope of work', status: 'waiting' },
+    { id: 4, label: 'Materials needed', status: 'waiting' },
+    { id: 5, label: 'Time to complete', status: 'waiting' },
+    { id: 6, label: 'Additional charges', status: 'waiting' }
   ]);
 
   const [currentVoiceQuoteId, setCurrentVoiceQuoteId] = useState<string | null>(null);
@@ -49,7 +48,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   }, []);
 
   useEffect(() => {
-    const allComplete = checklistItems.every(item => item.state === 'complete');
+    const allComplete = checklistItems.every(item => item.status === 'complete');
 
     if (allComplete && currentVoiceQuoteId && pollingIntervalRef.current) {
       console.log('[VoiceRecorder] All checklist items complete, navigating...');
@@ -60,6 +59,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       }, 1000);
     }
   }, [checklistItems, currentVoiceQuoteId]);
+
 
   const startRecording = async () => {
     try {
@@ -441,13 +441,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
         console.log('[VoiceRecorder] Poll result - status:', data.status, 'has data:', !!data.quote_data);
 
-        const quoteData = data.quote_data;
-        if (quoteData) {
-          updateChecklistFromData(quoteData);
-        }
-
         if (data.status === 'extracted') {
           console.log('[VoiceRecorder] Extraction complete, waiting for all checklist items...');
+          
+          // Update checklist items based on extracted data
+          if (data.quote_data) {
+            const qd = data.quote_data;
+            
+            setChecklistItems(prev => prev.map(item => {
+              if (item.status === 'complete') return item;
+              
+              if (item.id === 1 && qd.jobLocation) return { ...item, status: 'detecting' };
+              if (item.id === 2 && qd.customerName) return { ...item, status: 'detecting' };
+              if (item.id === 3 && qd.scope?.length > 0) return { ...item, status: 'detecting' };
+              if (item.id === 4 && qd.materials?.length > 0) return { ...item, status: 'detecting' };
+              if (item.id === 5 && qd.laborHours) return { ...item, status: 'detecting' };
+              if (item.id === 6 && qd.fees?.length > 0) return { ...item, status: 'detecting' };
+              
+              return item;
+            }));
+            
+            // After 1200ms, change detecting to complete
+            const timeoutId = window.setTimeout(() => {
+              setChecklistItems(prev => prev.map(item => 
+                item.status === 'detecting' ? { ...item, status: 'complete' } : item
+              ));
+            }, 1200);
+            
+            // Store timeout for cleanup
+            detectionTimeoutsRef.current.set('checklist-complete', timeoutId);
+          }
         }
       } catch (error) {
         console.error('[VoiceRecorder] Polling exception:', error);
@@ -464,45 +487,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
-  };
-
-  const updateChecklistFromData = (quoteData: any) => {
-    setChecklistItems(prev => prev.map(item => {
-      if (item.state === 'complete') return item;
-
-      let shouldComplete = false;
-
-      if (item.id === 'location' && quoteData.jobLocation) {
-        shouldComplete = true;
-      } else if (item.id === 'customer' && quoteData.customerName) {
-        shouldComplete = true;
-      } else if (item.id === 'description' && quoteData.scope?.length > 0) {
-        shouldComplete = true;
-      } else if (item.id === 'materials' && quoteData.materials?.length > 0) {
-        shouldComplete = true;
-      } else if (item.id === 'labor' && quoteData.laborHours) {
-        shouldComplete = true;
-      } else if (item.id === 'fees' && quoteData.fees?.length > 0) {
-        shouldComplete = true;
-      }
-
-      if (shouldComplete && item.state === 'waiting') {
-        console.log('[VoiceRecorder] Detected data for:', item.label);
-
-        const timeout = window.setTimeout(() => {
-          setChecklistItems(current => current.map(i =>
-            i.id === item.id ? { ...i, state: 'complete' as const } : i
-          ));
-          detectionTimeoutsRef.current.delete(item.id);
-        }, 1200);
-
-        detectionTimeoutsRef.current.set(item.id, timeout);
-
-        return { ...item, state: 'in_progress' as const };
-      }
-
-      return item;
-    }));
+    // Clear any pending checklist completion timeouts
+    const checklistTimeout = detectionTimeoutsRef.current.get('checklist-complete');
+    if (checklistTimeout) {
+      clearTimeout(checklistTimeout);
+      detectionTimeoutsRef.current.delete('checklist-complete');
+    }
   };
 
   return (
@@ -570,8 +560,31 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
                 </div>
               )}
 
-              {!isUploading && !uploadSuccess && (
-                <ProgressChecklist items={checklistItems} />
+              {(isRecording || isUploading) && (
+                <div className="mt-8 space-y-3">
+                  {checklistItems.map((item) => (
+                    <div 
+                      key={item.id}
+                      className={`flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 min-h-[56px] ${
+                        item.status === 'detecting' ? 'bg-lime-50 animate-pulse' : ''
+                      }`}
+                    >
+                      <div className={`
+                        w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold
+                        ${item.status === 'waiting' && 'border-2 border-gray-300 text-gray-400'}
+                        ${item.status === 'detecting' && 'border-2 border-lime-400 text-lime-600'}
+                        ${item.status === 'complete' && 'bg-lime-400 text-lime-900'}
+                      `}>
+                        {item.status === 'complete' ? '✓' : item.id}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900 text-[15px]">
+                          {item.label}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
