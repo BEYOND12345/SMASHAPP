@@ -555,24 +555,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
               )}
 
               {isRecording && (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <div className="text-4xl font-bold text-[#0f172a] tabular-nums">
-                      {formatTime(recordingTime)}
-                    </div>
-                    <div className="text-sm text-[#64748b]">
-                      {60 - recordingTime}s remaining
-                    </div>
+                <div className="space-y-2 mb-6">
+                  <div className="text-4xl font-bold text-[#0f172a] tabular-nums">
+                    {formatTime(recordingTime)}
                   </div>
-
-                  <ProgressChecklist items={checklistItems} />
+                  <div className="text-sm text-[#64748b]">
+                    {60 - recordingTime}s remaining
+                  </div>
                 </div>
               )}
 
               {!isRecording && !isUploading && !uploadSuccess && (
-                <div className="text-sm text-[#94a3b8]">
+                <div className="text-sm text-[#94a3b8] mb-6">
                   <p>Maximum: 60 seconds</p>
                 </div>
+              )}
+
+              {!isUploading && !uploadSuccess && (
+                <ProgressChecklist items={checklistItems} />
               )}
             </div>
           </div>
