@@ -16,7 +16,6 @@ import { PublicQuoteView } from './screens/publicquoteview';
 import { PublicInvoiceView } from './screens/publicinvoiceview';
 import { Settings } from './screens/settings';
 import { MaterialsCatalog } from './screens/materialscatalog';
-import { VoiceRecorder } from './screens/voicerecorder';
 import { VoiceQuotesList } from './screens/voicequoteslist';
 import { supabase } from './lib/supabase';
 import { parsePublicRoute } from './lib/utils/routeHelpers';
@@ -1013,12 +1012,8 @@ const App: React.FC = () => {
       case 'MaterialsCatalog':
         return <MaterialsCatalog onBack={() => navigate('Settings')} />;
 
-      case 'VoiceRecorder':
-        return <VoiceRecorder onBack={() => navigate('VoiceQuotesList')} />;
-
       case 'VoiceQuotesList':
         return <VoiceQuotesList
-          onNewRecording={() => navigate('VoiceRecorder')}
           onProfileClick={() => navigate('Settings')}
           activeTab={state.activeTab}
           onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}

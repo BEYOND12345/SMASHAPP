@@ -3,6 +3,7 @@ import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
 import { User, Loader2, Mic } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { VoiceRecorder } from './voicerecorder';
 
 interface VoiceQuote {
   id: string;
@@ -23,7 +24,6 @@ interface VoiceQuote {
 }
 
 interface VoiceQuotesListProps {
-  onNewRecording: () => void;
   onProfileClick?: () => void;
   activeTab: 'estimates' | 'invoices' | 'customers';
   onTabChange: (tab: 'estimates' | 'invoices' | 'customers') => void;
@@ -67,13 +67,13 @@ const StatusBadge: React.FC<{ status: VoiceQuote['status'] }> = ({ status }) => 
 };
 
 export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
-  onNewRecording,
   onProfileClick,
   activeTab,
   onTabChange
 }) => {
   const [voiceQuotes, setVoiceQuotes] = useState<VoiceQuote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRecorder, setShowRecorder] = useState(false);
 
   useEffect(() => {
     loadVoiceQuotes();
@@ -139,11 +139,12 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
   };
 
   return (
+    <>
     <Layout
       activeTab={activeTab}
       onTabChange={onTabChange}
       className="bg-[#FAFAFA] relative pb-32"
-      fab={<FAB onClick={onNewRecording} />}
+      fab={<FAB onClick={() => setShowRecorder(true)} />}
     >
       <Header
         title="Voice Quotes"
@@ -250,5 +251,15 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
         )}
       </div>
     </Layout>
+
+    {showRecorder && (
+      <div className="fixed inset-0 z-50 bg-white">
+        <VoiceRecorder onBack={() => {
+          setShowRecorder(false);
+          loadVoiceQuotes();
+        }} />
+      </div>
+    )}
+    </>
   );
 };
