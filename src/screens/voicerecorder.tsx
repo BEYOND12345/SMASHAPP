@@ -506,9 +506,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] flex flex-col">
-      <div className="flex-1 flex items-center justify-center p-5">
-        <div className="w-full max-w-md">
+    <div className="h-screen bg-[#FAFAFA] flex flex-col overflow-hidden">
+      <div className="flex-1 flex items-center justify-center p-5 overflow-y-auto">
+        <div className="w-full max-w-md my-auto">
           <div className="bg-white rounded-3xl p-8 shadow-sm">
 
             <div className="flex items-center justify-between mb-8">
@@ -523,7 +523,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
             </div>
 
             <div className="text-center">
-              <p className="text-[15px] text-[#64748b] mb-12">
+              <p className="text-[15px] text-[#64748b] mb-8">
                 {isUploading ? 'Processing recording...' :
                  uploadSuccess ? 'Recording saved!' :
                  'Speak naturally. We\'ll build the quote.'}
