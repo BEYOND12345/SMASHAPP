@@ -1118,8 +1118,18 @@ const App: React.FC = () => {
           <EditEstimate
             estimate={selectedEstimate}
             returnScreen={state.editReturnScreen}
-            onBack={() => navigate(state.editReturnScreen || 'EstimatePreview')}
+            onBack={() => navigate(state.editReturnScreen || 'EstimatesList')}
             onSave={(estimate) => handleEstimateSave(estimate, state.editReturnScreen)}
+            onSend={(estimate) => {
+              // Save the estimate first
+              handleEstimateSave(estimate, 'EstimatePreview');
+              // Then navigate to send screen
+              setState(prev => ({
+                ...prev,
+                currentScreen: 'SendEstimate',
+                sendingType: 'estimate'
+              }));
+            }}
           />
         );
 

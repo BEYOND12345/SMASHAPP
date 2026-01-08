@@ -18,6 +18,12 @@ export interface LabourItem {
   rate: number;
 }
 
+export interface FeeItem {
+  id: string;
+  description: string;
+  amount: number;
+}
+
 export interface Estimate {
   id: string;
   jobTitle: string;
@@ -31,6 +37,7 @@ export interface Estimate {
   scopeOfWork: string[];
   materials: MaterialItem[];
   labour: LabourItem;
+  additionalFees?: FeeItem[]; // Bunnings run, travel, callout, etc.
   gstRate: number; // 0.10 for 10%
 }
 

@@ -44,6 +44,7 @@ export function calculateEstimateTotals(estimate: Estimate | null | undefined) {
     return {
       materialsTotal: 0,
       labourTotal: 0,
+      feesTotal: 0,
       subtotal: 0,
       gst: 0,
       total: 0,
@@ -64,8 +65,15 @@ export function calculateEstimateTotals(estimate: Estimate | null | undefined) {
   const labourRate = safeNumber(estimate.labour?.rate);
   const labourTotal = labourHours * labourRate;
 
-  // Calculate subtotal
-  const subtotal = materialsTotal + labourTotal;
+  // Safely calculate fees total
+  const feesTotal = Array.isArray(estimate.additionalFees)
+    ? estimate.additionalFees.reduce((sum, fee) => {
+        return sum + safeNumber(fee?.amount);
+      }, 0)
+    : 0;
+
+  // Calculate subtotal (materials + labour + fees)
+  const subtotal = materialsTotal + labourTotal + feesTotal;
 
   // Calculate GST
   const gstRate = safeNumber(estimate.gstRate);
@@ -77,6 +85,7 @@ export function calculateEstimateTotals(estimate: Estimate | null | undefined) {
   return {
     materialsTotal,
     labourTotal,
+    feesTotal,
     subtotal,
     gst,
     total,
