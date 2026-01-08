@@ -23,7 +23,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
   const [currentVoiceQuoteId, setCurrentVoiceQuoteId] = useState<string | null>(null);
   const pollingIntervalRef = useRef<number | null>(null);
-  const pollingStartTimeRef = useRef<number | null>(null);
   const detectionTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -329,7 +328,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       console.log('[VoiceRecorder] Recording saved to database:', data);
 
       setCurrentVoiceQuoteId(data.id);
-      startPolling(data.id);
+      // OLD POLLING REMOVED: startPolling(data.id); - using new useEffect polling instead
 
       await processRecording(data.id, audioUrl);
     } catch (error) {
@@ -477,6 +476,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // OLD POLLING SYSTEM REMOVED - using new useEffect polling instead (lines 63-120)
+  /*
   const startPolling = (voiceQuoteId: string) => {
     console.log('[VoiceRecorder] Starting polling for voice quote:', voiceQuoteId);
     pollingStartTimeRef.current = Date.now();
@@ -525,6 +526,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
     pollVoiceQuote();
     pollingIntervalRef.current = window.setInterval(pollVoiceQuote, 2000);
   };
+  */
 
   const stopPolling = () => {
     if (pollingIntervalRef.current) {
@@ -534,44 +536,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
     }
   };
 
-  const updateChecklistFromData = (quoteData: any) => {
-    setChecklistItems(prev => prev.map(item => {
-      if (item.status === 'complete') return item;
-
-      let shouldComplete = false;
-
-      if (item.id === 1 && quoteData.jobLocation) {
-        shouldComplete = true;
-      } else if (item.id === 2 && quoteData.customerName) {
-        shouldComplete = true;
-      } else if (item.id === 3 && quoteData.scope?.length > 0) {
-        shouldComplete = true;
-      } else if (item.id === 4 && quoteData.materials?.length > 0) {
-        shouldComplete = true;
-      } else if (item.id === 5 && quoteData.laborHours) {
-        shouldComplete = true;
-      } else if (item.id === 6 && quoteData.fees?.length > 0) {
-        shouldComplete = true;
-      }
-
-      if (shouldComplete && item.status === 'waiting') {
-        console.log('[VoiceRecorder] Detected data for:', item.label);
-
-        const timeout = window.setTimeout(() => {
-          setChecklistItems(current => current.map(i =>
-            i.id === item.id ? { ...i, status: 'complete' } : i
-          ));
-          detectionTimeoutsRef.current.delete(String(item.id));
-        }, 1200);
-
-        detectionTimeoutsRef.current.set(String(item.id), timeout);
-
-        return { ...item, status: 'detecting' };
-      }
-
-      return item;
-    }));
-  };
+  // OLD FUNCTION REMOVED - updateChecklistFromData was used by old polling system
+  // The new useEffect polling (lines 63-120) handles checklist updates directly
 
   return (
     <div className="h-full w-full bg-[#FAFAFA] flex flex-col">
