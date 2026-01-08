@@ -56,8 +56,8 @@ BEGIN
             'id', qli.id,
             'description', qli.description,
             'quantity', qli.quantity,
-            'unit_price', qli.unit_price,
-            'line_total', qli.line_total,
+            'unit_price', qli.unit_price_cents / 100.0,
+            'line_total', qli.line_total_cents / 100.0,
             'sort_order', qli.sort_order
           ) ORDER BY qli.sort_order, qli.created_at
         )
@@ -107,8 +107,8 @@ BEGIN
             'id', qli.id,
             'description', qli.description,
             'quantity', qli.quantity,
-            'unit_price', qli.unit_price,
-            'line_total', qli.line_total,
+            'unit_price', qli.unit_price_cents / 100.0,
+            'line_total', qli.line_total_cents / 100.0,
             'sort_order', qli.sort_order
           ) ORDER BY qli.sort_order, qli.created_at
         )
@@ -187,8 +187,8 @@ BEGIN
             'item_type', ili.item_type,
             'description', ili.description,
             'quantity', ili.quantity,
-            'unit_price', ili.unit_price,
-            'line_total', ili.line_total,
+            'unit_price', ili.unit_price_cents / 100.0,
+            'line_total', ili.line_total_cents / 100.0,
             'sort_order', ili.sort_order
           ) ORDER BY ili.sort_order, ili.created_at
         )
@@ -248,8 +248,8 @@ BEGIN
             'item_type', ili.item_type,
             'description', ili.description,
             'quantity', ili.quantity,
-            'unit_price', ili.unit_price,
-            'line_total', ili.line_total,
+            'unit_price', ili.unit_price_cents / 100.0,
+            'line_total', ili.line_total_cents / 100.0,
             'sort_order', ili.sort_order
           ) ORDER BY ili.sort_order, ili.created_at
         )
