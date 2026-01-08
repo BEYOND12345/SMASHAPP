@@ -58,8 +58,8 @@ BEGIN
             'quantity', qli.quantity,
             'unit_price', qli.unit_price_cents / 100.0,
             'line_total', qli.line_total_cents / 100.0,
-            'sort_order', qli.sort_order
-          ) ORDER BY qli.sort_order, qli.created_at
+            'sort_order', qli.position
+          ) ORDER BY qli.position, qli.created_at
         )
         FROM quote_line_items qli
         WHERE qli.quote_id = q.id),
@@ -109,8 +109,8 @@ BEGIN
             'quantity', qli.quantity,
             'unit_price', qli.unit_price_cents / 100.0,
             'line_total', qli.line_total_cents / 100.0,
-            'sort_order', qli.sort_order
-          ) ORDER BY qli.sort_order, qli.created_at
+            'sort_order', qli.position
+          ) ORDER BY qli.position, qli.created_at
         )
         FROM quote_line_items qli
         WHERE qli.quote_id = q.id),
@@ -189,8 +189,8 @@ BEGIN
             'quantity', ili.quantity,
             'unit_price', ili.unit_price_cents / 100.0,
             'line_total', ili.line_total_cents / 100.0,
-            'sort_order', ili.sort_order
-          ) ORDER BY ili.sort_order, ili.created_at
+            'sort_order', ili.position
+          ) ORDER BY ili.position, ili.created_at
         )
         FROM invoice_line_items ili
         WHERE ili.invoice_id = i.id),
@@ -250,8 +250,8 @@ BEGIN
             'quantity', ili.quantity,
             'unit_price', ili.unit_price_cents / 100.0,
             'line_total', ili.line_total_cents / 100.0,
-            'sort_order', ili.sort_order
-          ) ORDER BY ili.sort_order, ili.created_at
+            'sort_order', ili.position
+          ) ORDER BY ili.position, ili.created_at
         )
         FROM invoice_line_items ili
         WHERE ili.invoice_id = i.id),
