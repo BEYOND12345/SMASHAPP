@@ -1017,6 +1017,22 @@ const App: React.FC = () => {
           onProfileClick={() => navigate('Settings')}
           activeTab={state.activeTab}
           onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
+          onQuoteCreated={async (quoteId) => {
+            console.log('[App] Quote created from voice, navigating to edit:', quoteId);
+            
+            // Reload quotes from database to get the new quote
+            if (state.user?.id) {
+              await loadQuotesFromDatabase(state.user.id);
+            }
+            
+            // Navigate to the quote editor
+            setState(prev => ({
+              ...prev,
+              selectedEstimateId: quoteId,
+              currentScreen: 'EditEstimate',
+              editReturnScreen: 'EstimatesList'
+            }));
+          }}
         />;
 
       case 'PublicQuoteView':
@@ -1086,14 +1102,26 @@ const App: React.FC = () => {
         ) : null;
       
       case 'EditEstimate':
-        return selectedEstimate ? (
+        if (!selectedEstimate) {
+          // Quote not found in state - may still be loading
+          // Show loading or redirect to list
+          console.log('[App] EditEstimate: No estimate found for ID:', state.selectedEstimateId);
+          return (
+            <div className="h-screen w-screen flex items-center justify-center bg-surface">
+              <div className="text-center">
+                <p className="text-[14px] text-secondary">Loading quote...</p>
+              </div>
+            </div>
+          );
+        }
+        return (
           <EditEstimate
             estimate={selectedEstimate}
             returnScreen={state.editReturnScreen}
             onBack={() => navigate(state.editReturnScreen || 'EstimatePreview')}
             onSave={(estimate) => handleEstimateSave(estimate, state.editReturnScreen)}
           />
-        ) : null;
+        );
 
       case 'EstimatePreview':
         return selectedEstimate ? (

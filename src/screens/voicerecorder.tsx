@@ -4,9 +4,10 @@ import { supabase } from '../lib/supabase';
 
 interface VoiceRecorderProps {
   onBack: () => void;
+  onQuoteCreated?: (quoteId: string) => void;
 }
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCreated }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -77,12 +78,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/1c587d41-3a78-459c-ae6c-5ce52087404d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voicerecorder.tsx:61',message:'Navigation triggered',data:{voiceQuoteId:currentVoiceQuoteId,createdQuoteId:createdQuoteId,requiredComplete,allComplete},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
       // #endregion
+
       console.log('[VoiceRecorder] Quote created, navigating to quote:', createdQuoteId);
       stopPolling();
 
       setTimeout(() => {
-        // Navigate to the actual quote editor using the created quote ID
-        window.location.href = `/quote/${createdQuoteId}`;
+        // Use callback for internal navigation instead of window.location.href
+        // This avoids triggering the public router and keeps us in the app
+        if (onQuoteCreated) {
+          console.log('[VoiceRecorder] Calling onQuoteCreated callback with:', createdQuoteId);
+          onQuoteCreated(createdQuoteId);
+        } else {
+          console.log('[VoiceRecorder] No onQuoteCreated callback, falling back to onBack');
+          onBack();
+        }
       }, 1000);
     } else if ((requiredComplete || allComplete) && currentVoiceQuoteId && !createdQuoteId) {
       // Checklist complete but quote not created yet - log for debugging

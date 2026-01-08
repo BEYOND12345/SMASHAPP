@@ -27,6 +27,7 @@ interface VoiceQuotesListProps {
   onProfileClick?: () => void;
   activeTab: 'estimates' | 'invoices' | 'customers';
   onTabChange: (tab: 'estimates' | 'invoices' | 'customers') => void;
+  onQuoteCreated?: (quoteId: string) => void;
 }
 
 const StatusBadge: React.FC<{ status: VoiceQuote['status'] }> = ({ status }) => {
@@ -69,7 +70,8 @@ const StatusBadge: React.FC<{ status: VoiceQuote['status'] }> = ({ status }) => 
 export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
   onProfileClick,
   activeTab,
-  onTabChange
+  onTabChange,
+  onQuoteCreated
 }) => {
   const [voiceQuotes, setVoiceQuotes] = useState<VoiceQuote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,10 +257,20 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
     {showRecorder && (
       <div className="fixed inset-0 z-[100] bg-[#f1f5f9] flex justify-center">
         <div className="w-full max-w-[390px] h-[100dvh] bg-white shadow-2xl">
-          <VoiceRecorder onBack={() => {
-            setShowRecorder(false);
-            loadVoiceQuotes();
-          }} />
+          <VoiceRecorder 
+            onBack={() => {
+              setShowRecorder(false);
+              loadVoiceQuotes();
+            }}
+            onQuoteCreated={(quoteId) => {
+              console.log('[VoiceQuotesList] Quote created, closing recorder and navigating:', quoteId);
+              setShowRecorder(false);
+              // Notify parent to navigate to the quote editor
+              if (onQuoteCreated) {
+                onQuoteCreated(quoteId);
+              }
+            }}
+          />
         </div>
       </div>
     )}
