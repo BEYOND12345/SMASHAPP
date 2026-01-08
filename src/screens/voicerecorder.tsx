@@ -751,7 +751,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
               messages: [
                 {
                   role: 'system',
-                  content: 'You are a helpful assistant that extracts structured quote information from voice transcripts. Extract all available information including customer name, job title/description, job location/address, materials with quantities, and labor hours. If a field is not mentioned, use null. Return JSON only.'
+                  content: 'You are a helpful assistant that extracts structured quote information from voice transcripts. Extract all available information including customer name, job title/description, job location/address, scope of work (detailed description of work to be performed), materials with quantities, and labor hours. If a field is not mentioned, use null. Return JSON only.'
                 },
                 {
                   role: 'user',
