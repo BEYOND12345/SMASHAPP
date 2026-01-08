@@ -755,7 +755,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
                 },
                 {
                   role: 'user',
-                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null (brief description of the work)",\n  "jobLocation": "string or null (address or location)",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null\n}`
+                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null (brief description of the work)",\n  "jobLocation": "string or null (address or location)",\n  "scopeOfWork": "string or null (detailed description of the work to be performed)",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null\n}`
                 }
               ],
               response_format: { type: 'json_object' }
@@ -887,6 +887,19 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
         throw new Error('Failed to generate quote number: ' + quoteNumberError?.message);
       }
 
+      // Get pricing profile for labor rates
+      let hourlyRateCents = 0;
+      const { data: pricingProfile, error: pricingError } = await supabase
+        .rpc('get_effective_pricing_profile', { p_user_id: user.id });
+      
+      if (pricingError) {
+        console.warn('[VoiceRecorder] Failed to get pricing profile:', pricingError.message);
+        console.warn('[VoiceRecorder] Using default rate of $0 - user will need to update manually');
+      } else if (pricingProfile) {
+        hourlyRateCents = pricingProfile.hourly_rate_cents || 0;
+        console.log('[VoiceRecorder] Using hourly rate:', hourlyRateCents / 100);
+      }
+
       // Create the quote
       const { data: newQuote, error: quoteError } = await supabase
         .from('quotes')
@@ -896,6 +909,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
           quote_number: quoteNumberData,
           title: quoteData.jobTitle || 'Voice Quote',
           site_address: quoteData.jobLocation || null,
+          scope_of_work: quoteData.scopeOfWork || null,
           source: 'voice',
           created_by_user_id: user.id
         })
@@ -933,6 +947,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
 
       // Add labor line item
       if (quoteData.laborHours) {
+        const laborTotalCents = Math.round(quoteData.laborHours * hourlyRateCents);
         lineItems.push({
           org_id: voiceQuote.org_id,
           quote_id: newQuote.id,
@@ -941,8 +956,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack }) => {
           description: 'Labor',
           quantity: quoteData.laborHours,
           unit: 'hours',
-          unit_price_cents: 0, // Will need pricing profile
-          line_total_cents: 0 // Will be calculated by triggers
+          unit_price_cents: hourlyRateCents,
+          line_total_cents: laborTotalCents
         });
       }
 
