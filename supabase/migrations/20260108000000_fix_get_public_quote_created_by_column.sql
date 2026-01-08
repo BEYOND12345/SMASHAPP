@@ -66,14 +66,14 @@ BEGIN
         '[]'::json
       ),
       'organization', json_build_object(
-        'business_name', o.business_name,
-        'business_number', o.business_number,
-        'address_line1', o.address_line1,
-        'address_line2', o.address_line2,
-        'city', o.city,
-        'state', o.state,
-        'postal_code', o.postal_code,
-        'country', o.country,
+        'business_name', o.name,
+        'business_number', COALESCE(o.tax_id_value, o.abn),
+        'address_line1', o.business_address_line_1,
+        'address_line2', o.business_address_line_2,
+        'city', o.business_city,
+        'state', o.business_state_region,
+        'postal_code', o.business_postcode,
+        'country', COALESCE(o.business_country_code, o.country_code),
         'phone', o.phone,
         'email', o.email,
         'website', o.website
@@ -117,14 +117,14 @@ BEGIN
         '[]'::json
       ),
       'organization', json_build_object(
-        'business_name', o.business_name,
-        'business_number', o.business_number,
-        'address_line1', o.address_line1,
-        'address_line2', o.address_line2,
-        'city', o.city,
-        'state', o.state,
-        'postal_code', o.postal_code,
-        'country', o.country,
+        'business_name', o.name,
+        'business_number', COALESCE(o.tax_id_value, o.abn),
+        'address_line1', o.business_address_line_1,
+        'address_line2', o.business_address_line_2,
+        'city', o.business_city,
+        'state', o.business_state_region,
+        'postal_code', o.business_postcode,
+        'country', COALESCE(o.business_country_code, o.country_code),
         'phone', o.phone,
         'email', o.email,
         'website', o.website
@@ -197,30 +197,29 @@ BEGIN
         '[]'::json
       ),
       'organization', json_build_object(
-        'business_name', o.business_name,
-        'business_number', o.business_number,
-        'address_line1', o.address_line1,
-        'address_line2', o.address_line2,
-        'city', o.city,
-        'state', o.state,
-        'postal_code', o.postal_code,
-        'country', o.country,
+        'business_name', o.name,
+        'business_number', COALESCE(o.tax_id_value, o.abn),
+        'address_line1', o.business_address_line_1,
+        'address_line2', o.business_address_line_2,
+        'city', o.business_city,
+        'state', o.business_state_region,
+        'postal_code', o.business_postcode,
+        'country', COALESCE(o.business_country_code, o.country_code),
         'phone', o.phone,
         'email', o.email,
         'website', o.website,
-        'payment_instructions', p.payment_instructions,
-        'bank_name', p.bank_name,
-        'account_name', p.account_name,
-        'account_number', p.account_number,
-        'routing_number', p.routing_number,
-        'bsb', p.bsb
+        'payment_instructions', o.payment_instructions,
+        'bank_name', o.bank_name,
+        'account_name', o.account_name,
+        'account_number', o.account_number,
+        'routing_number', o.bsb_routing,
+        'bsb', o.bsb_routing
       )
     ) INTO invoice_data
     FROM invoices i
     JOIN customers c ON c.id = i.customer_id
     LEFT JOIN users u ON u.id = i.created_by_user_id
     LEFT JOIN organizations o ON o.id = COALESCE(u.org_id, i.org_id)
-    LEFT JOIN profiles p ON p.id = i.created_by_user_id
     WHERE i.id = identifier::uuid;
   ELSE
     -- Short code lookup
@@ -258,30 +257,29 @@ BEGIN
         '[]'::json
       ),
       'organization', json_build_object(
-        'business_name', o.business_name,
-        'business_number', o.business_number,
-        'address_line1', o.address_line1,
-        'address_line2', o.address_line2,
-        'city', o.city,
-        'state', o.state,
-        'postal_code', o.postal_code,
-        'country', o.country,
+        'business_name', o.name,
+        'business_number', COALESCE(o.tax_id_value, o.abn),
+        'address_line1', o.business_address_line_1,
+        'address_line2', o.business_address_line_2,
+        'city', o.business_city,
+        'state', o.business_state_region,
+        'postal_code', o.business_postcode,
+        'country', COALESCE(o.business_country_code, o.country_code),
         'phone', o.phone,
         'email', o.email,
         'website', o.website,
-        'payment_instructions', p.payment_instructions,
-        'bank_name', p.bank_name,
-        'account_name', p.account_name,
-        'account_number', p.account_number,
-        'routing_number', p.routing_number,
-        'bsb', p.bsb
+        'payment_instructions', o.payment_instructions,
+        'bank_name', o.bank_name,
+        'account_name', o.account_name,
+        'account_number', o.account_number,
+        'routing_number', o.bsb_routing,
+        'bsb', o.bsb_routing
       )
     ) INTO invoice_data
     FROM invoices i
     JOIN customers c ON c.id = i.customer_id
     LEFT JOIN users u ON u.id = i.created_by_user_id
     LEFT JOIN organizations o ON o.id = COALESCE(u.org_id, i.org_id)
-    LEFT JOIN profiles p ON p.id = i.created_by_user_id
     WHERE i.short_code = UPPER(identifier);
   END IF;
   
