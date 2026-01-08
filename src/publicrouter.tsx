@@ -51,7 +51,14 @@ export const PublicRouter: React.FC = () => {
 
       if (error) {
         console.error('[PublicRouter] Error loading quote:', error);
-        setError('Quote not found');
+        console.error('[PublicRouter] Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          identifier: identifier
+        });
+        setError(`Quote not found: ${error.message || 'Unknown error'}`);
         setLoading(false);
         return;
       }
