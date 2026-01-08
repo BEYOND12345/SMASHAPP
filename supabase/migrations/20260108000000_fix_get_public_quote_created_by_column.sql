@@ -82,7 +82,7 @@ BEGIN
     FROM quotes q
     JOIN customers c ON c.id = q.customer_id
     LEFT JOIN users u ON u.id = q.created_by_user_id
-    LEFT JOIN organizations o ON o.id = COALESCE(u.organization_id, q.org_id)
+    LEFT JOIN organizations o ON o.id = COALESCE(u.org_id, q.org_id)
     WHERE q.id = identifier::uuid;
   ELSE
     -- Short code lookup
@@ -133,7 +133,7 @@ BEGIN
     FROM quotes q
     JOIN customers c ON c.id = q.customer_id
     LEFT JOIN users u ON u.id = q.created_by_user_id
-    LEFT JOIN organizations o ON o.id = COALESCE(u.organization_id, q.org_id)
+    LEFT JOIN organizations o ON o.id = COALESCE(u.org_id, q.org_id)
     WHERE q.short_code = UPPER(identifier);
   END IF;
   
@@ -219,7 +219,7 @@ BEGIN
     FROM invoices i
     JOIN customers c ON c.id = i.customer_id
     LEFT JOIN users u ON u.id = i.created_by_user_id
-    LEFT JOIN organizations o ON o.id = COALESCE(u.organization_id, i.org_id)
+    LEFT JOIN organizations o ON o.id = COALESCE(u.org_id, i.org_id)
     LEFT JOIN profiles p ON p.id = i.created_by_user_id
     WHERE i.id = identifier::uuid;
   ELSE
@@ -280,7 +280,7 @@ BEGIN
     FROM invoices i
     JOIN customers c ON c.id = i.customer_id
     LEFT JOIN users u ON u.id = i.created_by_user_id
-    LEFT JOIN organizations o ON o.id = COALESCE(u.organization_id, i.org_id)
+    LEFT JOIN organizations o ON o.id = COALESCE(u.org_id, i.org_id)
     LEFT JOIN profiles p ON p.id = i.created_by_user_id
     WHERE i.short_code = UPPER(identifier);
   END IF;
