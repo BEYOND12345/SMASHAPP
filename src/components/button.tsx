@@ -14,15 +14,15 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const baseStyles = 'h-[56px] px-6 rounded-2xl font-bold text-[15px] tracking-tight transition-all duration-200 flex items-center justify-center active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+  const baseStyles = 'h-[54px] px-6 rounded-[16px] font-bold text-[15px] tracking-tight transition-all duration-200 flex items-center justify-center active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 
   const variants = {
-    primary: 'bg-brand text-white hover:bg-brandDark shadow-md hover:shadow-lg',
-    secondary: 'bg-surface text-primary border border-border hover:bg-gray-100',
-    outline: 'bg-white text-primary border-2 border-border hover:border-gray-300 hover:bg-gray-50',
-    accent: 'bg-accent text-accentText hover:bg-accentDark shadow-md hover:shadow-lg',
-    success: 'bg-accent text-accentText hover:bg-accentDark shadow-md shadow-accent/20 hover:shadow-lg',
-    danger: 'bg-red-500 text-white hover:bg-red-600 shadow-md hover:shadow-lg'
+    primary: 'bg-slate-900 text-white hover:bg-slate-800 shadow-md active:shadow-sm',
+    secondary: 'bg-white text-slate-900 border border-slate-100 hover:bg-slate-50 active:bg-slate-100',
+    outline: 'bg-transparent text-slate-900 border-2 border-slate-100 hover:border-slate-200 active:bg-slate-50',
+    accent: 'bg-accent text-accentText shadow-md shadow-accent/10 active:shadow-sm',
+    success: 'bg-accent text-accentText shadow-md shadow-accent/10 active:shadow-sm',
+    danger: 'bg-red-500 text-white shadow-md active:shadow-sm'
   };
 
   const widthClass = fullWidth ? 'w-full' : '';

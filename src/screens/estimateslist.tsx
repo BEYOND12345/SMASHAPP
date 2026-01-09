@@ -181,16 +181,16 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
             <div
               key={est.id}
               onClick={() => onSelectEstimate(est.id)}
-              className="bg-white rounded-[20px] p-5 shadow-card hover:scale-[0.99] transition-transform duration-200 cursor-pointer flex flex-col gap-3"
+              className="bg-white rounded-[20px] p-5 shadow-sm border border-slate-100/50 active:scale-[0.98] active:bg-slate-50/50 transition-all duration-200 cursor-pointer flex flex-col gap-3"
             >
               <div className="flex justify-between items-start">
-                <div className="flex items-center gap-3 flex-1 min-w-0 pr-3">
-                   <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-[12px] font-bold text-gray-900 tracking-tight flex-shrink-0">
+                <div className="flex items-center gap-3.5 flex-1 min-w-0 pr-3">
+                   <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-[12px] font-bold text-slate-900 tracking-tight flex-shrink-0 border border-slate-100">
                       {getInitials(est.clientName)}
                    </div>
                    <div className="flex-1 min-w-0">
-                      <h3 className="text-[15px] font-bold text-primary tracking-tight leading-none mb-1 truncate">{est.jobTitle}</h3>
-                      <p className="text-[13px] text-secondary truncate">{est.clientName}</p>
+                      <h3 className="text-[15px] font-bold text-slate-900 tracking-tight leading-tight mb-0.5 truncate">{est.jobTitle}</h3>
+                      <p className="text-[13px] text-slate-500 truncate font-medium">{est.clientName}</p>
                    </div>
                 </div>
                 <div className="flex-shrink-0">
@@ -198,11 +198,11 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
                 </div>
               </div>
 
-              <div className="h-px bg-gray-50 w-full" />
+              <div className="h-px bg-slate-50 w-full" />
 
-              <div className="flex justify-between items-center">
-                <span className="text-[12px] font-medium text-tertiary">{est.date}</span>
-                <span className="text-[15px] font-bold text-primary tracking-tight">{formatCurrency(calculateEstimateTotals(est).total)}</span>
+              <div className="flex justify-between items-center px-0.5">
+                <span className="text-[12px] font-semibold text-slate-400">{est.date}</span>
+                <span className="text-[16px] font-extrabold text-slate-900 tracking-tight">{formatCurrency(calculateEstimateTotals(est).total)}</span>
               </div>
             </div>
           ))

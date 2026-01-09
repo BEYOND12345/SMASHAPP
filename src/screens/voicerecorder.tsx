@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Check } from 'lucide-react';
+import { Mic, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface VoiceRecorderProps {
@@ -8,10 +8,129 @@ interface VoiceRecorderProps {
 }
 
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCreated }) => {
+  /**
+   * SAFETY FLAGS
+   * - Default OFF to avoid breaking the working pipeline.
+   * - Enable by setting VITE_ENABLE_INCREMENTAL_EXTRACTION / VITE_ENABLE_AI_MATERIAL_PRICING to "true".
+   */
+  // Default ON for "magic" live progress. Disable by setting VITE_ENABLE_INCREMENTAL_EXTRACTION="false".
+  const ENABLE_INCREMENTAL_EXTRACTION = import.meta.env.VITE_ENABLE_INCREMENTAL_EXTRACTION !== 'false';
+  // Default ON (restores "never empty prices"). Disable by setting VITE_ENABLE_AI_MATERIAL_PRICING="false".
+  const ENABLE_AI_MATERIAL_PRICING = import.meta.env.VITE_ENABLE_AI_MATERIAL_PRICING !== 'false';
+
+  // "Never empty prices" safety net (cents). If everything fails, we still price it.
+  const DEFAULT_FALLBACK_MATERIAL_UNIT_PRICE_CENTS = (() => {
+    const vRaw = (import.meta.env.VITE_DEFAULT_FALLBACK_PRICE_CENTS ?? import.meta.env.VITE_DEFAULT_FALLBACK_PRICE) as
+      | string
+      | undefined;
+    const v = vRaw ? Number(vRaw) : NaN;
+    return Number.isFinite(v) && v > 0 ? Math.round(v) : 1000; // default $10.00
+  })();
+
+  const currencyToRegionCode = (currency?: string | null): 'AU' | 'US' | 'UK' | 'NZ' => {
+    const c = (currency || '').toUpperCase();
+    if (c === 'USD') return 'US';
+    if (c === 'GBP') return 'UK';
+    if (c === 'NZD') return 'NZ';
+    return 'AU';
+  };
+
+  const regionCodeToName = (region: string): string => {
+    switch (region) {
+      case 'US':
+        return 'United States';
+      case 'UK':
+        return 'United Kingdom';
+      case 'NZ':
+        return 'New Zealand';
+      case 'AU':
+      default:
+        return 'Australia';
+    }
+  };
+
+  type AiPriceConfidence = 'low' | 'medium' | 'high';
+  type AiPriceResult = { unit_price_cents: number; confidence: AiPriceConfidence; reasoning: string };
+
+  const estimateMaterialUnitPricesBatch = async (args: {
+    regionName: string;
+    currency: string;
+    items: Array<{ description: string; unit: string; quantity: number }>;
+  }): Promise<AiPriceResult[] | null> => {
+    try {
+      const { regionName, currency, items } = args;
+      if (!items || items.length === 0) return [];
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session');
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          endpoint: 'chat/completions',
+          body: {
+            model: 'gpt-4o-mini',
+            temperature: 0.3,
+            max_tokens: 500,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a construction materials pricing expert. Estimate realistic UNIT prices (not totals). Be conservative and practical. Return JSON only.',
+              },
+              {
+                role: 'user',
+                content:
+                  `Estimate unit prices for these materials in ${regionName}. ` +
+                  `Currency: ${currency}. ` +
+                  `Return JSON with EXACT shape:\n` +
+                  `{\n  "items": [\n    { "unit_price_cents": number, "confidence": "low|medium|high", "reasoning": string }\n  ]\n}\n` +
+                  `Rules:\n` +
+                  `- Keep order aligned with input items.\n` +
+                  `- unit_price_cents must be > 0.\n` +
+                  `- If unsure, still guess and set confidence="low".\n\n` +
+                  `Items:\n${items
+                    .map((it, i) => `${i + 1}. ${it.description} — qty ${it.quantity} ${it.unit}`)
+                    .join('\n')}`,
+              },
+            ],
+            response_format: { type: 'json_object' },
+          },
+        }),
+      });
+
+      if (!res.ok) return null;
+
+      const data = await res.json();
+      const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+      const out = Array.isArray(parsed?.items) ? parsed.items : null;
+      if (!out) return null;
+
+      return out
+        .map((x: any) => ({
+          unit_price_cents: typeof x?.unit_price_cents === 'number' ? Math.max(1, Math.round(x.unit_price_cents)) : 0,
+          confidence: (x?.confidence === 'low' || x?.confidence === 'medium' || x?.confidence === 'high')
+            ? x.confidence
+            : 'low',
+          reasoning: typeof x?.reasoning === 'string' ? x.reasoning : '',
+        }))
+        .slice(0, items.length);
+    } catch (e) {
+      console.warn('[VoiceRecorder] AI pricing batch failed (non-fatal):', e);
+      return null;
+    }
+  };
+
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isCreatingQuote, setIsCreatingQuote] = useState(false);
+  const [transcript, setTranscript] = useState<string | null>(null);
 
   const [checklistItems, setChecklistItems] = useState([
     { id: 1, label: 'Job address', status: 'waiting' },
@@ -21,6 +140,42 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
     { id: 5, label: 'Time to complete', status: 'waiting' },
     { id: 6, label: 'Additional charges', status: 'waiting' }
   ]);
+
+  // Reduce re-render + console spam in hot path
+  const DEBUG_VOICE = import.meta.env.VITE_DEBUG_VOICE === 'true';
+
+  // Throttle real-time detection so UI feels smooth (not spammy)
+  const detectThrottleTimeoutRef = useRef<number | null>(null);
+  const pendingDetectTranscriptRef = useRef<string>('');
+
+  // Live preview data for "ticks as items are added" (throttled)
+  const [liveQuotePreview, setLiveQuotePreview] = useState<any>(null);
+  const livePreviewTimeoutRef = useRef<number | null>(null);
+  const livePreviewPendingRef = useRef<any>(null);
+
+  // Even if words are messy (mumbling/slang), show "we're hearing you"
+  const [lastHeardAt, setLastHeardAt] = useState<number>(0);
+  const lastHeardAtRef = useRef<number>(0);
+  const heardThrottleRef = useRef<number | null>(null);
+
+  const bumpHeard = () => {
+    const now = Date.now();
+    lastHeardAtRef.current = now;
+    if (heardThrottleRef.current) return;
+    heardThrottleRef.current = window.setTimeout(() => {
+      setLastHeardAt(lastHeardAtRef.current);
+      heardThrottleRef.current = null;
+    }, 220);
+  };
+
+  const scheduleLivePreviewUpdate = (qd: any) => {
+    livePreviewPendingRef.current = qd;
+    if (livePreviewTimeoutRef.current) return;
+    livePreviewTimeoutRef.current = window.setTimeout(() => {
+      setLiveQuotePreview(livePreviewPendingRef.current);
+      livePreviewTimeoutRef.current = null;
+    }, 180);
+  };
 
   const [currentVoiceQuoteId, setCurrentVoiceQuoteId] = useState<string | null>(null);
   const [createdQuoteId, setCreatedQuoteId] = useState<string | null>(null);
@@ -34,6 +189,95 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   const isStoppingRef = useRef(false);
   const speechRecognitionRef = useRef<any>(null);
   const isRecordingRef = useRef(false);
+
+  // Bar DOM refs for ultra-smooth visual updates (avoid React re-render)
+  const visualizerBarsRef = useRef<Array<HTMLDivElement | null>>([]);
+
+  // Live mic visualizer (WebAudio analyser)
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const analyserDataRef = useRef<Uint8Array | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // Phase B (safe): build a "draft" while recording; best-effort only.
+  const liveSpeechTranscriptRef = useRef<string>('');
+  const incrementalExtractTimeoutRef = useRef<number | null>(null);
+  const incrementalExtractInFlightRef = useRef(false);
+  const incrementalExtractCountRef = useRef(0);
+  const MAX_INCREMENTAL_EXTRACT_CALLS = 6; // hard cap per recording to prevent runaway costs/latency
+  const draftQuoteDataRef = useRef<any>(null);
+
+  const mergeQuoteData = (base: any, patch: any, opts?: { preferPatch?: boolean }) => {
+    const preferPatch = !!opts?.preferPatch;
+    const out: any = { ...(base || {}) };
+    const safeStr = (v: any) => (typeof v === 'string' && v.trim().length > 0 ? v.trim() : null);
+    const safeNum = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+    const setValue = (key: string, value: any) => {
+      if (out[key] === null || out[key] === undefined || (typeof out[key] === 'string' && out[key].trim() === '')) {
+        if (value !== null && value !== undefined) out[key] = value;
+        return;
+      }
+      if (preferPatch && value !== null && value !== undefined) {
+        out[key] = value;
+      }
+    };
+
+    setValue('customerName', safeStr(patch?.customerName));
+    setValue('jobLocation', safeStr(patch?.jobLocation));
+    setValue('jobTitle', safeStr(patch?.jobTitle));
+    setValue('timeline', safeStr(patch?.timeline));
+
+    // scopeOfWork can be string or array
+    if (
+      !out.scopeOfWork ||
+      (Array.isArray(out.scopeOfWork) && out.scopeOfWork.length === 0) ||
+      preferPatch
+    ) {
+      const sow = patch?.scopeOfWork;
+      if (Array.isArray(sow)) {
+        const normalized = sow.filter((s: any) => typeof s === 'string' && s.trim().length > 0).map((s: string) => s.trim());
+        if (normalized.length > 0) out.scopeOfWork = normalized;
+      } else if (typeof sow === 'string' && sow.trim().length > 0) {
+        out.scopeOfWork = [sow.trim()];
+      }
+    }
+
+    // Materials: merge by name (avoid duplicates like unit vs pcs)
+    const incomingMaterials = Array.isArray(patch?.materials) ? patch.materials : [];
+    if (!Array.isArray(out.materials)) out.materials = [];
+    for (const m of incomingMaterials) {
+      const name = safeStr(m?.name);
+      if (!name) continue;
+      const unit = safeStr(m?.unit) || 'unit';
+      const qty = safeNum(m?.quantity) ?? 1;
+      const existsIdx = out.materials.findIndex((x: any) => (x?.name || '').toLowerCase() === name.toLowerCase());
+      if (existsIdx === -1) out.materials.push({ name, unit, quantity: qty });
+      else {
+        // Prefer patch unit if we explicitly prefer patch (final extraction)
+        if (preferPatch && unit) out.materials[existsIdx].unit = unit;
+        // Prefer larger/realistic quantity
+        const existingQty = typeof out.materials[existsIdx]?.quantity === 'number' ? out.materials[existsIdx].quantity : 0;
+        if (qty > existingQty) out.materials[existsIdx].quantity = qty;
+      }
+    }
+
+    setValue('laborHours', safeNum(patch?.laborHours));
+
+    // Fees: allow either `fees` or `additionalFees`
+    if (!Array.isArray(out.fees) || out.fees.length === 0) {
+      const fees = Array.isArray(patch?.fees) ? patch.fees : Array.isArray(patch?.additionalFees) ? patch.additionalFees : [];
+      const normalizedFees = fees
+        .map((f: any) => ({
+          description: safeStr(f?.description),
+          amount: safeNum(f?.amount),
+        }))
+        .filter((f: any) => f.description);
+      if (normalizedFees.length > 0) out.fees = normalizedFees;
+    }
+
+    return out;
+  };
 
   useEffect(() => {
     console.log('[VERIFICATION] Old polling system removed - only useEffect polling remains');
@@ -55,8 +299,123 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         speechRecognitionRef.current.stop();
         speechRecognitionRef.current = null;
       }
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (detectThrottleTimeoutRef.current) {
+        clearTimeout(detectThrottleTimeoutRef.current);
+        detectThrottleTimeoutRef.current = null;
+      }
+      if (livePreviewTimeoutRef.current) {
+        clearTimeout(livePreviewTimeoutRef.current);
+        livePreviewTimeoutRef.current = null;
+      }
+      if (heardThrottleRef.current) {
+        clearTimeout(heardThrottleRef.current);
+        heardThrottleRef.current = null;
+      }
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch {
+          // noop
+        }
+        audioContextRef.current = null;
+      }
+      analyserRef.current = null;
+      analyserDataRef.current = null;
     };
   }, []);
+
+  const stopVisualizer = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    // Reset bar heights quickly
+    for (let i = 0; i < visualizerBarsRef.current.length; i++) {
+      const el = visualizerBarsRef.current[i];
+      if (el) el.style.height = '12%';
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch {
+        // noop
+      }
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    analyserDataRef.current = null;
+  };
+
+  const startVisualizer = (stream: MediaStream) => {
+    try {
+      stopVisualizer();
+
+      const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+      if (!AudioCtx) return;
+
+      const ctx = new AudioCtx();
+      audioContextRef.current = ctx;
+      // Best-effort resume (some browsers start suspended)
+      ctx.resume().catch(() => undefined);
+
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256; // Smaller for smoother freq bars
+      analyser.smoothingTimeConstant = 0.8;
+      analyserRef.current = analyser;
+      analyserDataRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      const tick = (ts: number) => {
+        const a = analyserRef.current;
+        const arr = analyserDataRef.current;
+        if (!isRecordingRef.current || !a || !arr) {
+          rafRef.current = null;
+          return;
+        }
+
+        a.getByteFrequencyData(arr as any);
+
+        // Voice-activity hint (audio-driven): makes UI feel in-sync even if speech recognition lags.
+        // Compute a simple average energy over lower-mid bins.
+        let energy = 0;
+        const sampleCount = Math.min(arr.length, 48);
+        for (let i = 2; i < sampleCount; i++) energy += arr[i];
+        const normEnergy = (energy / Math.max(1, sampleCount - 2)) / 255; // ~0..1
+        if (normEnergy > 0.06) {
+          // Above a small threshold → treat as "we're hearing you"
+          bumpHeard();
+        }
+        
+        // Use frequency bins to drive the bars
+        // We have 16 bars, we'll map them to the lower-middle frequency range
+        for (let j = 0; j < 16; j++) {
+          const el = visualizerBarsRef.current[j];
+          if (!el) continue;
+          
+          // Sample from the frequency array (skip lowest and highest for better visual balance)
+          const sampleIdx = Math.floor(j * (arr.length * 0.6) / 16);
+          const val = arr[sampleIdx] / 255; // 0..1
+          
+          // Add a tiny bit of movement even if silent
+          const idle = 0.05 * Math.sin(ts / 200 + j);
+          const height = Math.max(12, Math.min(100, (val + idle) * 100));
+          el.style.height = `${height}%`;
+        }
+
+        rafRef.current = requestAnimationFrame(tick);
+      };
+
+      rafRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      console.warn('[VoiceRecorder] Visualizer init failed (non-fatal):', e);
+    }
+  };
 
   useEffect(() => {
     // Count required items (items 1-5) - item 6 (Additional charges) is optional
@@ -65,33 +424,28 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
     const allComplete = checklistItems.every(item => item.status === 'complete');
     const completeCount = checklistItems.filter(item => item.status === 'complete').length;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c587d41-3a78-459c-ae6c-5ce52087404d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voicerecorder.tsx:57',message:'Navigation check',data:{allComplete,requiredComplete,completeCount,total:checklistItems.length,requiredCount:requiredItems.length,hasVoiceQuoteId:!!currentVoiceQuoteId,hasCreatedQuoteId:!!createdQuoteId,statuses:checklistItems.map(i=>`${i.label}:${i.status}`)},timestamp:Date.now(),sessionId:'debug-session',runId:'run5',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    console.log('[VoiceRecorder] Navigation check - requiredComplete:', requiredComplete, 'allComplete:', allComplete, 'completeCount:', completeCount, 'total:', checklistItems.length, 'currentVoiceQuoteId:', currentVoiceQuoteId, 'createdQuoteId:', createdQuoteId);
-    console.log('[VoiceRecorder] Checklist statuses:', checklistItems.map(item => `${item.label}: ${item.status}`));
+    if (DEBUG_VOICE) {
+      console.log('[VoiceRecorder] Navigation check - requiredComplete:', requiredComplete, 'allComplete:', allComplete, 'completeCount:', completeCount, 'total:', checklistItems.length, 'currentVoiceQuoteId:', currentVoiceQuoteId, 'createdQuoteId:', createdQuoteId);
+      console.log('[VoiceRecorder] Checklist statuses:', checklistItems.map(item => `${item.label}: ${item.status}`));
+    }
 
     // Navigate once quote is created, regardless of checklist completion
     // The checklist is for real-time feedback, but once the quote is created, we should navigate
     // This allows navigation even if some optional items (materials, labor hours) weren't detected
     if (createdQuoteId) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c587d41-3a78-459c-ae6c-5ce52087404d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voicerecorder.tsx:61',message:'Navigation triggered',data:{voiceQuoteId:currentVoiceQuoteId,createdQuoteId:createdQuoteId,requiredComplete,allComplete},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      console.log('[VoiceRecorder] Quote created, navigating to quote:', createdQuoteId);
+      console.log('[VoiceRecorder] v2 - Quote created, using callback navigation:', createdQuoteId);
+      console.log('[VoiceRecorder] v2 - onQuoteCreated callback exists:', !!onQuoteCreated);
       stopPolling();
 
-      setTimeout(() => {
-        // Use callback for internal navigation instead of window.location.href
-        // This avoids triggering the public router and keeps us in the app
-        if (onQuoteCreated) {
-          console.log('[VoiceRecorder] Calling onQuoteCreated callback with:', createdQuoteId);
-          onQuoteCreated(createdQuoteId);
-        } else {
-          console.log('[VoiceRecorder] No onQuoteCreated callback, falling back to onBack');
-          onBack();
-        }
-      }, 1000);
+      // Use callback for internal navigation instead of window.location.href
+      // This avoids triggering the public router and keeps us in the app
+      if (onQuoteCreated) {
+        console.log('[VoiceRecorder] v2 - Calling onQuoteCreated NOW');
+        onQuoteCreated(createdQuoteId);
+      } else {
+        console.log('[VoiceRecorder] v2 - No onQuoteCreated callback, calling onBack');
+        onBack();
+      }
     } else if ((requiredComplete || allComplete) && currentVoiceQuoteId && !createdQuoteId) {
       // Checklist complete but quote not created yet - log for debugging
       console.log('[VoiceRecorder] Checklist complete but quote not created yet. Waiting for quote creation...', {
@@ -102,58 +456,56 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   }, [checklistItems, currentVoiceQuoteId, createdQuoteId]);
 
   // Real-time keyword detection for checklist items with context requirements
-  const detectKeywordsInSpeech = (transcript: string, isFinal: boolean = false) => {
+  const detectKeywordsInSpeech = (transcript: string) => {
     const lowerTranscript = transcript.toLowerCase();
     
-    // Patterns that require actual data, not just keywords
-    // Format: [pattern, requiresContext]
-    const keywordPatterns = {
+    // "Magic" live detection: detect content, not labels.
+    // Keep patterns high-signal to avoid noisy UI.
+    const keywordPatterns: Record<number, Array<{ pattern: RegExp; requiresContext: boolean }>> = {
       1: [
-        // High confidence - has actual location data
-        { pattern: /(?:job\s+)?(?:address|location)\s+is\s+([a-z0-9\s,]+)/i, requiresContext: true },
-        { pattern: /(?:at|in)\s+([a-z0-9\s,]+(?:street|road|avenue|place|beach|bay|sydney|melbourne|brisbane))/i, requiresContext: true },
-        { pattern: /\b([a-z0-9\s]+(?:street|road|avenue|place|beach|bay))\b/i, requiresContext: true },
-        // Lower confidence - just mentions keyword
-        { pattern: /\b(?:job\s+)?(?:address|location)\b/i, requiresContext: false }
+        // Address-like: street number + street type
+        {
+          pattern:
+            /\b(\d{1,5}\s+[a-z0-9\s]{2,40}\b(?:street|st|road|rd|avenue|ave|drive|dr|lane|ln|court|ct|way|place|pl|boulevard|blvd)\b(?:\s+[a-z]+){0,3})\b/i,
+          requiresContext: true,
+        },
+        { pattern: /\baddress\s*(?:is|at)?\s*([0-9][^.,]{6,80})/i, requiresContext: true },
       ],
       2: [
-        // High confidence - has actual name
-        { pattern: /(?:customer|client)\s+name\s+is\s+([a-z\s]+)/i, requiresContext: true },
-        { pattern: /(?:quote|for)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/i, requiresContext: true },
-        { pattern: /\b(?:customer|client)\s+is\s+([a-z\s]+)/i, requiresContext: true },
-        // Lower confidence
-        { pattern: /\b(?:customer|client)\s+name\b/i, requiresContext: false }
+        // "name is David Smith" or "customer name David Smith"
+        { pattern: /\bname\s+is\s+([a-z]+(?:\s+[a-z]+){0,2})\b/i, requiresContext: true },
+        { pattern: /\b(?:customer|client)\s+name\s*(?:is)?\s*([a-z]+(?:\s+[a-z]+){0,2})\b/i, requiresContext: true },
+        // Common mis-hear: "custom name"
+        { pattern: /\bcustom\s+name\s*(?:is)?\s*([a-z]+(?:\s+[a-z]+){0,2})\b/i, requiresContext: true },
       ],
       3: [
-        // High confidence - has actual work description
-        { pattern: /(?:scope|work|job|task|project)\s+(?:is|to)\s+([a-z\s]+(?:build|repair|replace|install|remove|deck|door|windows|house))/i, requiresContext: true },
-        { pattern: /(?:building|rebuilding|repairing|replacing|installing|removing)\s+([a-z\s]+)/i, requiresContext: true },
-        { pattern: /\b(?:build|repair|replace|install|remove)\s+([a-z\s]+)/i, requiresContext: true },
-        // Lower confidence
-        { pattern: /\b(?:scope\s+of\s+work|scope|work|job|task|project)\b/i, requiresContext: false }
+        // Scope: verb phrase (install/build/repair/etc)
+        {
+          pattern:
+            /\b((?:build|install|repair|replace|paint|fix|remove|demolish|construct|fit|hang|mount|plaster|tile|wire|plumb)[^.,]{6,80})/i,
+          requiresContext: true,
+        },
+        { pattern: /\bscope(?:\s+of)?\s+work\s*(?:is|:)?\s*([^.,]{6,120})/i, requiresContext: true },
       ],
       4: [
-        // High confidence - has actual materials
-        { pattern: /(?:materials|material|supplies)\s+(?:are|needed|need)\s+([a-z0-9\s,]+(?:plywood|screws|nails|wood|concrete|paint|sheets|bags))/i, requiresContext: true },
-        { pattern: /(?:need|needed)\s+([0-9]+\s+(?:sheets|bags|pieces)\s+of\s+[a-z]+)/i, requiresContext: true },
-        { pattern: /\b([0-9]+\s+(?:sheets|bags)\s+of\s+(?:plywood|screws|nails|wood|concrete|paint))/i, requiresContext: true },
-        // Lower confidence
-        { pattern: /\b(?:materials|material|supplies)\b/i, requiresContext: false }
+        // Materials: "materials needed include screws, nails"
+        { pattern: /\bmaterials?\s*(?:needed|are|include|includes|:)\s*([^.,]{3,120})/i, requiresContext: true },
+        { pattern: /\bneed\s+(?:some\s+)?(?:materials?|)([^.,]{3,120})/i, requiresContext: true },
+        // Common mis-hear: "material list"
+        { pattern: /\bmaterial\s+list\s*(?:is|:)?\s*([^.,]{3,120})/i, requiresContext: true },
       ],
       5: [
-        // High confidence - has actual time
-        { pattern: /(?:time|will\s+take|takes)\s+(?:is|to\s+complete|is)\s+([0-9]+\s+(?:hours|days|minutes))/i, requiresContext: true },
-        { pattern: /(?:will\s+take|takes)\s+([0-9]+\s+(?:hours|days))/i, requiresContext: true },
-        { pattern: /\b([0-9]+\s+(?:hours|days))\b/i, requiresContext: true },
-        // Lower confidence
-        { pattern: /\b(?:time\s+to\s+complete|time|hours|days|duration|labor)\b/i, requiresContext: false }
+        // Time: numbers OR word numbers
+        { pattern: /\b(\d+\s*(?:hours?|days?|weeks?))\b/i, requiresContext: true },
+        { pattern: /\b((?:one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:hours?|days?|weeks?))\b/i, requiresContext: true },
+        { pattern: /\btime(?:\s+to)?\s+complete\s*(?:is|:)?\s*([^.,]{3,40})/i, requiresContext: true },
       ],
       6: [
-        // High confidence - has actual charges
-        { pattern: /(?:additional\s+)?(?:charges|fee|fees)\s+(?:are|is|for)\s+([a-z\s]+(?:travel|delivery|extra|cost|price))/i, requiresContext: true },
-        { pattern: /(?:travel|delivery)\s+(?:fee|charge|cost)/i, requiresContext: true },
-        // Lower confidence
-        { pattern: /\b(?:additional\s+charges|charges|fee|fees|extra|cost|price|travel|delivery)\b/i, requiresContext: false }
+        // Fees: travel/callout/waste etc
+        { pattern: /\b(?:fees?|charges?)\s*(?:include|are|is|:)?\s*([^.,]{3,80})/i, requiresContext: true },
+        { pattern: /\b(travel\s+time|travel\s+fee|callout\s+fee|waste\s+disposal|delivery\s+fee)\b/i, requiresContext: true },
+        // Slang-ish
+        { pattern: /\bbunnings\s+run\b/i, requiresContext: true },
       ]
     };
     
@@ -166,30 +518,51 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         
         // Check patterns - prefer high confidence matches
         let highConfidenceMatch = false;
-        let lowConfidenceMatch = false;
+        // low-confidence matching removed for accuracy
         
         for (const patternObj of patterns) {
           const match = lowerTranscript.match(patternObj.pattern);
           if (match) {
             if (patternObj.requiresContext) {
-              // High confidence - has actual data
-              if (match[1] && match[1].trim().length > 2) {
+              // High confidence - has actual data (or at least a real match)
+              // NOTE: some regexes don't have capture groups; fall back to match[0].
+              const captured = (match[1] || match[0] || '').trim();
+              if (captured.length > 2) {
                 highConfidenceMatch = true;
                 break;
               }
-            } else {
-              // Low confidence - just keyword
-              lowConfidenceMatch = true;
             }
           }
         }
         
-        // Only mark complete if:
-        // 1. High confidence match (has actual data), OR
-        // 2. Low confidence match AND it's a final transcript (not interim)
-        if (highConfidenceMatch || (lowConfidenceMatch && isFinal)) {
-          console.log(`[VoiceRecorder] ✓ Real-time detection: "${item.label}" - confidence: ${highConfidenceMatch ? 'high' : 'low'}`);
-          return { ...item, status: 'complete' };
+        // During recording, mark as "detecting" on HIGH confidence matches.
+        // "complete" is reserved for confirmed extracted data (Whisper/GPT).
+        if (highConfidenceMatch) {
+          // Only log + update on state change (reduces spam / improves responsiveness)
+          if (DEBUG_VOICE && isRecordingRef.current && item.status === 'waiting') {
+            console.log(`[VoiceRecorder] ✓ Real-time detection: "${item.label}" - confidence: high`);
+          }
+          if (isRecordingRef.current && item.status === 'waiting') {
+            return { ...item, status: 'detecting' };
+          }
+          // If we're already detecting, keep it there until confirmed by quote_data.
+          return item;
+        }
+
+        // Fallback: if the user said the section label (even if recognition is messy),
+        // mark as detecting so the UI feels responsive.
+        if (isRecordingRef.current && item.status === 'waiting') {
+          const t = lowerTranscript;
+          const saidLabel =
+            (item.id === 2 && (t.includes('customer name') || t.includes('client name') || t.includes('custom name') || t.includes('customer') || t.includes('client'))) ||
+            (item.id === 3 && (t.includes('scope of work') || t.includes('scope') || t.includes('work'))) ||
+            (item.id === 4 && (t.includes('materials') || t.includes('material') || t.includes('supplies'))) ||
+            (item.id === 5 && (t.includes('time to complete') || t.includes('time') || t.includes('days') || t.includes('hours'))) ||
+            (item.id === 6 && (t.includes('additional') || t.includes('fees') || t.includes('fee') || t.includes('charges') || t.includes('bunnings')));
+
+          if (saidLabel) {
+            return { ...item, status: 'detecting' };
+          }
         }
         
         return item;
@@ -197,10 +570,84 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
     });
   };
 
+  // NOTE: We do NOT auto-promote detecting → complete.
+  // "complete" should be reserved for confirmed extracted data (Whisper/GPT),
+  // otherwise the checklist feels inaccurate.
+
+  const scheduleIncrementalExtraction = () => {
+    if (!ENABLE_INCREMENTAL_EXTRACTION) return;
+    if (!liveSpeechTranscriptRef.current || liveSpeechTranscriptRef.current.trim().length < 12) return;
+    if (incrementalExtractInFlightRef.current) return;
+    if (incrementalExtractCountRef.current >= MAX_INCREMENTAL_EXTRACT_CALLS) return;
+
+    if (incrementalExtractTimeoutRef.current) {
+      clearTimeout(incrementalExtractTimeoutRef.current);
+    }
+
+    incrementalExtractTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        incrementalExtractInFlightRef.current = true;
+        incrementalExtractCountRef.current += 1;
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const snippet = liveSpeechTranscriptRef.current.trim().slice(-1200);
+
+        const extractionResponse = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              endpoint: 'chat/completions',
+              body: {
+                model: 'gpt-4o-mini',
+                messages: [
+                  {
+                    role: 'system',
+                    content:
+                      'Extract structured quote details from partial speech text (may include mumbling, slang, abbreviations). Be conservative: only fill fields if clearly mentioned, but DO handle common trade slang and casual phrasing. Write scope items as professional action phrases (e.g., "Build and install custom shelving" instead of "and shelves"). Do not drop descriptive adjectives like "custom", "premium", or "detailed".\n\nIMPORTANT: scopeOfWork can be very detailed. When you can, split into multiple short deliverables (each <= 90 chars). Prefer 3–8 items for partial snippets.\n\nFor fuzzy quantities: "a couple"=2, "a few"=3, "some"=1, "heaps"=10 (choose a reasonable number). Keep vague materials like "fixings/hardware/glue/paint" as material items (never drop them). Return JSON only.'
+                  },
+                  {
+                    role: 'user',
+                    content: `Partial transcript (may be incomplete):\n\n${snippet}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null",\n  "jobLocation": "string or null",\n  "scopeOfWork": ["string"] or null,\n  "timeline": "string or null",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null,\n  "fees": [{"description": "string", "amount": number}] or null\n}`
+                  }
+                ],
+                response_format: { type: 'json_object' }
+              }
+            }),
+          }
+        );
+
+        if (!extractionResponse.ok) return;
+        const extractionData = await extractionResponse.json();
+        const partial = JSON.parse(extractionData.choices?.[0]?.message?.content || '{}');
+
+        const merged = mergeQuoteData(draftQuoteDataRef.current, partial);
+        draftQuoteDataRef.current = merged;
+
+        // Update checklist locally for faster perceived progress (no DB writes here).
+        updateChecklistFromQuoteData(merged, { confirmed: false });
+      } catch (e) {
+        // Fail open: never block recording for incremental extraction
+        console.warn('[VoiceRecorder] Incremental extraction failed (non-fatal):', e);
+      } finally {
+        incrementalExtractInFlightRef.current = false;
+      }
+    }, 900); // debounce to avoid spamming OpenAI while user speaks
+  };
+
   // Helper function to update checklist based on quote_data
-  const updateChecklistFromQuoteData = (qd: any) => {
-    console.log('[VoiceRecorder] FULL quote_data structure:', JSON.stringify(qd, null, 2));
-    console.log('[VoiceRecorder] Field checks:', {
+  const updateChecklistFromQuoteData = (qd: any, opts?: { confirmed?: boolean }) => {
+    const confirmed = !!opts?.confirmed;
+    scheduleLivePreviewUpdate(qd);
+    if (DEBUG_VOICE) {
+      console.log('[VoiceRecorder] FULL quote_data structure:', JSON.stringify(qd, null, 2));
+      console.log('[VoiceRecorder] Field checks:', {
       jobLocation: !!qd.jobLocation,
       customerName: !!qd.customerName,
       jobTitle: !!qd.jobTitle,
@@ -209,23 +656,18 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       fees: !!qd.fees,
       feesType: typeof qd.fees,
       feesIsArray: Array.isArray(qd.fees)
-    });
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1c587d41-3a78-459c-ae6c-5ce52087404d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voicerecorder.tsx:102',message:'Quote data received',data:{hasJobLocation:!!qd.jobLocation,hasCustomerName:!!qd.customerName,hasJobTitle:!!qd.jobTitle,hasMaterials:!!qd.materials?.length,hasLaborHours:!!qd.laborHours,hasFees:!!qd.fees,quoteDataKeys:Object.keys(qd),fullQuoteData:qd},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
+      });
+    }
     
     setChecklistItems(prev => {
-      console.log('[VoiceRecorder] Current checklist before update:', prev.map(i => `${i.id}:${i.label}:${i.status}`));
+      if (DEBUG_VOICE) {
+        console.log('[VoiceRecorder] Current checklist before update:', prev.map(i => `${i.id}:${i.label}:${i.status}`));
+      }
       const updated = prev.map(item => {
         // Skip items that are already complete
         if (item.status === 'complete') return item;
-        
-        // If item is detecting, mark as complete (timeout logic removed for testing)
-        if (item.status === 'detecting') {
-          console.log('[VoiceRecorder] Item was detecting, marking complete:', item.label);
-          return { ...item, status: 'complete' };
-        }
+        // IMPORTANT: Do NOT auto-promote detecting -> complete from partial/draft data.
+        // Only allow "complete" when confirmed by Whisper/GPT or server status indicates extraction complete.
         
         let shouldDetect = false;
         let detectionReason = '';
@@ -245,43 +687,43 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           shouldDetect = true;
           detectionReason = 'materials array has items';
         }
-        if (item.id === 5 && qd.laborHours) {
+        if (item.id === 5 && (qd.laborHours || qd.timeline)) {
           shouldDetect = true;
-          detectionReason = 'laborHours exists';
+          detectionReason = qd.laborHours ? 'laborHours exists' : 'timeline exists';
         }
-        // Note: fees field is not in extraction prompt, so it's optional
-        // If fees exists and has data, detect it. Otherwise, mark as complete anyway (optional field)
+        // Fees are optional. Only mark complete if we actually extracted a fee.
         if (item.id === 6) {
           if (qd.fees && (Array.isArray(qd.fees) ? qd.fees.length > 0 : Object.keys(qd.fees).length > 0)) {
             shouldDetect = true;
             detectionReason = 'fees exists';
           } else {
-            // Fees not in data (not in extraction prompt), mark as complete since it's optional
-            console.log('[VoiceRecorder] Item 6 (Additional charges) - fees not in data (optional field), marking complete');
-            shouldDetect = true;
-            detectionReason = 'fees optional - not required';
+            shouldDetect = false;
           }
         }
       
-        if (shouldDetect && item.status === 'waiting') {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/1c587d41-3a78-459c-ae6c-5ce52087404d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voicerecorder.tsx:116',message:'Item detected - marking complete immediately',data:{itemId:item.id,itemLabel:item.label,previousStatus:item.status,detectionReason},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          console.log('[VoiceRecorder] ✓ Detected data for:', item.label, '- reason:', detectionReason, '- marking complete immediately');
+        if (shouldDetect) {
+          if (DEBUG_VOICE) {
+            console.log('[VoiceRecorder] ✓ Detected data for:', item.label, '- reason:', detectionReason, confirmed ? '- marking COMPLETE (confirmed)' : '- marking DETECTING (draft)');
+          }
           // Clear any existing timeout for this item
           const existingTimeout = detectionTimeoutsRef.current.get(`item-${item.id}`);
           if (existingTimeout) {
             clearTimeout(existingTimeout);
             detectionTimeoutsRef.current.delete(`item-${item.id}`);
           }
-          // Mark as complete immediately (removed delay to test if timeout was the issue)
-          return { ...item, status: 'complete' };
+          // Only mark complete for confirmed data; otherwise keep detecting for "alive" UI.
+          if (confirmed) return { ...item, status: 'complete' };
+          return item.status === 'detecting' ? item : { ...item, status: 'detecting' };
         } else if (item.status === 'waiting') {
-          console.log('[VoiceRecorder] ✗ Item NOT detected:', item.label, 'shouldDetect:', shouldDetect);
+          if (DEBUG_VOICE) {
+            console.log('[VoiceRecorder] ✗ Item NOT detected:', item.label, 'shouldDetect:', shouldDetect);
+          }
         }
         return item;
       });
-      console.log('[VoiceRecorder] Checklist after update:', updated.map(i => `${i.id}:${i.label}:${i.status}`));
+      if (DEBUG_VOICE) {
+        console.log('[VoiceRecorder] Checklist after update:', updated.map(i => `${i.id}:${i.label}:${i.status}`));
+      }
       return updated;
     });
   };
@@ -320,7 +762,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       // Update checklist items when quote_data is found
       if (data && data.quote_data) {
-        updateChecklistFromQuoteData(data.quote_data);
+        const confirmed = data.status === 'extracted' || data.status === 'complete' || data.status === 'creating_quote';
+        updateChecklistFromQuoteData(data.quote_data, { confirmed });
       } else {
         console.log('[VoiceRecorder] No quote_data found in polling result, status:', data?.status);
       }
@@ -353,6 +796,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       });
       streamRef.current = stream;
       console.log('[VoiceRecorder] Microphone access granted');
+      startVisualizer(stream);
 
       audioChunksRef.current = [];
       isStoppingRef.current = false;
@@ -392,6 +836,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       recorder.onstart = () => {
         console.log('[VoiceRecorder] Recording started');
+        // Reset draft accumulation per recording
+        liveSpeechTranscriptRef.current = '';
+        draftQuoteDataRef.current = null;
+        incrementalExtractCountRef.current = 0;
         
         // Start real-time speech recognition for checklist updates
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -400,7 +848,44 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           
           recognition.continuous = true;
           recognition.interimResults = true;
-          recognition.lang = 'en-US';
+          // AU-first (helps a bit with local accents/phrasing)
+          recognition.lang = 'en-AU';
+
+          // Best-effort: bias recognition towards our domain vocabulary (helps with "customer/materials/fees" etc.)
+          try {
+            const GrammarList = (window as any).webkitSpeechGrammarList || (window as any).SpeechGrammarList;
+            if (GrammarList) {
+              const list = new GrammarList();
+              const phrases = [
+                'job address',
+                'address',
+                'customer name',
+                'custom name',
+                'client name',
+                'scope of work',
+                'scope',
+                'materials needed',
+                'material list',
+                'materials',
+                'time to complete',
+                'timeline',
+                'additional charges',
+                'fees',
+                'bunnings run',
+                'travel fee',
+                'callout fee',
+                'fixings',
+                'gyprock',
+                'liquid nails',
+              ];
+              // JSGF grammar
+              const jsgf = `#JSGF V1.0; grammar smash; public <phrase> = ${phrases.join(' | ')} ;`;
+              list.addFromString(jsgf, 1);
+              recognition.grammars = list;
+            }
+          } catch {
+            // non-fatal
+          }
           
           recognition.onresult = (event: any) => {
             let interimTranscript = '';
@@ -415,15 +900,32 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
               }
             }
             
-            // Prioritize final transcripts for accuracy
-            // Only use interim for high-confidence matches
+            // Prioritize final transcripts for accuracy.
+            // Throttle detection to feel responsive (avoid state churn on every interim chunk).
+            const scheduleDetect = (text: string) => {
+              pendingDetectTranscriptRef.current = text;
+              if (detectThrottleTimeoutRef.current) return;
+              detectThrottleTimeoutRef.current = window.setTimeout(() => {
+                const t = pendingDetectTranscriptRef.current;
+                pendingDetectTranscriptRef.current = '';
+                detectThrottleTimeoutRef.current = null;
+                if (t && t.trim()) detectKeywordsInSpeech(t.trim());
+              }, 140);
+            };
+
             if (finalTranscript.trim()) {
-              console.log('[VoiceRecorder] Final speech detected:', finalTranscript.trim());
-              detectKeywordsInSpeech(finalTranscript.trim(), true);
+              if (DEBUG_VOICE) console.log('[VoiceRecorder] Final speech detected:', finalTranscript.trim());
+              bumpHeard();
+              scheduleDetect(finalTranscript.trim());
+
+              // Build a live transcript buffer for optional incremental extraction
+              liveSpeechTranscriptRef.current = `${liveSpeechTranscriptRef.current} ${finalTranscript.trim()}`.trim();
+              scheduleIncrementalExtraction();
             } else if (interimTranscript.trim()) {
-              // For interim results, only check for high-confidence patterns
-              console.log('[VoiceRecorder] Interim speech detected:', interimTranscript.trim());
-              detectKeywordsInSpeech(interimTranscript.trim(), false);
+              // Interim results: still drive "detecting" state, but throttled
+              if (DEBUG_VOICE) console.log('[VoiceRecorder] Interim speech detected:', interimTranscript.trim());
+              bumpHeard();
+              scheduleDetect(interimTranscript.trim());
             }
           };
           
@@ -479,6 +981,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
         }
+        stopVisualizer();
 
         await uploadAudio(audioBlob);
       };
@@ -533,6 +1036,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
     }
 
     isRecordingRef.current = false;
+    stopVisualizer();
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       console.log('[VoiceRecorder] Stopping MediaRecorder');
@@ -542,7 +1046,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   };
 
   const uploadAudio = async (audioBlob: Blob) => {
-    setIsUploading(true);
+    setIsProcessing(true);
     console.log('[VoiceRecorder] Starting upload, blob size:', audioBlob.size);
 
     try {
@@ -595,23 +1099,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       console.log('[VoiceRecorder] Public URL:', publicUrl);
 
-      await saveToDatabase(publicUrl, orgId);
-
-      setUploadSuccess(true);
-
-      setTimeout(() => {
-        onBack();
-      }, 1500);
+      await saveToDatabase(publicUrl, orgId, audioBlob);
 
     } catch (error: any) {
       console.error('[VoiceRecorder] Upload failed:', error);
       alert('Failed to upload recording: ' + (error.message || 'Unknown error'));
-      setIsUploading(false);
+      setIsProcessing(false);
       setIsRecording(false);
     }
   };
 
-  const saveToDatabase = async (audioUrl: string, orgId: string) => {
+  const saveToDatabase = async (audioUrl: string, orgId: string, audioBlob: Blob) => {
     try {
       console.log('[VoiceRecorder] Saving to database:', { audioUrl, orgId });
 
@@ -632,21 +1130,33 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       console.log('[VoiceRecorder] Recording saved to database:', data);
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/1c587d41-3a78-459c-ae6c-5ce52087404d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'voicerecorder.tsx:355',message:'Setting voice quote ID',data:{voiceQuoteId:data.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       setCurrentVoiceQuoteId(data.id);
       // Removed - using useEffect polling instead
       // startPolling(data.id);
 
-      await processRecording(data.id, audioUrl);
+      // SAFETY: If we have a draft from incremental extraction, persist it early (best-effort).
+      // This improves perceived speed post-stop without risking the core pipeline.
+      if (ENABLE_INCREMENTAL_EXTRACTION && draftQuoteDataRef.current) {
+        try {
+          await supabase
+            .from('voice_quotes')
+            .update({ quote_data: draftQuoteDataRef.current })
+            .eq('id', data.id);
+        } catch (e) {
+          console.warn('[VoiceRecorder] Failed to persist draft quote_data (non-fatal):', e);
+        }
+      }
+
+      // Pass the original blob forward to avoid re-downloading from storage.
+      // (This is a local perf win; does not change DB behavior.)
+      await processRecording(data.id, audioUrl, audioBlob);
     } catch (error) {
       console.error('[VoiceRecorder] Database save failed:', error);
       throw error;
     }
   };
 
-  const processRecording = async (voiceQuoteId: string, audioUrl: string) => {
+  const processRecording = async (voiceQuoteId: string, audioUrl: string, localAudioBlob?: Blob) => {
     try {
       console.log('[VoiceRecorder] Starting transcription for:', voiceQuoteId);
 
@@ -655,11 +1165,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         .update({ status: 'transcribing' })
         .eq('id', voiceQuoteId);
 
-      const audioResponse = await fetch(audioUrl);
-      if (!audioResponse.ok) {
-        throw new Error(`Failed to fetch audio: ${audioResponse.status} ${audioResponse.statusText}`);
-      }
-      const audioBlob = await audioResponse.blob();
+      // SPEED SAFETY: Prefer the local blob (no re-download) when available.
+      const audioBlob = localAudioBlob
+        ? localAudioBlob
+        : await (async () => {
+            const audioResponse = await fetch(audioUrl);
+            if (!audioResponse.ok) {
+              throw new Error(`Failed to fetch audio: ${audioResponse.status} ${audioResponse.statusText}`);
+            }
+            return await audioResponse.blob();
+          })();
 
       const formData = new FormData();
       formData.append('endpoint', 'audio/transcriptions');
@@ -687,23 +1202,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       }
 
       const transcriptionData = await transcriptionResponse.json();
-      const transcript = transcriptionData.text;
+      const transcriptText = transcriptionData.text;
 
-      if (!transcript) {
+      if (!transcriptText) {
         throw new Error('Transcription returned empty text');
       }
 
-      console.log('[VoiceRecorder] Transcript:', transcript);
+      console.log('[VoiceRecorder] Transcript:', transcriptText);
+      setTranscript(transcriptText);
 
       await supabase
         .from('voice_quotes')
         .update({
           status: 'transcribed',
-          transcript: transcript
+          transcript: transcriptText
         })
         .eq('id', voiceQuoteId);
 
-      await extractQuoteData(voiceQuoteId, transcript);
+      await extractQuoteData(voiceQuoteId, transcriptText);
 
     } catch (error: any) {
       console.error('[VoiceRecorder] Processing failed:', error);
@@ -735,6 +1251,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   const extractQuoteData = async (voiceQuoteId: string, transcript: string) => {
     try {
       console.log('[VoiceRecorder] Extracting quote data...');
+      setIsExtracting(true);
 
       await supabase
         .from('voice_quotes')
@@ -759,11 +1276,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
               messages: [
                 {
                   role: 'system',
-                  content: 'You are a helpful assistant that extracts structured quote information from voice transcripts. Extract all available information including customer name, job title/description, job location/address, materials with quantities, and labor hours. If a field is not mentioned, use null. Return JSON only.'
+                  content: 'Extract structured quote information from voice transcripts (mumbling/slang/abbreviations possible). Write professional, high-detail action items for jobTitle and scopeOfWork. Preserve verbs + adjectives exactly (e.g., if the user says "build and fit custom shelves", keep that meaning, not "and shelves"). Ensure items are grammatically complete and do not start with fragments like "and".\n\nIMPORTANT: Scope of work can be very detailed. Produce a list of deliverables:\n- scopeOfWork MUST be an array of short, clear deliverables (split big sentences into multiple items).\n- Prefer 4–12 items when possible.\n- Each item should be <= 90 characters.\n\nBe tolerant:\n- Understand common AU trade slang: bunnings run, fixings, hardware, sparky, chippy, arvo, reno, studs, noggins, gyprock, liquid nails/goop.\n- Keep vague materials as material items (never drop them): "fixings", "hardware", "glue", "paint", "timber".\n- Convert fuzzy quantities to reasonable numbers: "a couple"=2, "a few"=3, "some"=1, "heaps"=10.\n- If a material has no explicit quantity, use 1.\n- If a unit is unclear, use "unit".\n- For time ranges like "three to four days", set timeline as "3-4 days".\n- If a fee is described without an amount, include it with amount null.\n\nIf a field is not mentioned, use null. Return JSON only.'
                 },
                 {
                   role: 'user',
-                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null (brief description of the work)",\n  "jobLocation": "string or null (address or location)",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null\n}`
+                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null (brief description of the work)",\n  "jobLocation": "string or null (address or location)",\n  "scopeOfWork": ["string"] or null,\n  "timeline": "string or null",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null,\n  "fees": [{"description": "string", "amount": number}] or null\n}`
                 }
               ],
               response_format: { type: 'json_object' }
@@ -781,11 +1298,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       console.log('[VoiceRecorder] Extracted data:', quoteData);
 
+      // Merge with any draft extracted during recording (if enabled)
+      // IMPORTANT: final (Whisper-based) extraction must win over draft snippets.
+      const finalQuoteData = ENABLE_INCREMENTAL_EXTRACTION
+        ? mergeQuoteData(draftQuoteDataRef.current, quoteData, { preferPatch: true })
+        : quoteData;
+
       // Update database with extracted data
       const { error: updateError } = await supabase
         .from('voice_quotes')
         .update({ 
-          quote_data: quoteData,
+          quote_data: finalQuoteData,
           status: 'extracted'
         })
         .eq('id', voiceQuoteId);
@@ -794,11 +1317,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         console.error('[VoiceRecorder] Failed to update quote_data:', updateError);
       } else {
         console.log('[VoiceRecorder] Successfully updated quote_data in database');
-        // Immediately update checklist with extracted data
-        updateChecklistFromQuoteData(quoteData);
+        // Immediately update checklist with extracted data (confirmed)
+        updateChecklistFromQuoteData(finalQuoteData, { confirmed: true });
         
         // Create the actual quote from extracted data
-        await createQuoteFromVoiceData(voiceQuoteId, quoteData);
+        await createQuoteFromVoiceData(voiceQuoteId, finalQuoteData);
       }
 
     } catch (error) {
@@ -813,6 +1336,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   const createQuoteFromVoiceData = async (voiceQuoteId: string, quoteData: any) => {
     try {
       console.log('[VoiceRecorder] Creating quote from extracted data...');
+      setIsExtracting(false);
+      setIsCreatingQuote(true);
       
       // Get the voice_quote record to get org_id
       const { data: voiceQuote, error: voiceQuoteError } = await supabase
@@ -835,6 +1360,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       // For now, let's create the quote directly using the extracted data
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
+
+      // Best-effort pricing profile (used for labour rate and optional markup).
+      let pricingProfile: any = null;
+      try {
+        const { data: pp, error: ppError } = await supabase.rpc('get_effective_pricing_profile', { p_user_id: user.id });
+        if (!ppError) pricingProfile = pp;
+      } catch (e) {
+        console.warn('[VoiceRecorder] Pricing profile fetch failed (non-fatal):', e);
+      }
 
       // Create or find customer (required - quotes table has NOT NULL constraint)
       let customerId = voiceQuote.customer_id;
@@ -896,6 +1430,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       }
 
       // Create the quote
+      const normalizedScopeOfWork =
+        Array.isArray(quoteData?.scopeOfWork)
+          ? quoteData.scopeOfWork.filter((s: any) => typeof s === 'string' && s.trim().length > 0).map((s: string) => s.trim())
+          : (typeof quoteData?.scopeOfWork === 'string' && quoteData.scopeOfWork.trim().length > 0)
+            ? [quoteData.scopeOfWork.trim()]
+            : (typeof quoteData?.jobTitle === 'string' && quoteData.jobTitle.trim().length > 0)
+              ? [quoteData.jobTitle.trim()]
+              : null;
+
       const { data: newQuote, error: quoteError } = await supabase
         .from('quotes')
         .insert({
@@ -903,6 +1446,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           customer_id: customerId,
           quote_number: quoteNumberData,
           title: quoteData.jobTitle || 'Voice Quote',
+          scope_of_work: normalizedScopeOfWork,
           site_address: quoteData.jobLocation || null,
           source: 'voice',
           created_by_user_id: user.id
@@ -915,32 +1459,200 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       }
 
       console.log('[VoiceRecorder] Quote created:', newQuote.id);
-      
-      // Store the created quote ID for navigation
-      setCreatedQuoteId(newQuote.id);
 
       // Create line items
       const lineItems = [];
 
       // Add materials line items
       if (quoteData.materials && Array.isArray(quoteData.materials)) {
-        for (const material of quoteData.materials) {
+        const materials = quoteData.materials
+          .filter((m: any) => typeof m?.name === 'string' && m.name.trim().length > 0)
+          .map((m: any) => ({
+            description: m.name.trim(),
+            quantity: typeof m.quantity === 'number' && Number.isFinite(m.quantity) && m.quantity > 0 ? m.quantity : 1,
+            unit: typeof m.unit === 'string' && m.unit.trim().length > 0 ? m.unit.trim() : 'unit',
+          }));
+
+        // Region/currency context for pricing
+        const currency: string = (pricingProfile?.default_currency || 'AUD').toUpperCase();
+        const regionCode = currencyToRegionCode(currency);
+        const regionName = regionCodeToName(regionCode);
+
+        // Tier 1: match materials to catalog and price if possible (fail-open).
+        let matchedCatalog: any[] | null = null;
+        const matchedCatalogItemsById: Record<string, any> = {};
+
+        if (materials.length > 0) {
+          try {
+            const payload = materials.map((m: any) => ({
+              description: m.description,
+              unit: m.unit,
+            }));
+
+            const { data: matchRes, error: matchErr } = await supabase.rpc('match_catalog_items_for_quote_materials', {
+              p_org_id: voiceQuote.org_id,
+              p_region_code: regionCode,
+              p_materials: payload,
+            });
+
+            if (!matchErr && Array.isArray(matchRes)) {
+              matchedCatalog = matchRes;
+              const ids = matchRes
+                .map((r: any) => r?.catalog_item_id)
+                .filter((id: any) => typeof id === 'string');
+
+              if (ids.length > 0) {
+                const { data: items } = await supabase
+                  .from('material_catalog_items')
+                  .select('id, unit_price_cents, typical_low_price_cents, typical_high_price_cents, unit')
+                  .in('id', ids);
+                (items || []).forEach((it: any) => {
+                  matchedCatalogItemsById[it.id] = it;
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('[VoiceRecorder] Catalog matching failed (non-fatal):', e);
+          }
+        }
+
+        // Precompute per-item prices + metadata
+        const priced: Array<{
+          description: string;
+          quantity: number;
+          unit: string;
+          unitPriceCents: number;
+          catalogItemId: string | null;
+          notes: string | null;
+          needsReview: boolean;
+        }> = materials.map((m: { description: string; quantity: number; unit: string }, idx: number) => {
+          let unitPriceCents = 0;
+          let catalogItemId: string | null = null;
+          let notes: string | null = null;
+          let needsReview = false;
+
+          if (matchedCatalog) {
+            const match = matchedCatalog[idx];
+            catalogItemId = typeof match?.catalog_item_id === 'string' ? match.catalog_item_id : null;
+
+            if (catalogItemId && matchedCatalogItemsById[catalogItemId]) {
+              const cat = matchedCatalogItemsById[catalogItemId];
+              const direct = typeof cat.unit_price_cents === 'number' ? cat.unit_price_cents : null;
+              const low = typeof cat.typical_low_price_cents === 'number' ? cat.typical_low_price_cents : null;
+              const high = typeof cat.typical_high_price_cents === 'number' ? cat.typical_high_price_cents : null;
+              const midpoint = low !== null && high !== null ? Math.round((low + high) / 2) : null;
+              unitPriceCents = direct ?? midpoint ?? 0;
+            }
+          }
+
+          return {
+            description: m.description,
+            quantity: m.quantity,
+            unit: m.unit,
+            unitPriceCents: typeof unitPriceCents === 'number' && Number.isFinite(unitPriceCents) ? Math.max(0, Math.round(unitPriceCents)) : 0,
+            catalogItemId,
+            notes,
+            needsReview,
+          };
+        });
+
+        // Tier 2: AI estimation for any missing prices (optional, behind flag)
+        const missingIdx = priced
+          .map((p, idx) => ({ p, idx }))
+          .filter(({ p }) => !p.unitPriceCents || p.unitPriceCents <= 0)
+          .map(({ idx }) => idx);
+
+        if (ENABLE_AI_MATERIAL_PRICING && missingIdx.length > 0) {
+          const aiItems = missingIdx.map((idx) => ({
+            description: priced[idx].description,
+            unit: priced[idx].unit,
+            quantity: priced[idx].quantity,
+          }));
+
+          const aiRes = await estimateMaterialUnitPricesBatch({
+            regionName,
+            currency,
+            items: aiItems,
+          });
+
+          if (aiRes && aiRes.length > 0) {
+            for (let k = 0; k < missingIdx.length; k++) {
+              const idx = missingIdx[k];
+              const r = aiRes[k];
+              if (r && typeof r.unit_price_cents === 'number' && r.unit_price_cents > 0) {
+                priced[idx].unitPriceCents = Math.max(1, Math.round(r.unit_price_cents));
+                priced[idx].needsReview = r.confidence === 'low';
+                priced[idx].notes =
+                  `AI estimated (${r.confidence} confidence) - ${r.reasoning}. Please review and adjust if needed.`;
+              }
+            }
+          }
+        }
+
+        // Tier 3: Safe fallback (always on)
+        for (const p of priced) {
+          if (!p.unitPriceCents || p.unitPriceCents <= 0) {
+            p.unitPriceCents = DEFAULT_FALLBACK_MATERIAL_UNIT_PRICE_CENTS;
+            p.needsReview = true;
+            p.notes = 'Default price applied (AI/catalog unavailable). Please update with actual pricing.';
+          }
+        }
+
+        // Debug (high-signal): prove we are never inserting $0 materials
+        console.log(
+          '[VoiceRecorder] Material pricing decisions:',
+          priced.map((p) => ({
+            description: p.description,
+            unit: p.unit,
+            quantity: p.quantity,
+            unitPriceCents: p.unitPriceCents,
+            source: p.catalogItemId
+              ? 'catalog'
+              : (typeof p.notes === 'string' && p.notes.toLowerCase().startsWith('ai estimated'))
+                ? 'ai'
+                : 'fallback',
+            needsReview: p.needsReview,
+          }))
+        );
+
+        // Optional markup from pricing profile (applies to ALL materials prices)
+        const markup = pricingProfile?.materials_markup_percent;
+        if (typeof markup === 'number' && Number.isFinite(markup) && markup > 0) {
+          for (const p of priced) {
+            if (p.unitPriceCents > 0) {
+              p.unitPriceCents = Math.round(p.unitPriceCents * (1 + markup / 100));
+            }
+          }
+        }
+
+        // Create line items with GUARANTEED pricing (never null/zero)
+        for (const p of priced) {
+          const qty = p.quantity;
+          const unitPriceCents = p.unitPriceCents;
           lineItems.push({
             org_id: voiceQuote.org_id,
             quote_id: newQuote.id,
             position: lineItems.length + 1,
             item_type: 'materials',
-            description: material.name,
-            quantity: material.quantity || 1,
-            unit: material.unit || 'unit',
-            unit_price_cents: 0, // Will need pricing profile
-            line_total_cents: 0 // Will be calculated by triggers
+            description: p.description,
+            quantity: qty,
+            unit: p.unit,
+            catalog_item_id: p.catalogItemId,
+            unit_price_cents: unitPriceCents,
+            line_total_cents: Math.max(0, Math.round(unitPriceCents * qty)),
+            notes: p.notes,
+            is_needs_review: p.needsReview,
+            is_placeholder: false,
           });
         }
       }
 
       // Add labor line item
       if (quoteData.laborHours) {
+        const labourRateCents =
+          typeof pricingProfile?.hourly_rate_cents === 'number' && Number.isFinite(pricingProfile.hourly_rate_cents)
+            ? Math.round(pricingProfile.hourly_rate_cents)
+            : 0;
         lineItems.push({
           org_id: voiceQuote.org_id,
           quote_id: newQuote.id,
@@ -949,9 +1661,30 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           description: 'Labor',
           quantity: quoteData.laborHours,
           unit: 'hours',
-          unit_price_cents: 0, // Will need pricing profile
-          line_total_cents: 0 // Will be calculated by triggers
+          unit_price_cents: labourRateCents,
+          line_total_cents: Math.max(0, Math.round(labourRateCents * quoteData.laborHours))
         });
+      }
+
+      // Add additional fees (if extracted)
+      if (Array.isArray(quoteData?.fees) && quoteData.fees.length > 0) {
+        for (const fee of quoteData.fees) {
+          const desc = typeof fee?.description === 'string' ? fee.description.trim() : '';
+          const amount = typeof fee?.amount === 'number' && Number.isFinite(fee.amount) ? fee.amount : null;
+          if (!desc) continue;
+          const cents = amount !== null ? Math.max(0, Math.round(amount * 100)) : 0;
+          lineItems.push({
+            org_id: voiceQuote.org_id,
+            quote_id: newQuote.id,
+            position: lineItems.length + 1,
+            item_type: 'fee',
+            description: desc,
+            quantity: 1,
+            unit: 'service',
+            unit_price_cents: cents,
+            line_total_cents: cents
+          });
+        }
       }
 
       if (lineItems.length > 0) {
@@ -980,6 +1713,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         .eq('id', voiceQuoteId);
 
       console.log('[VoiceRecorder] Quote creation complete');
+
+      // Only now that the quote + line items are created, trigger navigation
+      setCreatedQuoteId(newQuote.id);
 
     } catch (error) {
       console.error('[VoiceRecorder] Quote creation failed:', error);
@@ -1060,107 +1796,214 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   // The new useEffect polling (lines 63-120) handles checklist updates directly
 
   return (
-    <div className="h-full w-full bg-[#FAFAFA] flex flex-col">
+    <div className="h-full w-full bg-white flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-6 py-5 shrink-0">
-        <h1 className="text-2xl font-bold text-[#0f172a]">Voice Quote</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Voice Quote</h1>
         <button
           onClick={onBack}
-          disabled={isUploading}
-          className="text-[15px] font-medium text-[#64748b] hover:text-[#0f172a] transition-colors disabled:opacity-50"
+          disabled={isProcessing}
+          className="text-[15px] font-medium text-slate-500 hover:text-slate-900 transition-colors disabled:opacity-50"
         >
           Cancel
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-8">
-        <div className="w-full max-w-md mx-auto">
-          <div className="bg-white rounded-3xl p-6 shadow-sm w-full">
-            <div className="text-center">
-              <p className="text-[15px] text-[#64748b] mb-6">
-                {isUploading ? 'Processing recording...' :
-                 uploadSuccess ? 'Recording saved!' :
-                 'Speak naturally. We\'ll build the quote.'}
-              </p>
-
-              {uploadSuccess ? (
-                <div className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center bg-[#10b981] text-white mb-5">
-                  <Check size={50} strokeWidth={3} />
-                </div>
-              ) : isUploading ? (
-                <div className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center bg-[#f1f5f9] mb-5">
-                  <div className="w-10 h-10 border-4 border-[#94a3b8] border-t-[#0f172a] rounded-full animate-spin"></div>
-                </div>
-              ) : (
-                <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  disabled={isUploading}
-                  className="w-[100px] h-[100px] rounded-full mx-auto flex items-center justify-center transition-all duration-200 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed mb-5"
-                  style={{
-                    background: isRecording ? '#ef4444' : '#84cc16',
-                  }}
-                >
+      <div className="flex-1 flex flex-col px-6 pb-8 overflow-y-auto custom-scrollbar">
+        {!isProcessing ? (
+          <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-col items-center mb-10 pt-4">
+              <div className="relative">
+                {/* Immersive Waveform / Visualizer */}
+                <div className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-700 ease-out ${isRecording ? 'bg-primary/10 scale-110 shadow-[0_0_40px_rgba(var(--primary-rgb),0.2)]' : 'bg-slate-50'}`}>
                   {isRecording ? (
-                    <Square size={40} fill="white" />
+                    <div className="flex gap-1 items-center h-16">
+                      {[...Array(16)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="w-1 bg-primary rounded-full transition-all duration-75"
+                          ref={(el) => { visualizerBarsRef.current[i] = el; }}
+                          style={{ height: '12%' }}
+                        />
+                      ))}
+                    </div>
                   ) : (
-                    <Mic size={40} strokeWidth={2} className="text-white" />
+                    <div className="w-6 h-6 rounded-full bg-slate-300 animate-pulse" />
                   )}
-                </button>
-              )}
+                </div>
+              </div>
+              
+              <div className="text-center mt-8">
+                <h2 className={`text-xl font-bold transition-colors duration-500 ${isRecording ? 'text-primary' : 'text-slate-900'}`}>
+                  {isRecording ? 'Listening...' : 'Ready to record'}
+                </h2>
+                <p className="mt-2 text-[15px] text-slate-500 leading-relaxed max-w-[280px]">
+                  Mention the address, client name, and job details.
+                </p>
+              </div>
+            </div>
 
+            {/* Checklist with smooth transitions */}
+            <div className="flex flex-col gap-3 mb-8">
+              <div className="text-[13px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                {isRecording ? 'Detecting items...' : 'Required items:'}
+              </div>
+              {checklistItems.map((item) => (
+                <div 
+                  key={item.id}
+                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-all duration-500 ease-out ${
+                    item.status === 'complete' 
+                      ? 'bg-primary/[0.03] border-primary/20 shadow-sm translate-x-1' 
+                      : item.status === 'detecting'
+                        ? 'bg-primary/[0.04] border-primary/10 shadow-sm translate-x-0'
+                        : 'bg-slate-50 border-transparent shadow-none translate-x-0'
+                  }`}
+                >
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-700 transform ${
+                    item.status === 'complete' 
+                      ? 'bg-primary text-white scale-110 rotate-0' 
+                      : item.status === 'detecting'
+                        ? 'bg-primary/10 text-primary scale-105 shadow-sm'
+                        : 'bg-white text-slate-300 scale-100 shadow-sm'
+                  }`}>
+                    {item.status === 'complete' ? (
+                      <Check size={16} strokeWidth={3} className="animate-in zoom-in duration-300" />
+                    ) : item.status === 'detecting' ? (
+                      <Check size={16} strokeWidth={3} className="opacity-80 animate-pulse" />
+                    ) : (
+                      <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className={`block text-[15px] font-semibold transition-colors duration-500 ${
+                      item.status === 'complete' ? 'text-primary' : item.status === 'detecting' ? 'text-slate-900' : 'text-slate-600'
+                    }`}>
+                      {item.label}
+                    </span>
+
+                    {/* If the user is speaking but we haven't mapped it yet, show a subtle "audio heard" pulse */}
+                    {isRecording && item.status === 'waiting' && Date.now() - lastHeardAt < 900 && (
+                      <div className="mt-1 flex items-center gap-2 text-[12px] text-slate-400">
+                        <span className="relative inline-flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-primary/30 animate-ping" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60" />
+                        </span>
+                        Hearing you…
+                      </div>
+                    )}
+
+                    {/* Safer preview: show counts (less misleading than listing partial items) */}
+                    {item.id === 3 && Array.isArray(liveQuotePreview?.scopeOfWork) && liveQuotePreview.scopeOfWork.length > 0 && (
+                      <div className="mt-1 text-[12px] text-slate-500">
+                        {liveQuotePreview.scopeOfWork.length} scope item{liveQuotePreview.scopeOfWork.length === 1 ? '' : 's'} captured
+                      </div>
+                    )}
+
+                    {item.id === 4 && Array.isArray(liveQuotePreview?.materials) && liveQuotePreview.materials.length > 0 && (
+                      <div className="mt-1 text-[12px] text-slate-500">
+                        {liveQuotePreview.materials.length} material{liveQuotePreview.materials.length === 1 ? '' : 's'} captured
+                      </div>
+                    )}
+
+                    {item.id === 1 && typeof liveQuotePreview?.jobLocation === 'string' && liveQuotePreview.jobLocation.trim() && (
+                      <div className="mt-1 text-[12px] text-slate-500 truncate">{liveQuotePreview.jobLocation}</div>
+                    )}
+                    {item.id === 2 && typeof liveQuotePreview?.customerName === 'string' && liveQuotePreview.customerName.trim() && (
+                      <div className="mt-1 text-[12px] text-slate-500 truncate">{liveQuotePreview.customerName}</div>
+                    )}
+                    {item.id === 5 && (typeof liveQuotePreview?.timeline === 'string' || typeof liveQuotePreview?.laborHours === 'number') && (
+                      <div className="mt-1 text-[12px] text-slate-500 truncate">
+                        {typeof liveQuotePreview?.timeline === 'string' && liveQuotePreview.timeline
+                          ? liveQuotePreview.timeline
+                          : typeof liveQuotePreview?.laborHours === 'number'
+                            ? `${liveQuotePreview.laborHours} hours`
+                            : ''}
+                      </div>
+                    )}
+                    {item.id === 6 && Array.isArray(liveQuotePreview?.fees) && liveQuotePreview.fees.length > 0 && (
+                      <div className="mt-1 text-[12px] text-slate-500 truncate">
+                        {String(liveQuotePreview.fees[0]?.description || 'Additional fees')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Sticky Action Bar */}
+            <div className="mt-auto py-4">
               {isRecording && (
-                <div className="space-y-1.5 mb-5">
-                  <div className="text-3xl font-bold text-[#0f172a] tabular-nums">
+                <div className="flex flex-col items-center mb-6 animate-in fade-in slide-in-from-bottom-2">
+                  <div className="text-3xl font-bold text-slate-900 tabular-nums mb-1">
                     {formatTime(recordingTime)}
                   </div>
-                  <div className="text-sm text-[#64748b]">
-                    {60 - recordingTime}s remaining
+                  <div className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">
+                    Recording
                   </div>
                 </div>
               )}
-
-              {!isRecording && !isUploading && !uploadSuccess && (
-                <div className="text-sm text-[#94a3b8] mb-5">
-                  <p>Maximum: 60 seconds</p>
-                </div>
-              )}
-
-              {/* Checklist - always visible to guide the user */}
-              {!uploadSuccess && (
-                <div className="mt-8 space-y-3">
-                  <div className="text-sm font-medium text-[#64748b] mb-2">
-                    {isRecording ? 'Mention these items as you speak:' : 'Please mention these items in your recording:'}
-                  </div>
-                  {checklistItems.map((item) => (
-                    <div 
-                      key={item.id}
-                      className={`flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 min-h-[56px] ${
-                        item.status === 'detecting' ? 'bg-lime-50 animate-pulse' : 
-                        item.status === 'complete' ? 'bg-lime-50' : 
-                        'bg-gray-50'
-                      }`}
-                    >
-                      <div className={`
-                        w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0
-                        ${item.status === 'waiting' && 'border-2 border-gray-300 text-gray-400 bg-white'}
-                        ${item.status === 'detecting' && 'border-2 border-lime-400 text-lime-600 bg-white'}
-                        ${item.status === 'complete' && 'bg-lime-400 text-lime-900'}
-                      `}>
-                        {item.status === 'complete' ? '✓' : item.id}
-                      </div>
-                      <div className="flex-1">
-                        <div className={`font-medium text-[15px] ${
-                          item.status === 'complete' ? 'text-lime-900' : 'text-slate-900'
-                        }`}>
-                          {item.label}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`w-full h-18 rounded-3xl flex items-center justify-center gap-4 font-extrabold text-lg shadow-xl transition-all active:scale-95 active:shadow-inner ${
+                  isRecording 
+                    ? 'bg-white border-2 border-red-500 text-red-500' 
+                    : 'bg-primary text-white'
+                }`}
+              >
+                {isRecording ? (
+                  <>
+                    <div className="w-4 h-4 rounded-[3px] bg-red-500 animate-pulse" />
+                    Finish Recording
+                  </>
+                ) : (
+                  <>
+                    <Mic size={22} strokeWidth={2.5} />
+                    Start Recording
+                  </>
+                )}
+              </button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-1000">
+             <div className="w-24 h-24 relative mb-12">
+               <div className="absolute inset-0 border-[3px] border-primary/5 rounded-full" />
+               <div className="absolute inset-0 border-[3px] border-primary border-t-transparent rounded-full animate-spin" />
+               <div className="absolute inset-0 flex items-center justify-center">
+                 <Mic size={32} className="text-primary/20" />
+               </div>
+             </div>
+
+             <div className="text-center space-y-3">
+               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
+                 Generating Estimate
+               </h2>
+               <p className="text-[16px] text-slate-400 font-medium max-w-[260px] mx-auto leading-relaxed">
+                 Turning your voice recording into a professional quote...
+               </p>
+             </div>
+
+             {/* Minimalist Magic Progress Bar */}
+             <div className="mt-16 w-full max-w-[240px]">
+               <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+                 <div 
+                   className="h-full bg-primary transition-all duration-1000 ease-out"
+                   style={{ 
+                     width: isCreatingQuote ? '90%' : isExtracting ? '60%' : transcript ? '40%' : '15%' 
+                   }}
+                 />
+               </div>
+               <div className="mt-4 flex justify-between items-center px-1">
+                 <span className="text-[11px] font-bold text-primary uppercase tracking-widest">
+                   {isCreatingQuote ? 'Finalizing' : isExtracting ? 'Extracting' : 'Analyzing'}
+                 </span>
+                 <span className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+                   Almost there
+                 </span>
+               </div>
+             </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   return (
     <div 
-      className={`bg-white rounded-[24px] shadow-card border border-white/50 ${noPadding ? '' : 'p-6'} ${className} ${onClick ? 'active:scale-[0.99] transition-transform duration-200 cursor-pointer' : ''}`}
+      className={`bg-white rounded-[20px] shadow-sm border border-slate-100/50 ${noPadding ? '' : 'p-5'} ${className} ${onClick ? 'active:scale-[0.98] active:bg-slate-50/50 transition-all duration-200 cursor-pointer' : ''}`}
       onClick={onClick}
     >
       {children}

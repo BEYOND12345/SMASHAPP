@@ -76,13 +76,13 @@ export const CustomersList: React.FC<CustomersListProps> = ({
       <div className="px-5 flex flex-col gap-2.5">
         {filteredCustomers.length === 0 ? (
            <div className="flex flex-col items-center justify-center h-[60vh]">
-             <div className="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-               <Users size={32} className="text-gray-400" />
+             <div className="w-20 h-20 rounded-[24px] bg-slate-50 flex items-center justify-center mb-4 border border-slate-100">
+               <Users size={32} className="text-slate-300" />
              </div>
-             <p className="text-[15px] text-secondary font-medium">
+             <p className="text-[16px] text-slate-900 font-bold">
                {searchTerm.trim() ? 'No customers found' : 'No customers yet'}
              </p>
-             <p className="text-[13px] text-tertiary mt-1">
+             <p className="text-[14px] text-slate-400 mt-1">
                {searchTerm.trim() ? 'Try a different search term' : 'Customers will appear here as you create quotes'}
              </p>
            </div>
@@ -93,23 +93,23 @@ export const CustomersList: React.FC<CustomersListProps> = ({
               <div
                 key={customer.id}
                 onClick={() => onSelectCustomer(customer.id)}
-                className="bg-white rounded-[16px] p-4 shadow-sm hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer border border-gray-50 flex items-center gap-3"
+                className="bg-white rounded-[20px] p-4 shadow-sm border border-slate-100/50 active:scale-[0.98] active:bg-slate-50/50 transition-all duration-200 cursor-pointer flex items-center gap-4"
               >
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center text-[15px] font-bold text-gray-700 tracking-tight flex-shrink-0 border border-gray-200">
+                <div className="w-11 h-11 rounded-full bg-slate-50 flex items-center justify-center text-[14px] font-bold text-slate-900 tracking-tight flex-shrink-0 border border-slate-100">
                   {getInitials(customer.name)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-[15px] font-bold text-primary tracking-tight leading-tight mb-0.5">{customer.name}</h3>
+                  <h3 className="text-[15px] font-bold text-slate-900 tracking-tight leading-tight mb-0.5">{customer.name}</h3>
                   {hasSecondaryInfo && (
                     <div className="flex flex-col gap-0.5">
                       {customer.company_name && (
-                        <p className="text-[13px] text-secondary font-medium truncate">{customer.company_name}</p>
+                        <p className="text-[13px] text-slate-500 font-medium truncate">{customer.company_name}</p>
                       )}
                       {customer.email && (
-                        <p className="text-[12px] text-tertiary truncate">{customer.email}</p>
+                        <p className="text-[12px] text-slate-400 truncate font-medium">{customer.email}</p>
                       )}
                       {customer.phone && !customer.email && (
-                        <p className="text-[12px] text-tertiary">{customer.phone}</p>
+                        <p className="text-[12px] text-slate-400 font-medium">{customer.phone}</p>
                       )}
                     </div>
                   )}

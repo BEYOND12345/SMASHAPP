@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Layout, Header, Section } from '../components/layout';
 import { Card } from '../components/card';
 import { Input } from '../components/inputs';
 import { Button } from '../components/button';
 import { Estimate, MaterialItem, FeeItem } from '../types';
-import { ChevronLeft, Plus, X, DollarSign } from 'lucide-react';
+import { ChevronLeft, Plus, X, DollarSign, Check, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../lib/utils/calculations';
+import { supabase } from '../lib/supabase';
 
 interface EditEstimateProps {
   estimate: Estimate;
@@ -30,6 +31,31 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
   
   // Materials
   const [materials, setMaterials] = useState(estimate.materials);
+
+  // For the "self-improving" pricing loop (save corrected prices back to org catalog)
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [savingCatalogFor, setSavingCatalogFor] = useState<string | null>(null);
+  const [editedRates, setEditedRates] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        setAuthUserId(user.id);
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('org_id')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (userData?.org_id) setOrgId(userData.org_id);
+      } catch (e) {
+        console.warn('[EditEstimate] Failed to load org/user for catalog save (non-fatal):', e);
+      }
+    })();
+  }, []);
   
   // Labour
   const [labourHours, setLabourHours] = useState(estimate.labour.hours.toString());
@@ -94,15 +120,120 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
   };
 
   const updateMaterial = (id: string, field: keyof MaterialItem, value: string | number) => {
-    setMaterials(
-      materials.map((m) =>
-        m.id === id ? { ...m, [field]: value } : m
-      )
-    );
+    setMaterials(materials.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
+    if (field === 'rate') {
+      setEditedRates((prev) => ({ ...prev, [id]: true }));
+    }
   };
 
   const removeMaterial = (id: string) => {
     setMaterials(materials.filter((m) => m.id !== id));
+  };
+
+  const saveMaterialToCatalog = async (material: MaterialItem) => {
+    if (!orgId || !authUserId) {
+      alert('Unable to save to catalog yet (missing org/user). Try again in a moment.');
+      return;
+    }
+    if (!material.name || material.name.trim().length === 0) {
+      alert('Please enter a material name before saving.');
+      return;
+    }
+    const unitPriceCents = Math.round((material.rate || 0) * 100);
+    if (!Number.isFinite(unitPriceCents) || unitPriceCents <= 0) {
+      alert('Please enter a non-zero price before saving.');
+      return;
+    }
+
+    try {
+      setSavingCatalogFor(material.id);
+
+      const { data, error } = await supabase
+        .from('material_catalog_items')
+        .insert({
+          org_id: orgId,
+          created_by_user_id: authUserId,
+          name: material.name.trim(),
+          category: 'other',
+          unit: (material.unit || 'unit').trim() || 'unit',
+          unit_price_cents: unitPriceCents,
+          notes: 'Saved from quote (user correction)',
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('[EditEstimate] Save to catalog failed:', error);
+        alert(`Failed to save to catalog: ${error.message}`);
+        return;
+      }
+
+      // Update local UI metadata so it shows as a trusted catalog item
+      setMaterials((prev) =>
+        prev.map((m) =>
+          m.id === material.id
+            ? {
+                ...m,
+                catalogItemId: data?.id ?? null,
+                pricingSource: 'catalog',
+                pricingNotes: 'Saved to your catalog.',
+                needsReview: false,
+              }
+            : m
+        )
+      );
+      setEditedRates((prev) => ({ ...prev, [material.id]: false }));
+    } catch (e) {
+      console.error('[EditEstimate] Exception saving to catalog:', e);
+      alert('Failed to save to catalog. Please try again.');
+    } finally {
+      setSavingCatalogFor(null);
+    }
+  };
+
+  const renderPricingBadge = (m: MaterialItem) => {
+    const inferred =
+      m.pricingSource ||
+      (typeof m.pricingNotes === 'string' && m.pricingNotes.toLowerCase().startsWith('ai estimated')
+        ? 'ai'
+        : typeof m.pricingNotes === 'string' && m.pricingNotes.toLowerCase().startsWith('default price')
+          ? 'fallback'
+          : m.catalogItemId
+            ? 'catalog'
+            : undefined);
+
+    if (inferred === 'catalog') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/[0.08] text-primary text-[11px] font-bold">
+          <Check size={14} />
+          Catalog
+        </span>
+      );
+    }
+    if (inferred === 'ai') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-900/[0.06] text-slate-700 text-[11px] font-bold">
+          [?] AI estimated
+        </span>
+      );
+    }
+    if (inferred === 'fallback') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/[0.12] text-amber-700 text-[11px] font-bold">
+          <AlertTriangle size={14} />
+          Default
+        </span>
+      );
+    }
+    if (m.needsReview) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/[0.12] text-amber-700 text-[11px] font-bold">
+          <AlertTriangle size={14} />
+          Needs review
+        </span>
+      );
+    }
+    return null;
   };
 
   // Additional fee handlers
@@ -169,40 +300,40 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
   };
 
   return (
-    <Layout showNav={false} className="bg-surface pb-72">
+    <Layout showNav={false} className="bg-[#FAFAFA] pb-40">
       <Header
         title="Edit Quote"
         left={
           <button
             onClick={onBack}
-            className="w-10 h-10 flex items-center justify-center -ml-2 text-primary hover:bg-slate-100 rounded-full transition-colors"
+            className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-900 hover:bg-slate-100 rounded-full transition-colors"
           >
             <ChevronLeft size={24} />
           </button>
         }
       />
 
-      <div className="px-6 pt-2 pb-1">
-        <p className="text-xs text-tertiary text-center">Review and edit your quote. Nothing is sent until you tap "Send to Customer".</p>
+      <div className="px-5 pt-1 pb-1">
+        <p className="text-[11px] text-slate-400 font-bold text-center uppercase tracking-[0.15em]">Draft Review</p>
       </div>
 
-      <div className="flex flex-col gap-1 mt-2">
+      <div className="flex flex-col mt-4">
         {/* Job Details Section */}
         <Section title="Job Details">
-          <Card>
-            <div className="flex flex-col gap-4">
-              <Input
-                label="Job Title"
-                value={jobTitle}
-                onChange={(e) => setJobTitle(e.target.value)}
-                placeholder="e.g. Deck Replacement"
-              />
-              <Input
-                label="Client Name"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                placeholder="Customer name"
-              />
+          <Card className="flex flex-col gap-5">
+            <Input
+              label="Job Title"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+              placeholder="e.g. Deck Replacement"
+            />
+            <Input
+              label="Client Name"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              placeholder="Customer name"
+            />
+            <div className="grid grid-cols-1 gap-5">
               <Input
                 label="Client Email"
                 type="email"
@@ -217,79 +348,98 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                 onChange={(e) => setClientPhone(e.target.value)}
                 placeholder="0400 000 000"
               />
-              <Input
-                label="Site Address"
-                value={clientAddress}
-                onChange={(e) => setClientAddress(e.target.value)}
-                placeholder="Job site address"
-              />
-              <Input
-                label="Timeline"
-                placeholder="e.g. 2-3 days"
-                value={timeline}
-                onChange={(e) => setTimeline(e.target.value)}
-              />
             </div>
+            <Input
+              label="Site Address"
+              value={clientAddress}
+              onChange={(e) => setClientAddress(e.target.value)}
+              placeholder="Job site address"
+            />
+            <Input
+              label="Timeline"
+              placeholder="e.g. 2-3 days"
+              value={timeline}
+              onChange={(e) => setTimeline(e.target.value)}
+            />
           </Card>
         </Section>
 
         {/* Scope of Work Section */}
         <Section title="Scope of Work">
-          <Card>
+          <Card className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
               {scopeOfWork.length === 0 && (
-                <p className="text-sm text-tertiary italic">No scope items yet. Add what work will be done.</p>
+                <p className="text-sm text-slate-400 italic font-medium ml-1">No scope items yet.</p>
               )}
               {scopeOfWork.map((item, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
+                <div key={idx} className="flex gap-3 items-center bg-slate-50/50 p-3.5 rounded-[14px] border border-slate-100">
                   <span className="w-1.5 h-1.5 rounded-full bg-accentDark shrink-0" />
-                  <span className="flex-1 text-[15px] text-primary font-medium">{item}</span>
+                  <span className="flex-1 text-[14px] text-slate-900 font-bold leading-tight">{item}</span>
                   <button
                     onClick={() => removeScopeItem(idx)}
-                    className="p-1 text-red-500 hover:bg-red-50 rounded"
+                    className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
                   >
                     <X size={16} />
                   </button>
                 </div>
               ))}
-              <div className="flex gap-2 mt-2">
-                <Input
-                  placeholder="Add scope item..."
-                  value={newScope}
-                  onChange={(e) => setNewScope(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && addScopeItem()}
-                />
-                <Button variant="secondary" onClick={addScopeItem}>
-                  <Plus size={18} />
-                </Button>
-              </div>
+            </div>
+            <div className="flex gap-2 mt-1">
+              <Input
+                placeholder="Add scope item..."
+                value={newScope}
+                onChange={(e) => setNewScope(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addScopeItem()}
+                className="!bg-white"
+              />
+              <button 
+                onClick={addScopeItem}
+                className="w-12 h-[54px] rounded-[14px] bg-slate-900 text-white flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+              >
+                <Plus size={20} />
+              </button>
             </div>
           </Card>
         </Section>
 
         {/* Materials Section */}
         <Section title="Materials">
-          <Card>
-            <div className="flex flex-col gap-4">
-              {materials.length === 0 && (
-                <p className="text-sm text-tertiary italic">No materials yet. Add materials needed for the job.</p>
-              )}
+          <Card className="flex flex-col gap-5">
+            {materials.length === 0 && (
+              <p className="text-sm text-slate-400 italic font-medium ml-1">No materials added yet.</p>
+            )}
+            <div className="flex flex-col gap-6">
               {materials.map((material) => (
-                <div key={material.id} className="flex flex-col gap-3 pb-4 border-b border-border last:border-0 last:pb-0">
-                  <div className="flex items-center justify-between">
-                    <Input
-                      label="Item Name"
-                      value={material.name}
-                      onChange={(e) => updateMaterial(material.id, 'name', e.target.value)}
-                      className="flex-1"
-                      placeholder="e.g. Merbau Decking"
-                    />
+                <div key={material.id} className="flex flex-col gap-4 pb-6 border-b border-slate-50 last:border-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <Input
+                        label="Item Name"
+                        value={material.name}
+                        onChange={(e) => updateMaterial(material.id, 'name', e.target.value)}
+                        placeholder="e.g. Merbau Decking"
+                      />
+                    </div>
                     <button
                       onClick={() => removeMaterial(material.id)}
-                      className="p-2 text-red-500 hover:bg-red-50 rounded ml-2"
+                      className="mt-9 p-1.5 text-slate-300 hover:text-red-500 transition-colors"
                     >
                       <X size={18} />
                     </button>
+                  </div>
+                  <div className="flex items-center justify-between px-0.5">
+                    <div className="flex items-center gap-2">
+                      {renderPricingBadge(material)}
+                    </div>
+                    {(material.pricingSource === 'ai' || material.pricingSource === 'fallback' || material.needsReview) && (
+                      <button
+                        disabled={savingCatalogFor === material.id}
+                        onClick={() => saveMaterialToCatalog(material)}
+                        className="text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {savingCatalogFor === material.id ? 'Saving…' : 'Save to catalog'}
+                      </button>
+                    )}
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <Input
@@ -302,7 +452,7 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                       label="Unit"
                       value={material.unit}
                       onChange={(e) => updateMaterial(material.id, 'unit', e.target.value)}
-                      placeholder="m, kg, ea"
+                      placeholder="m, ea"
                     />
                     <Input
                       label="Rate ($)"
@@ -311,23 +461,31 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                       onChange={(e) => updateMaterial(material.id, 'rate', parseFloat(e.target.value) || 0)}
                     />
                   </div>
-                  <div className="text-right text-sm text-secondary">
-                    Line total: <span className="font-semibold text-primary">{formatCurrency(material.quantity * material.rate)}</span>
+                  {(material.pricingNotes || (editedRates[material.id] && (material.pricingSource === 'ai' || material.pricingSource === 'fallback'))) && (
+                    <div className="px-1">
+                      <p className="text-[12px] text-slate-500 leading-relaxed">
+                        {material.pricingNotes || 'Price edited. Consider saving this to your catalog for next time.'}
+                      </p>
+                    </div>
+                  )}
+                  <div className="text-right px-1">
+                    <span className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mr-2">Line Total:</span>
+                    <span className="text-[15px] font-bold text-slate-900">{formatCurrency(material.quantity * material.rate)}</span>
                   </div>
                 </div>
               ))}
-              <Button variant="outline" onClick={addMaterial} className="mt-2">
-                <Plus size={18} className="mr-2" />
-                Add Material
-              </Button>
             </div>
+            <Button variant="outline" onClick={addMaterial} className="mt-1 border-dashed h-[50px]">
+              <Plus size={18} className="mr-2" />
+              Add Material
+            </Button>
           </Card>
         </Section>
 
         {/* Labour Section */}
         <Section title="Labour">
-          <Card>
-            <div className="grid grid-cols-2 gap-4">
+          <Card className="flex flex-col gap-5">
+            <div className="grid grid-cols-2 gap-5">
               <Input
                 label="Hours"
                 type="number"
@@ -343,121 +501,127 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                 placeholder="85"
               />
             </div>
-            <div className="text-right text-sm text-secondary mt-3">
-              Labour total: <span className="font-semibold text-primary">{formatCurrency(totals.labourTotal)}</span>
+            <div className="flex justify-between items-center bg-slate-50 p-3.5 rounded-[14px] border border-slate-100">
+              <span className="text-[12px] font-bold text-slate-400 uppercase tracking-widest">Labour Total</span>
+              <span className="text-[16px] font-bold text-slate-900">{formatCurrency(totals.labourTotal)}</span>
             </div>
           </Card>
         </Section>
 
         {/* Additional Fees Section */}
         <Section title="Additional Fees">
-          <Card>
-            <div className="flex flex-col gap-4">
-              {additionalFees.length === 0 && (
-                <p className="text-sm text-tertiary italic">No additional fees. Add travel, callout, or other charges.</p>
-              )}
+          <Card className="flex flex-col gap-5">
+            {additionalFees.length === 0 && (
+              <p className="text-sm text-slate-400 italic font-medium ml-1">No additional fees added.</p>
+            )}
+            <div className="flex flex-col gap-5">
               {additionalFees.map((fee) => (
-                <div key={fee.id} className="flex items-center gap-3 pb-3 border-b border-border last:border-0 last:pb-0">
+                <div key={fee.id} className="flex items-end gap-3 bg-slate-50/50 p-3.5 rounded-[16px] border border-slate-100 relative">
                   <div className="flex-1">
                     <Input
                       label="Description"
                       value={fee.description}
                       onChange={(e) => updateFee(fee.id, 'description', e.target.value)}
                       placeholder="e.g. Travel fee"
+                      className="!bg-white h-[48px]"
                     />
                   </div>
-                  <div className="w-28">
+                  <div className="w-24">
                     <Input
-                      label="Amount ($)"
+                      label="Amount"
                       type="number"
                       value={fee.amount}
                       onChange={(e) => updateFee(fee.id, 'amount', parseFloat(e.target.value) || 0)}
+                      className="!bg-white h-[48px]"
                     />
                   </div>
                   <button
                     onClick={() => removeFee(fee.id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded mt-5"
+                    className="p-1.5 text-slate-300 hover:text-red-500 transition-colors mb-1"
                   >
                     <X size={18} />
                   </button>
                 </div>
               ))}
-              
-              {/* Quick add common fees */}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {commonFees.map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => addFee(preset.description)}
-                    className="px-3 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full transition-colors"
-                  >
-                    + {preset.label}
-                  </button>
-                ))}
-              </div>
-              
-              <Button variant="outline" onClick={() => addFee()} className="mt-2">
-                <Plus size={18} className="mr-2" />
-                Add Custom Fee
-              </Button>
             </div>
+            
+            <div className="flex flex-wrap gap-2 px-0.5">
+              {commonFees.map((preset) => (
+                <button
+                  key={preset.label}
+                  onClick={() => addFee(preset.description)}
+                  className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-full border border-slate-100 transition-all active:scale-95"
+                >
+                  + {preset.label}
+                </button>
+              ))}
+            </div>
+            
+            <Button variant="outline" onClick={() => addFee()} className="mt-1 border-dashed h-[50px]">
+              <Plus size={18} className="mr-2" />
+              Add Custom Fee
+            </Button>
           </Card>
         </Section>
 
         {/* Totals Section */}
-        <Section title="Quote Total">
-          <Card>
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between text-[14px]">
-                <span className="text-secondary">Materials</span>
-                <span className="text-primary font-medium">{formatCurrency(totals.materialsTotal)}</span>
+        <Section title="Final Quote">
+          <Card className="!p-0 overflow-hidden border border-slate-200 shadow-lg">
+            <div className="p-6 flex flex-col gap-3 bg-white">
+              <div className="flex justify-between text-[14px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                <span>Summary</span>
+                <span>Amount</span>
               </div>
-              <div className="flex justify-between text-[14px]">
-                <span className="text-secondary">Labour</span>
-                <span className="text-primary font-medium">{formatCurrency(totals.labourTotal)}</span>
+              <div className="flex justify-between text-[15px] font-medium text-slate-600">
+                <span>Materials</span>
+                <span className="text-slate-900">{formatCurrency(totals.materialsTotal)}</span>
+              </div>
+              <div className="flex justify-between text-[15px] font-medium text-slate-600">
+                <span>Labour</span>
+                <span className="text-slate-900">{formatCurrency(totals.labourTotal)}</span>
               </div>
               {totals.feesTotal > 0 && (
-                <div className="flex justify-between text-[14px]">
-                  <span className="text-secondary">Additional Fees</span>
-                  <span className="text-primary font-medium">{formatCurrency(totals.feesTotal)}</span>
+                <div className="flex justify-between text-[15px] font-medium text-slate-600">
+                  <span>Fees</span>
+                  <span className="text-slate-900">{formatCurrency(totals.feesTotal)}</span>
                 </div>
               )}
-              <div className="border-t border-border my-2" />
-              <div className="flex justify-between text-[14px]">
-                <span className="text-secondary">Subtotal</span>
-                <span className="text-primary font-semibold">{formatCurrency(totals.subtotal)}</span>
+              <div className="h-px bg-slate-50 w-full my-1" />
+              <div className="flex justify-between text-[15px] font-bold text-slate-900">
+                <span>Subtotal</span>
+                <span>{formatCurrency(totals.subtotal)}</span>
               </div>
-              <div className="flex justify-between text-[14px]">
-                <span className="text-secondary">GST (10%)</span>
-                <span className="text-primary font-medium">{formatCurrency(totals.gst)}</span>
+              <div className="flex justify-between text-[15px] font-medium text-slate-500">
+                <span>GST (10%)</span>
+                <span>{formatCurrency(totals.gst)}</span>
               </div>
-              <div className="border-t border-border my-2" />
-              <div className="flex justify-between items-center">
-                <span className="text-[16px] font-bold text-primary">TOTAL</span>
-                <span className="text-[24px] font-bold text-primary">{formatCurrency(totals.total)}</span>
-              </div>
+            </div>
+            
+            <div className="bg-slate-900 p-6 flex justify-between items-center">
+                <span className="text-[13px] font-bold text-slate-400 uppercase tracking-[0.2em]">Total</span>
+                <span className="text-[28px] font-bold text-white tracking-tight">{formatCurrency(totals.total)}</span>
             </div>
           </Card>
         </Section>
       </div>
 
       {/* Fixed Bottom Action Bar */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-5 bg-white/95 backdrop-blur-xl border-t border-border z-40 pb-safe">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-5 bg-white/95 backdrop-blur-xl border-t border-slate-100 z-50 pb-safe">
         <div className="flex gap-3">
           <Button 
             variant="secondary" 
-            className="flex-1 font-semibold" 
+            className="flex-1 font-bold uppercase tracking-widest text-[12px]" 
             onClick={handleSave}
           >
-            Save Draft
+            Draft
           </Button>
           <Button 
             variant="primary" 
-            className="flex-[2] font-bold shadow-lg"
+            className="flex-[2] font-bold uppercase tracking-widest text-[12px]"
             onClick={handleSend}
           >
-            <DollarSign size={18} className="mr-1" />
-            Send to Customer
+            <DollarSign size={16} className="mr-1.5" />
+            Send Quote
           </Button>
         </div>
       </div>

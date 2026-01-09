@@ -22,24 +22,16 @@ export const Signup: React.FC<SignupProps> = ({ onSignup, onBack }) => {
 
   const handleSubmit = async () => {
     if (!canSignup) return;
-
     setLoading(true);
     setError('');
-
     try {
-      // Force complete logout and clear all sessions
       await supabase.auth.signOut({ scope: 'global' });
-
-      // Wait a moment to ensure session is cleared
       await new Promise(resolve => setTimeout(resolve, 100));
-
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
       });
-
       if (signUpError) throw signUpError;
-
       if (data.user) {
         onSignup(data.user.id, data.user.email || email);
       }
@@ -52,70 +44,73 @@ export const Signup: React.FC<SignupProps> = ({ onSignup, onBack }) => {
   };
 
   return (
-    <Layout showNav={false} className="bg-surface flex flex-col">
+    <Layout showNav={false} className="bg-[#FAFAFA] flex flex-col h-[100dvh]">
       <Header
         left={
-          <button onClick={onBack} className="p-2 -ml-2 text-primary">
+          <button onClick={onBack} className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-900 hover:bg-slate-100 rounded-full transition-colors">
             <ChevronLeft size={24} />
           </button>
         }
-        title="Sign Up"
+        title="Create Account"
       />
 
-      <div className="px-6 mt-6 flex flex-col gap-6 flex-1">
-        <div className="mb-4">
-          <h1 className="text-[28px] font-bold text-primary mb-2 tracking-tight">Create account</h1>
-          <p className="text-[15px] text-secondary">Get started with SMASH</p>
+      <div className="px-8 mt-10 flex flex-col gap-10">
+        <div>
+          <h1 className="text-[40px] font-black text-slate-900 mb-3 tracking-tighter leading-none">Get Started</h1>
+          <p className="text-[16px] text-slate-400 font-bold uppercase tracking-wider">Join SMASH to automate your quotes</p>
         </div>
 
         {error && (
-          <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-[14px] text-red-600">{error}</p>
+          <div className="px-5 py-4 bg-red-50 border border-red-100 rounded-[20px] animate-in slide-in-from-top-2 duration-300">
+            <p className="text-[14px] text-red-600 font-bold leading-relaxed">{error}</p>
           </div>
         )}
 
-        <Input
-          label="Email"
-          type="email"
-          placeholder="your@email.com"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          autoFocus
-          disabled={loading}
-        />
+        <div className="flex flex-col gap-6">
+          <Input
+            label="Email"
+            type="email"
+            placeholder="your@email.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            autoFocus
+            disabled={loading}
+          />
 
-        <Input
-          label="Password"
-          type="password"
-          placeholder="Minimum 6 characters"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          disabled={loading}
-        />
+          <Input
+            label="Password"
+            type="password"
+            placeholder="6+ characters"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            disabled={loading}
+          />
 
-        <Input
-          label="Confirm Password"
-          type="password"
-          placeholder="Re-enter password"
-          value={confirmPassword}
-          onChange={e => setConfirmPassword(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          disabled={loading}
-        />
+          <Input
+            label="Confirm Password"
+            type="password"
+            placeholder="Re-enter password"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            disabled={loading}
+          />
 
-        {confirmPassword.length > 0 && !passwordsMatch && (
-          <p className="text-[13px] text-red-500 -mt-4 ml-1">Passwords do not match</p>
-        )}
+          {confirmPassword.length > 0 && !passwordsMatch && (
+            <p className="text-[13px] text-red-500 font-bold uppercase tracking-wider ml-1 -mt-4 animate-pulse">Passwords do not match</p>
+          )}
+        </div>
       </div>
 
-      <div className="p-6 mt-auto bg-surface">
+      <div className="px-8 py-10 mt-auto">
         <Button
           fullWidth
           variant="primary"
           disabled={!canSignup || loading}
           onClick={handleSubmit}
+          className="shadow-2xl shadow-slate-900/20"
         >
-          {loading ? 'Creating account...' : 'Create Account'}
+          {loading ? 'Creating Account...' : 'Sign Up'}
         </Button>
       </div>
     </Layout>

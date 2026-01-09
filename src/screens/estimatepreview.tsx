@@ -131,13 +131,12 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
   };
 
   return (
-    // CRITICAL FIX: set showNav={false} so the action buttons aren't covered by the menu
-    <Layout showNav={false} className="bg-surface pb-40">
+    <Layout showNav={false} className="bg-[#FAFAFA] pb-40">
        {!isPublic ? (
         <Header
-          title={isInvoice ? "Invoice Preview" : "Estimate Preview"}
+          title={isInvoice ? "Invoice" : "Estimate"}
           left={
-            <button onClick={onBack} className="w-10 h-10 flex items-center justify-center -ml-2 text-primary hover:bg-slate-100 rounded-full transition-colors">
+            <button onClick={onBack} className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-900 hover:bg-slate-100 rounded-full transition-colors">
               <ChevronLeft size={24} />
             </button>
           }
@@ -146,66 +145,68 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
               <button
                 onClick={handleDownloadPDF}
                 disabled={isDownloading}
-                className="w-10 h-10 flex items-center justify-center text-primary hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
+                className="w-9 h-9 flex items-center justify-center text-slate-900 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
               >
-                <Download size={20} />
+                <Download size={18} />
               </button>
               {onDelete && (
-                <button onClick={onDelete} className="w-10 h-10 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                  <Trash2 size={20} />
+                <button onClick={onDelete} className="w-9 h-9 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                  <Trash2 size={18} />
                 </button>
               )}
             </div>
           }
         />
        ) : (
-         <div className="h-[80px] flex items-center justify-center bg-white/80 backdrop-blur-md border-b border-border mb-6 sticky top-0 z-30">
-            <h1 className="font-bold text-xl tracking-tight text-primary">SMASH<span className="text-accent">.</span></h1>
+         <div className="h-[70px] flex items-center justify-center bg-white border-b border-slate-100 mb-6 sticky top-0 z-30">
+            <h1 className="font-bold text-xl tracking-tighter text-slate-900 uppercase">SMASH<span className="text-accent">.</span></h1>
          </div>
        )}
 
-      <div className="flex flex-col gap-1 mt-2">
-        <Section title="Job Summary">
-          <Card>
+      <div className="flex flex-col mt-2">
+        <Section title="Summary">
+          <Card className="flex flex-col gap-5">
             {userProfile && (
-              <div className="flex items-center gap-4 pb-5 mb-5 border-b border-border/30">
-                <div className="w-14 h-14 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
+              <div className="flex items-center gap-3.5 pb-5 border-b border-slate-50">
+                <div className="w-12 h-11 rounded-[14px] bg-slate-900 flex items-center justify-center shrink-0">
                   {userProfile.logoUrl ? (
                     <img
                       src={userProfile.logoUrl}
                       alt={userProfile.businessName}
-                      className="w-full h-full rounded-full object-cover"
+                      className="w-full h-full rounded-[14px] object-cover"
                     />
                   ) : (
-                    <User size={24} className="text-brand" />
+                    <User size={20} className="text-white" />
                   )}
                 </div>
-                <div className="flex flex-col gap-0.5">
-                  <h3 className="text-[16px] font-bold text-primary">{userProfile.businessName}</h3>
-                  <p className="text-[13px] text-tertiary">{userProfile.tradeType}</p>
+                <div className="flex flex-col">
+                  <h3 className="text-[15px] font-bold text-slate-900 tracking-tight leading-tight">{userProfile.businessName}</h3>
+                  <p className="text-[12px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">{userProfile.tradeType}</p>
                 </div>
               </div>
             )}
-            <div className="flex flex-col gap-2 mb-5">
-              <h2 className="text-[24px] font-bold text-primary tracking-tighter leading-tight line-clamp-2">{estimate.jobTitle}</h2>
-              <p className="text-[16px] font-medium text-secondary truncate">{estimate.clientName}</p>
-              {estimate.clientAddress && <p className="text-[14px] text-tertiary line-clamp-2">{estimate.clientAddress}</p>}
+            <div className="flex flex-col gap-2">
+              <h2 className="text-[24px] font-bold text-slate-900 tracking-tight leading-tight">{estimate.jobTitle}</h2>
+              <div className="flex flex-col gap-0.5">
+                <p className="text-[15px] font-bold text-slate-600 truncate">{estimate.clientName}</p>
+                {estimate.clientAddress && <p className="text-[13px] text-slate-400 font-medium leading-relaxed">{estimate.clientAddress}</p>}
+              </div>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-surface rounded-xl w-fit border border-border/50">
-              <Calendar size={16} className="text-brand" />
-              <span className="text-[14px] font-semibold text-secondary">
-                Timeline: <span className="text-primary">{estimate.timeline}</span>
+            <div className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-50 rounded-[14px] w-fit border border-slate-100">
+              <Calendar size={16} className="text-slate-900" />
+              <span className="text-[13px] font-bold text-slate-900 uppercase tracking-wider">
+                {isInvoice ? 'Issued:' : 'Timeline:'} <span className="text-slate-500">{estimate.timeline}</span>
               </span>
             </div>
           </Card>
         </Section>
 
         <Section title="Scope of Work">
-          <Card>
+          <Card className="p-6">
             <ul className="space-y-4">
               {estimate.scopeOfWork.map((item, idx) => (
-                <li key={idx} className="flex gap-4 text-[15px] text-primary leading-relaxed font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-accentDark mt-2.5 shrink-0" />
+                <li key={idx} className="flex gap-4 text-[15px] text-slate-900 leading-relaxed font-bold">
+                  <span className="w-2 h-2 rounded-full bg-accent mt-2 shrink-0 shadow-sm" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -214,70 +215,43 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
         </Section>
 
         <Section title="Breakdown">
-          <Card noPadding className="overflow-hidden">
+          <Card noPadding className="overflow-hidden border border-slate-100 shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-surface border-b border-border text-[11px] font-bold text-tertiary uppercase tracking-wider">
+                  <tr className="bg-slate-900 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                     <th className="px-6 py-4">Item</th>
                     <th className="px-6 py-4 text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Materials Section Header */}
-                  <tr className="bg-surface/30">
+                  <tr className="bg-slate-50">
                     <td colSpan={2} className="px-6 py-3">
-                      <span className="text-[13px] font-bold text-secondary uppercase tracking-wide">Materials</span>
+                      <span className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">Materials</span>
                     </td>
                   </tr>
-
-                  {/* Materials Items */}
                   {estimate.materials.map((item) => (
-                    <tr key={item.id} className="border-b border-border/50">
-                      <td className="px-6 py-4">
-                        <div className="text-[15px] font-semibold text-primary mb-1">{item.name}</div>
-                        <div className="text-[13px] font-medium text-tertiary">{item.quantity} {item.unit} × {formatCurrency(item.rate)}</div>
+                    <tr key={item.id} className="border-b border-slate-50">
+                      <td className="px-6 py-5">
+                        <div className="text-[15px] font-bold text-slate-900 mb-0.5">{item.name}</div>
+                        <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{item.quantity} {item.unit} × {formatCurrency(item.rate)}</div>
                       </td>
-                      <td className="px-6 py-4 text-right text-[15px] font-medium text-primary tabular-nums font-mono">
+                      <td className="px-6 py-5 text-right text-[15px] font-bold text-slate-900 tabular-nums">
                         {formatCurrency(item.quantity * item.rate)}
                       </td>
                     </tr>
                   ))}
-
-                  {/* Materials Subtotal */}
-                  <tr className="bg-surface/50 border-b border-border">
-                    <td className="px-6 py-3 text-right">
-                      <span className="text-[14px] font-bold text-secondary">Materials Subtotal</span>
-                    </td>
-                    <td className="px-6 py-3 text-right text-[15px] font-bold text-primary tabular-nums font-mono">
-                      {formatCurrency(materialsTotal)}
-                    </td>
-                  </tr>
-
-                  {/* Labour Section Header */}
-                  <tr className="bg-surface/30">
+                  <tr className="bg-slate-50">
                     <td colSpan={2} className="px-6 py-3">
-                      <span className="text-[13px] font-bold text-secondary uppercase tracking-wide">Labour</span>
+                      <span className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">Labour</span>
                     </td>
                   </tr>
-
-                  {/* Labour Row */}
-                  <tr className="border-b border-border/50">
-                    <td className="px-6 py-4">
-                      <div className="text-[15px] font-semibold text-primary mb-1">Labour Charges</div>
-                      <div className="text-[13px] font-medium text-tertiary">{estimate.labour.hours} hrs × {formatCurrency(estimate.labour.rate)}/hr</div>
+                  <tr className="border-b border-slate-50">
+                    <td className="px-6 py-5">
+                      <div className="text-[15px] font-bold text-slate-900 mb-0.5">Labour Charges</div>
+                      <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">{estimate.labour.hours} hrs × {formatCurrency(estimate.labour.rate)}/hr</div>
                     </td>
-                    <td className="px-6 py-4 text-right text-[15px] font-medium text-primary tabular-nums font-mono">
-                      {formatCurrency(labourTotal)}
-                    </td>
-                  </tr>
-
-                  {/* Labour Subtotal */}
-                  <tr className="bg-surface/50 border-b border-border">
-                    <td className="px-6 py-3 text-right">
-                      <span className="text-[14px] font-bold text-secondary">Labour Subtotal</span>
-                    </td>
-                    <td className="px-6 py-3 text-right text-[15px] font-bold text-primary tabular-nums font-mono">
+                    <td className="px-6 py-5 text-right text-[15px] font-bold text-slate-900 tabular-nums">
                       {formatCurrency(labourTotal)}
                     </td>
                   </tr>
@@ -287,36 +261,27 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
           </Card>
         </Section>
 
-        {/* Total Section */}
-        <Section title="Total Quote">
-          {!isPublic && (
-            <div className="px-1 pb-2">
-              <p className="text-xs text-tertiary text-center">Totals locked</p>
-            </div>
-          )}
-          <Card className="!p-0 border-2 border-surface shadow-none ring-1 ring-black/5 overflow-hidden">
-            <div className="p-6 bg-white">
-              <div className="flex flex-col gap-3">
-                <div className="flex justify-between text-[15px] font-medium text-secondary">
-                  <span>Subtotal</span>
-                  <span className="tabular-nums font-mono text-primary">{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-[15px] font-medium text-secondary">
-                  <span>GST (10%)</span>
-                  <span className="tabular-nums font-mono text-primary">{formatCurrency(gst)}</span>
-                </div>
+        <Section title="Totals">
+          <Card className="!p-0 overflow-hidden border border-slate-900 shadow-xl">
+            <div className="p-6 bg-white flex flex-col gap-3">
+              <div className="flex justify-between text-[14px] font-bold text-slate-400 uppercase tracking-widest">
+                <span>Subtotal</span>
+                <span className="text-slate-900">{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-[14px] font-bold text-slate-400 uppercase tracking-widest">
+                <span>GST (10%)</span>
+                <span className="text-slate-900">{formatCurrency(gst)}</span>
               </div>
             </div>
             
-            <div className="bg-surface/50 border-t border-border p-6 flex justify-between items-center">
-                <span className="text-[16px] font-bold text-primary tracking-tight">Total Amount</span>
-                <span className="text-[32px] font-bold text-brand tracking-tighter tabular-nums font-mono leading-none">{formatCurrency(total)}</span>
+            <div className="bg-slate-900 p-6 flex justify-between items-center">
+                <span className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Total Amount</span>
+                <span className="text-[28px] font-bold text-white tracking-tight leading-none">{formatCurrency(total)}</span>
             </div>
           </Card>
         </Section>
 
-        {/* Dynamic Action Bar - Now Visible! */}
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-5 bg-white/90 backdrop-blur-xl border-t border-border z-40 pb-safe">
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-5 bg-white/95 backdrop-blur-xl border-t border-slate-100 z-50 pb-safe">
           <div className="flex gap-3 justify-center">
             {renderActions()}
           </div>

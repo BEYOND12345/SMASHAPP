@@ -11,6 +11,11 @@ export interface MaterialItem {
   quantity: number;
   unit: string;
   rate: number;
+  // Pricing metadata (used to restore "never empty prices" magic)
+  catalogItemId?: string | null;
+  pricingSource?: 'catalog' | 'ai' | 'fallback';
+  pricingNotes?: string | null;
+  needsReview?: boolean;
 }
 
 export interface LabourItem {

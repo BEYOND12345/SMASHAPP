@@ -64,6 +64,60 @@ const App: React.FC = () => {
     loading: true
   });
 
+  const quoteToEstimate = (quoteData: any): Estimate => ({
+    id: quoteData.id,
+    jobTitle: quoteData.title || 'Untitled Job',
+    clientName: quoteData.customer?.name || 'No Customer',
+    clientAddress: quoteData.site_address || '',
+    clientEmail: quoteData.customer?.email || '',
+    clientPhone: quoteData.customer?.phone || '',
+    timeline: '2-3 days',
+    scopeOfWork: Array.isArray(quoteData.scope_of_work) && quoteData.scope_of_work.length > 0
+      ? quoteData.scope_of_work
+      : (quoteData.description ? [quoteData.description] : []),
+    materials: quoteData.line_items
+      ?.filter((item: any) => item.item_type === 'materials')
+      .map((item: any) => ({
+        id: item.id,
+        name: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        rate: item.unit_price_cents / 100,
+        catalogItemId: item.catalog_item_id ?? null,
+        needsReview: !!item.is_needs_review,
+        pricingNotes: item.notes ?? null,
+        pricingSource: item.catalog_item_id
+          ? 'catalog'
+          : (typeof item.notes === 'string' && item.notes.toLowerCase().startsWith('ai estimated'))
+            ? 'ai'
+            : (typeof item.notes === 'string' && item.notes.toLowerCase().startsWith('default price'))
+              ? 'fallback'
+              : undefined,
+      })) || [],
+    labour: {
+      hours: quoteData.line_items
+        ?.filter((item: any) => item.item_type === 'labour')
+        .reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+      rate: quoteData.line_items
+        ?.find((item: any) => item.item_type === 'labour')?.unit_price_cents / 100 || 0,
+    },
+    additionalFees: quoteData.line_items
+      ?.filter((item: any) => item.item_type === 'fee')
+      .map((item: any) => ({
+        id: item.id,
+        description: item.description,
+        amount: (typeof item.line_total_cents === 'number' ? item.line_total_cents : (item.unit_price_cents || 0) * (item.quantity || 1)) / 100,
+      })) || [],
+    status:
+      quoteData.status === 'sent' ? JobStatus.SENT :
+      quoteData.status === 'accepted' ? JobStatus.APPROVED :
+      quoteData.status === 'approved' ? JobStatus.APPROVED :
+      quoteData.status === 'paid' ? JobStatus.PAID :
+      JobStatus.DRAFT,
+    date: new Date(quoteData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+    gstRate: quoteData.default_tax_rate || 0.10,
+  });
+
   // Load quotes from database
   const loadQuotesFromDatabase = async (userId: string) => {
     try {
@@ -98,42 +152,7 @@ const App: React.FC = () => {
         return;
       }
 
-      const estimates: Estimate[] = quotesData.map((quoteData: any) => ({
-        id: quoteData.id,
-        jobTitle: quoteData.title || 'Untitled Job',
-        clientName: quoteData.customer?.name || 'No Customer',
-        clientAddress: '',
-        clientEmail: quoteData.customer?.email || '',
-        clientPhone: quoteData.customer?.phone || '',
-        timeline: '2-3 days',
-        scopeOfWork: Array.isArray(quoteData.scope_of_work) && quoteData.scope_of_work.length > 0
-          ? quoteData.scope_of_work
-          : (quoteData.description ? [quoteData.description] : []),
-        materials: quoteData.line_items
-          ?.filter((item: any) => item.item_type === 'materials')
-          .map((item: any) => ({
-            id: item.id,
-            name: item.description,
-            quantity: item.quantity,
-            unit: item.unit,
-            rate: item.unit_price_cents / 100,
-          })) || [],
-        labour: {
-          hours: quoteData.line_items
-            ?.filter((item: any) => item.item_type === 'labour')
-            .reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
-          rate: quoteData.line_items
-            ?.find((item: any) => item.item_type === 'labour')?.unit_price_cents / 100 || 0,
-        },
-        status:
-          quoteData.status === 'sent' ? JobStatus.SENT :
-          quoteData.status === 'accepted' ? JobStatus.APPROVED :
-          quoteData.status === 'approved' ? JobStatus.APPROVED :
-          quoteData.status === 'paid' ? JobStatus.PAID :
-          JobStatus.DRAFT,
-        date: new Date(quoteData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
-        gstRate: quoteData.default_tax_rate || 0.10,
-      }));
+      const estimates: Estimate[] = quotesData.map((q: any) => quoteToEstimate(q));
 
       console.log('[App] Converted quotes to estimates:', estimates.length);
 
@@ -144,6 +163,41 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('[App] Error loading quotes:', err);
       // Don't throw - continue with mock data
+    }
+  };
+
+  // Fast-path: load a single quote by ID and upsert into state (prevents "No estimate found" after voice creation)
+  const loadQuoteById = async (quoteId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data: quoteData, error } = await supabase
+        .from('quotes')
+        .select(`
+          *,
+          customer:customers!customer_id(*),
+          line_items:quote_line_items(*)
+        `)
+        .eq('id', quoteId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[App] Failed to load quote by id:', error);
+        return;
+      }
+      if (!quoteData) {
+        console.warn('[App] Quote not found by id:', quoteId);
+        return;
+      }
+
+      const estimate = quoteToEstimate(quoteData);
+      setState(prev => ({
+        ...prev,
+        estimates: [estimate, ...prev.estimates.filter(e => e.id !== estimate.id)]
+      }));
+    } catch (e) {
+      console.error('[App] Error loading quote by id:', e);
     }
   };
 
@@ -996,234 +1050,242 @@ const App: React.FC = () => {
   const renderScreen = () => {
     const selectedEstimate = getSelectedEstimate();
 
-    switch (state.currentScreen) {
-      case 'Login':
-        return <Login onLogin={handleLogin} onSignupClick={() => navigate('Signup')} />;
+    return (
+      <div key={state.currentScreen} className="animate-in fade-in duration-300 h-full w-full">
+        {(() => {
+          switch (state.currentScreen) {
+            case 'Login':
+              return <Login onLogin={handleLogin} onSignupClick={() => navigate('Signup')} />;
 
-      case 'Signup':
-        return <Signup onSignup={handleSignup} onBack={() => navigate('Login')} />;
+            case 'Signup':
+              return <Signup onSignup={handleSignup} onBack={() => navigate('Login')} />;
 
-      case 'Onboarding':
-        return <Onboarding onComplete={handleOnboardingComplete} />;
+            case 'Onboarding':
+              return <Onboarding onComplete={handleOnboardingComplete} />;
 
-      case 'Settings':
-        return <Settings onBack={() => navigate('EstimatesList')} onNavigate={navigate} onLogout={handleLogout} />;
+            case 'Settings':
+              return <Settings onBack={() => navigate('EstimatesList')} onNavigate={navigate} onLogout={handleLogout} />;
 
-      case 'MaterialsCatalog':
-        return <MaterialsCatalog onBack={() => navigate('Settings')} />;
+            case 'MaterialsCatalog':
+              return <MaterialsCatalog onBack={() => navigate('Settings')} />;
 
-      case 'VoiceQuotesList':
-        return <VoiceQuotesList
-          onProfileClick={() => navigate('Settings')}
-          activeTab={state.activeTab}
-          onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
-          onQuoteCreated={async (quoteId) => {
-            console.log('[App] Quote created from voice, navigating to edit:', quoteId);
+            case 'VoiceQuotesList':
+              return <VoiceQuotesList
+                onProfileClick={() => navigate('Settings')}
+                activeTab={state.activeTab}
+                onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
+                onQuoteCreated={async (quoteId) => {
+                  console.log('[App] Quote created from voice, navigating to edit:', quoteId);
+                  
+                  // Fast-path load this quote so EditEstimate has data immediately
+                  await loadQuoteById(quoteId);
+
+                  // Navigate immediately to the editor
+                  setState(prev => ({
+                    ...prev,
+                    selectedEstimateId: quoteId,
+                    currentScreen: 'EditEstimate',
+                    // Keep undefined so EditEstimate "Back" returns to EstimatesList
+                    editReturnScreen: prev.editReturnScreen
+                  }));
+
+                  // Refresh the database in the background
+                  if (state.user?.id) {
+                    loadQuotesFromDatabase(state.user.id);
+                  }
+                }}
+              />;
+
+            case 'PublicQuoteView':
+              return selectedEstimate && state.user ? (
+                <PublicQuoteView
+                  estimate={selectedEstimate}
+                  businessName={state.user.businessName}
+                  onApprove={() => {
+                    handleStatusChange(JobStatus.APPROVED);
+                    alert('Quote approved!');
+                  }}
+                />
+              ) : null;
+
+            case 'PublicInvoiceView':
+              return selectedEstimate && state.user ? (
+                <PublicInvoiceView
+                  estimate={selectedEstimate}
+                  businessName={state.user.businessName}
+                  businessPhone={state.user.phone}
+                  invoiceNumber={selectedEstimate.id.substring(0, 6).toUpperCase()}
+                  onPaymentClick={() => alert('Payment gateway would open here')}
+                />
+              ) : null;
+
+            case 'EstimatesList':
+              return state.activeTab === 'estimates' ? (
+                <EstimatesList
+                  estimates={state.estimates}
+                  onNewEstimate={() => navigate('VoiceQuotesList')}
+                  onSelectEstimate={handleSelectEstimate}
+                  activeTab={state.activeTab}
+                  onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
+                  onProfileClick={() => navigate('Settings')}
+                  onQuickRecord={() => navigate('VoiceQuotesList')}
+                />
+              ) : state.activeTab === 'invoices' ? (
+                <InvoicesList
+                  invoices={state.invoices}
+                  onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
+                  activeTab={state.activeTab}
+                  onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
+                  onProfileClick={() => navigate('Settings')}
+                />
+              ) : (
+                <CustomersList
+                  customers={state.customers}
+                  onSelectCustomer={handleSelectCustomer}
+                  activeTab={state.activeTab}
+                  onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
+                  onProfileClick={() => navigate('Settings')}
+                />
+              );
+
+            case 'CustomerProfile':
+              const selectedCustomer = getSelectedCustomer();
+              return selectedCustomer ? (
+                <CustomerProfile
+                  customer={selectedCustomer}
+                  quotes={state.estimates}
+                  invoices={state.invoices}
+                  onBack={() => setState(prev => ({ ...prev, currentScreen: 'EstimatesList', activeTab: 'customers' }))}
+                  onSelectQuote={(id) => setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }))}
+                  onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
+                  onDeleteCustomer={handleDeleteCustomer}
+                />
+              ) : null;
             
-            // Reload quotes from database to get the new quote
-            if (state.user?.id) {
-              await loadQuotesFromDatabase(state.user.id);
-            }
-            
-            // Navigate to the quote editor
-            setState(prev => ({
-              ...prev,
-              selectedEstimateId: quoteId,
-              currentScreen: 'EditEstimate',
-              editReturnScreen: 'EstimatesList'
-            }));
-          }}
-        />;
-
-      case 'PublicQuoteView':
-        return selectedEstimate && state.user ? (
-          <PublicQuoteView
-            estimate={selectedEstimate}
-            businessName={state.user.businessName}
-            onApprove={() => {
-              handleStatusChange(JobStatus.APPROVED);
-              alert('Quote approved!');
-            }}
-          />
-        ) : null;
-
-      case 'PublicInvoiceView':
-        return selectedEstimate && state.user ? (
-          <PublicInvoiceView
-            estimate={selectedEstimate}
-            businessName={state.user.businessName}
-            businessPhone={state.user.phone}
-            invoiceNumber={selectedEstimate.id.substring(0, 6).toUpperCase()}
-            onPaymentClick={() => alert('Payment gateway would open here')}
-          />
-        ) : null;
-
-      case 'EstimatesList':
-        return state.activeTab === 'estimates' ? (
-          <EstimatesList
-            estimates={state.estimates}
-            onNewEstimate={() => navigate('VoiceQuotesList')}
-            onSelectEstimate={handleSelectEstimate}
-            activeTab={state.activeTab}
-            onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
-            onProfileClick={() => navigate('Settings')}
-            onQuickRecord={() => navigate('VoiceQuotesList')}
-          />
-        ) : state.activeTab === 'invoices' ? (
-          <InvoicesList
-            invoices={state.invoices}
-            onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
-            activeTab={state.activeTab}
-            onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
-            onProfileClick={() => navigate('Settings')}
-          />
-        ) : (
-          <CustomersList
-            customers={state.customers}
-            onSelectCustomer={handleSelectCustomer}
-            activeTab={state.activeTab}
-            onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
-            onProfileClick={() => navigate('Settings')}
-          />
-        );
-
-      case 'CustomerProfile':
-        const selectedCustomer = getSelectedCustomer();
-        return selectedCustomer ? (
-          <CustomerProfile
-            customer={selectedCustomer}
-            quotes={state.estimates}
-            invoices={state.invoices}
-            onBack={() => setState(prev => ({ ...prev, currentScreen: 'EstimatesList', activeTab: 'customers' }))}
-            onSelectQuote={(id) => setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }))}
-            onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
-            onDeleteCustomer={handleDeleteCustomer}
-          />
-        ) : null;
-      
-      case 'EditEstimate':
-        if (!selectedEstimate) {
-          // Quote not found in state - may still be loading
-          // Show loading or redirect to list
-          console.log('[App] EditEstimate: No estimate found for ID:', state.selectedEstimateId);
-          return (
-            <div className="h-screen w-screen flex items-center justify-center bg-surface">
-              <div className="text-center">
-                <p className="text-[14px] text-secondary">Loading quote...</p>
-              </div>
-            </div>
-          );
-        }
-        return (
-          <EditEstimate
-            estimate={selectedEstimate}
-            returnScreen={state.editReturnScreen}
-            onBack={() => navigate(state.editReturnScreen || 'EstimatesList')}
-            onSave={(estimate) => handleEstimateSave(estimate, state.editReturnScreen)}
-            onSend={(estimate) => {
-              // Save the estimate first
-              handleEstimateSave(estimate, 'EstimatePreview');
-              // Then navigate to send screen
-              setState(prev => ({
-                ...prev,
-                currentScreen: 'SendEstimate',
-                sendingType: 'estimate'
-              }));
-            }}
-          />
-        );
-
-      case 'EstimatePreview':
-        return selectedEstimate ? (
-          <EstimatePreview
-            estimate={selectedEstimate}
-            userProfile={state.user || undefined}
-            onBack={() => navigate('JobCard')}
-            onEdit={() => setState(prev => ({ ...prev, currentScreen: 'EditEstimate', editReturnScreen: 'EstimatePreview' }))}
-            onSend={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'estimate'}))}
-            onStatusChange={handleStatusChange}
-            onViewInvoice={() => navigate('InvoicePreview')}
-            onDelete={() => handleDeleteEstimate(selectedEstimate.id)}
-            onConvertToInvoice={handleConvertToInvoiceDirectly}
-          />
-        ) : null;
-
-      case 'JobCard':
-        return selectedEstimate ? (
-          <JobCard 
-            estimate={selectedEstimate} 
-            onBack={() => navigate('EstimatesList')} 
-            onViewEstimate={() => navigate('EstimatePreview')}
-            onViewInvoice={() => navigate('InvoicePreview')}
-            onSendInvoice={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'invoice'}))}
-            onStatusChange={handleStatusChange}
-          />
-        ) : null;
-
-      case 'SendEstimate':
-        return <SendEstimate
-          onBack={() => navigate('JobCard')}
-          type={state.sendingType}
-          onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
-          estimateId={state.sendingType === 'invoice' ? state.selectedInvoiceId || undefined : state.selectedEstimateId || undefined}
-          onSent={async () => {
-            // Update status based on what we sent
-            const newStatus = state.sendingType === 'invoice' ? JobStatus.PAID : JobStatus.SENT;
-
-            // Optimistic UI update
-            if (state.selectedEstimateId) {
-              setState(prev => ({
-                ...prev,
-                estimates: prev.estimates.map(e =>
-                  e.id === state.selectedEstimateId ? { ...e, status: newStatus } : e
-                ),
-                currentScreen: 'JobCard'
-              }));
-
-              // Save to database in background
-              const dbStatus = newStatus === JobStatus.SENT ? 'sent' : 'paid';
-
-              const { error } = await supabase
-                .from('quotes')
-                .update({
-                  status: dbStatus,
-                  sent_at: new Date().toISOString()
-                })
-                .eq('id', state.selectedEstimateId);
-
-              if (error) {
-                console.error('[App] Failed to update quote status:', error);
-                alert('Failed to mark as sent. Please try again.');
-                // Revert on error
-                if (state.user?.id) {
-                  await loadQuotesFromDatabase(state.user.id);
-                }
-                return;
+            case 'EditEstimate':
+              if (!selectedEstimate) {
+                // Quote not found in state yet — it may still be loading.
+                return (
+                  <div className="h-screen w-screen flex items-center justify-center bg-surface">
+                    <div className="text-center">
+                      <p className="text-[14px] text-secondary">Loading quote...</p>
+                    </div>
+                  </div>
+                );
               }
-            } else {
-              setState(prev => ({
-                ...prev,
-                currentScreen: 'JobCard'
-              }));
-            }
-          }}
-        />;
+              return (
+                <EditEstimate
+                  estimate={selectedEstimate}
+                  returnScreen={state.editReturnScreen}
+                  onBack={() => navigate(state.editReturnScreen || 'EstimatesList')}
+                  onSave={(estimate) => handleEstimateSave(estimate, state.editReturnScreen)}
+                  onSend={(estimate) => {
+                    // Save the estimate first
+                    handleEstimateSave(estimate, 'EstimatePreview');
+                    // Then navigate to send screen
+                    setState(prev => ({
+                      ...prev,
+                      currentScreen: 'SendEstimate',
+                      sendingType: 'estimate'
+                    }));
+                  }}
+                />
+              );
 
-      case 'InvoicePreview':
-        return selectedEstimate ? (
-           <InvoicePreview
-             estimate={selectedEstimate}
-             userProfile={state.user || undefined}
-             onBack={() => navigate('JobCard')}
-             onEdit={() => setState(prev => ({ ...prev, currentScreen: 'EditEstimate', editReturnScreen: 'InvoicePreview' }))}
-             onSend={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'invoice'}))}
-             onDelete={() => handleDeleteEstimate(selectedEstimate.id)}
-           />
-        ) : null;
-        
-      default:
-        return <div className="p-10 text-center">Screen not implemented yet</div>;
-    }
+            case 'EstimatePreview':
+              return selectedEstimate ? (
+                <EstimatePreview
+                  estimate={selectedEstimate}
+                  userProfile={state.user || undefined}
+                  onBack={() => navigate('JobCard')}
+                  onEdit={() => setState(prev => ({ ...prev, currentScreen: 'EditEstimate', editReturnScreen: 'EstimatePreview' }))}
+                  onSend={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'estimate'}))}
+                  onStatusChange={handleStatusChange}
+                  onViewInvoice={() => navigate('InvoicePreview')}
+                  onDelete={() => handleDeleteEstimate(selectedEstimate.id)}
+                  onConvertToInvoice={handleConvertToInvoiceDirectly}
+                />
+              ) : null;
+
+            case 'JobCard':
+              return selectedEstimate ? (
+                <JobCard 
+                  estimate={selectedEstimate} 
+                  onBack={() => navigate('EstimatesList')} 
+                  onViewEstimate={() => navigate('EstimatePreview')}
+                  onViewInvoice={() => navigate('InvoicePreview')}
+                  onSendInvoice={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'invoice'}))}
+                  onStatusChange={handleStatusChange}
+                />
+              ) : null;
+
+            case 'SendEstimate':
+              return <SendEstimate
+                onBack={() => navigate('JobCard')}
+                type={state.sendingType}
+                onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
+                estimateId={state.sendingType === 'invoice' ? state.selectedInvoiceId || undefined : state.selectedEstimateId || undefined}
+                onSent={async () => {
+                  // Update status based on what we sent
+                  const newStatus = state.sendingType === 'invoice' ? JobStatus.PAID : JobStatus.SENT;
+
+                  // Optimistic UI update
+                  if (state.selectedEstimateId) {
+                    setState(prev => ({
+                      ...prev,
+                      estimates: prev.estimates.map(e =>
+                        e.id === state.selectedEstimateId ? { ...e, status: newStatus } : e
+                      ),
+                      currentScreen: 'JobCard'
+                    }));
+
+                    // Save to database in background
+                    const dbStatus = newStatus === JobStatus.SENT ? 'sent' : 'paid';
+
+                    const { error } = await supabase
+                      .from('quotes')
+                      .update({
+                        status: dbStatus,
+                        sent_at: new Date().toISOString()
+                      })
+                      .eq('id', state.selectedEstimateId);
+
+                    if (error) {
+                      console.error('[App] Failed to update quote status:', error);
+                      alert('Failed to mark as sent. Please try again.');
+                      // Revert on error
+                      if (state.user?.id) {
+                        await loadQuotesFromDatabase(state.user.id);
+                      }
+                      return;
+                    }
+                  } else {
+                    setState(prev => ({
+                      ...prev,
+                      currentScreen: 'JobCard'
+                    }));
+                  }
+                }}
+              />;
+
+            case 'InvoicePreview':
+              return selectedEstimate ? (
+                 <InvoicePreview
+                   estimate={selectedEstimate}
+                   userProfile={state.user || undefined}
+                   onBack={() => navigate('JobCard')}
+                   onEdit={() => setState(prev => ({ ...prev, currentScreen: 'EditEstimate', editReturnScreen: 'InvoicePreview' }))}
+                   onSend={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'invoice'}))}
+                   onDelete={() => handleDeleteEstimate(selectedEstimate.id)}
+                 />
+              ) : null;
+              
+            default:
+              return <div className="p-10 text-center">Screen not implemented yet</div>;
+          }
+        })()}
+      </div>
+    );
   };
 
   if (state.loading) {
