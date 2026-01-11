@@ -204,6 +204,27 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   const incrementalExtractTimeoutRef = useRef<number | null>(null);
   const incrementalExtractInFlightRef = useRef(false);
   const incrementalExtractCountRef = useRef(0);
+  const regionContextRef = useRef<{ currency: string; units: string; code: string }>({ currency: 'AUD', units: 'metric', code: 'AU' });
+
+  useEffect(() => {
+    // Fetch region context once on mount for AI prompts
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: pp } = await supabase.rpc('get_effective_pricing_profile', { p_user_id: user.id });
+        if (pp) {
+          const currency = pp.default_currency || 'AUD';
+          const units = pp.default_unit_preference || 'metric';
+          const code = currency === 'USD' ? 'US' : currency === 'GBP' ? 'UK' : 'AU';
+          regionContextRef.current = { currency, units, code };
+        }
+      } catch (e) {
+        console.warn('[VoiceRecorder] Failed to fetch region context:', e);
+      }
+    })();
+  }, []);
+
   const MAX_INCREMENTAL_EXTRACT_CALLS = 6; // hard cap per recording to prevent runaway costs/latency
   const draftQuoteDataRef = useRef<any>(null);
 
@@ -393,19 +414,19 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         }
         
         // Use frequency bins to drive the bars
-        // We have 16 bars, we'll map them to the lower-middle frequency range
-        for (let j = 0; j < 16; j++) {
+        // We have 4 bars in the new UI
+        for (let j = 0; j < 4; j++) {
           const el = visualizerBarsRef.current[j];
           if (!el) continue;
           
-          // Sample from the frequency array (skip lowest and highest for better visual balance)
-          const sampleIdx = Math.floor(j * (arr.length * 0.6) / 16);
+          // Sample from the frequency array
+          const sampleIdx = Math.floor(j * (arr.length * 0.4) / 4);
           const val = arr[sampleIdx] / 255; // 0..1
           
           // Add a tiny bit of movement even if silent
           const idle = 0.05 * Math.sin(ts / 200 + j);
-          const height = Math.max(12, Math.min(100, (val + idle) * 100));
-          el.style.height = `${height}%`;
+          const height = Math.max(12, Math.min(80, (val + idle) * 80));
+          el.style.height = `${height}px`;
         }
 
         rafRef.current = requestAnimationFrame(tick);
@@ -610,7 +631,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
                   {
                     role: 'system',
                     content:
-                      'Extract structured quote details from partial speech text (may include mumbling, slang, abbreviations). Be conservative: only fill fields if clearly mentioned, but DO handle common trade slang and casual phrasing. Write scope items as professional action phrases (e.g., "Build and install custom shelving" instead of "and shelves"). Do not drop descriptive adjectives like "custom", "premium", or "detailed".\n\nIMPORTANT: scopeOfWork can be very detailed. When you can, split into multiple short deliverables (each <= 90 chars). Prefer 3–8 items for partial snippets.\n\nFor fuzzy quantities: "a couple"=2, "a few"=3, "some"=1, "heaps"=10 (choose a reasonable number). Keep vague materials like "fixings/hardware/glue/paint" as material items (never drop them). Return JSON only.'
+                      `Extract structured quote details from partial speech text (may include mumbling, slang, abbreviations). Be conservative: only fill fields if clearly mentioned.\n\n` +
+                      `REGION CONTEXT: ${regionContextRef.current.code} (Currency: ${regionContextRef.current.currency}, Units: ${regionContextRef.current.units})\n` +
+                      `- If region is US: Use US trade slang (drywall, faucet, lumber), Imperial units (feet, inches, LF).\n` +
+                      `- If region is UK/AU: Use local slang (plasterboard, tap, timber), Metric units (metres, LM).\n\n` +
+                      `IMPORTANT: scopeOfWork can be very detailed. When you can, split into multiple short deliverables (each <= 90 chars). Prefer 3–8 items for partial snippets.\n\n` +
+                      `For fuzzy quantities: "a couple"=2, "a few"=3, "some"=1, "heaps"=10. Keep vague materials like "fixings/hardware/glue/paint" as material items (never drop them). Return JSON only.`
                   },
                   {
                     role: 'user',
@@ -848,8 +874,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           
           recognition.continuous = true;
           recognition.interimResults = true;
-          // AU-first (helps a bit with local accents/phrasing)
-          recognition.lang = 'en-AU';
+          // Set language based on user region
+          const langCode = regionContextRef.current.code === 'US' ? 'en-US' : regionContextRef.current.code === 'UK' ? 'en-GB' : 'en-AU';
+          recognition.lang = langCode;
 
           // Best-effort: bias recognition towards our domain vocabulary (helps with "customer/materials/fees" etc.)
           try {
@@ -1261,6 +1288,22 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No session');
 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Fetch pricing profile to get region context (currency/units)
+      let pricingProfile: any = null;
+      try {
+        const { data: pp } = await supabase.rpc('get_effective_pricing_profile', { p_user_id: user.id });
+        pricingProfile = pp;
+      } catch (e) {
+        console.warn('[VoiceRecorder] Failed to fetch profile for extraction context (non-fatal):', e);
+      }
+
+      const currency = pricingProfile?.default_currency || 'AUD';
+      const units = pricingProfile?.default_unit_preference || 'metric';
+      const regionContext = currency === 'USD' ? 'US' : currency === 'GBP' ? 'UK' : 'AU';
+
       const extractionResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`,
         {
@@ -1276,11 +1319,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
               messages: [
                 {
                   role: 'system',
-                  content: 'Extract structured quote information from voice transcripts (mumbling/slang/abbreviations possible). Write professional, high-detail action items for jobTitle and scopeOfWork. Preserve verbs + adjectives exactly (e.g., if the user says "build and fit custom shelves", keep that meaning, not "and shelves"). Ensure items are grammatically complete and do not start with fragments like "and".\n\nIMPORTANT: Scope of work can be very detailed. Produce a list of deliverables:\n- scopeOfWork MUST be an array of short, clear deliverables (split big sentences into multiple items).\n- Prefer 4–12 items when possible.\n- Each item should be <= 90 characters.\n\nBe tolerant:\n- Understand common AU trade slang: bunnings run, fixings, hardware, sparky, chippy, arvo, reno, studs, noggins, gyprock, liquid nails/goop.\n- Keep vague materials as material items (never drop them): "fixings", "hardware", "glue", "paint", "timber".\n- Convert fuzzy quantities to reasonable numbers: "a couple"=2, "a few"=3, "some"=1, "heaps"=10.\n- If a material has no explicit quantity, use 1.\n- If a unit is unclear, use "unit".\n- For time ranges like "three to four days", set timeline as "3-4 days".\n- If a fee is described without an amount, include it with amount null.\n\nIf a field is not mentioned, use null. Return JSON only.'
+                  content: `Extract structured quote information from voice transcripts (mumbling/slang/abbreviations possible). Write professional, high-detail action items for jobTitle and scopeOfWork. Preserve verbs + adjectives exactly. Ensure items are grammatically complete.\n\n` +
+                    `REGION CONTEXT: ${regionContext} (Currency: ${currency}, Units: ${units})\n` +
+                    `- If region is US: Use US trade slang (drywall, faucet, lumber), Imperial units (feet, inches, LF).\n` +
+                    `- If region is UK/AU: Use local slang (plasterboard, tap, timber), Metric units (metres, LM).\n\n` +
+                    `IMPORTANT: Scope of work can be very detailed. Produce a list of deliverables:\n- scopeOfWork MUST be an array of short, clear deliverables (split big sentences into multiple items).\n- Prefer 4–12 items when possible.\n- Each item should be <= 90 characters.\n\n` +
+                    `Be tolerant:\n- Convert fuzzy quantities to reasonable numbers: "a couple"=2, "a few"=3, "some"=1, "heaps"=10.\n- If a material has no explicit quantity, use 1.\n- If a unit is unclear, use "unit".\n- Return JSON only.`
                 },
                 {
                   role: 'user',
-                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null (brief description of the work)",\n  "jobLocation": "string or null (address or location)",\n  "scopeOfWork": ["string"] or null,\n  "timeline": "string or null",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null,\n  "fees": [{"description": "string", "amount": number}] or null\n}`
+                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON structure: { customerName, jobTitle, jobLocation, scopeOfWork, timeline, materials: [{name, quantity, unit}], laborHours, fees: [{description, amount}] }`
                 }
               ],
               response_format: { type: 'json_object' }
@@ -1699,6 +1747,19 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         }
       }
 
+      const transcriptLen = typeof transcript === 'string' ? transcript.length : 0;
+      const pricingDecisions = (lineItems as any[])
+        .filter((li: any) => li?.item_type === 'materials' || li?.item_type === 'material')
+        .map((li: any) => ({
+          desc: li?.description,
+          cents: li?.unit_price_cents,
+          src: li?.catalog_item_id
+            ? 'catalog'
+            : typeof li?.notes === 'string' && li.notes.toLowerCase().startsWith('ai estimated')
+              ? 'ai'
+              : 'fallback',
+        }));
+
       // Update voice_quotes with quote_id and mark as complete
       await supabase
         .from('voice_quotes')
@@ -1708,6 +1769,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           quote_data: {
             ...quoteData,
             created_quote_id: newQuote.id
+          },
+          // High-signal debug log for beta observability
+          debug_log: {
+            extracted_at: new Date().toISOString(),
+            transcript_length: transcriptLen,
+            materials_count: quoteData.materials?.length || 0,
+            has_labor: !!quoteData.laborHours,
+            pricing_profile_id: pricingProfile?.id,
+            line_items_created: lineItems.length,
+            pricing_decisions: pricingDecisions
           }
         })
         .eq('id', voiceQuoteId);
@@ -1797,12 +1868,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
   return (
     <div className="h-full w-full bg-white flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-5 shrink-0">
-        <h1 className="text-2xl font-bold text-slate-900">Voice Quote</h1>
+      <div className="flex items-center justify-between px-6 py-8 shrink-0">
+        <h1 className="text-2xl font-black tracking-tighter uppercase text-slate-900">Voice Quote</h1>
         <button
           onClick={onBack}
           disabled={isProcessing}
-          className="text-[15px] font-medium text-slate-500 hover:text-slate-900 transition-colors disabled:opacity-50"
+          className="text-[13px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors disabled:opacity-50"
         >
           Cancel
         </button>
@@ -1811,59 +1882,71 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       <div className="flex-1 flex flex-col px-6 pb-8 overflow-y-auto custom-scrollbar">
         {!isProcessing ? (
           <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col items-center mb-10 pt-4">
-              <div className="relative">
-                {/* Immersive Waveform / Visualizer */}
-                <div className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-700 ease-out ${isRecording ? 'bg-primary/10 scale-110 shadow-[0_0_40px_rgba(var(--primary-rgb),0.2)]' : 'bg-slate-50'}`}>
+            <div className="flex flex-col items-center mb-12 pt-4">
+              <div className="relative mb-14">
+                {/* Sonic Waves */}
+                {isRecording && (
+                  <>
+                    <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-[#d4ff00]" style={{ animationDuration: '2s' }}></div>
+                    <div className="absolute -inset-8 rounded-full opacity-10 blur-xl animate-pulse bg-[#d4ff00]" style={{ animationDuration: '1.5s' }}></div>
+                  </>
+                )}
+                
+                {/* Hub */}
+                <div 
+                  className={`w-32 h-32 rounded-full flex items-center justify-center z-10 relative transition-all duration-500 bg-[#0f172a] ${isRecording ? 'scale-110 shadow-2xl' : 'scale-100 shadow-lg'}`}
+                >
                   {isRecording ? (
-                    <div className="flex gap-1 items-center h-16">
-                      {[...Array(16)].map((_, i) => (
-                        <div
-                          key={i}
-                          className="w-1 bg-primary rounded-full transition-all duration-75"
-                          ref={(el) => { visualizerBarsRef.current[i] = el; }}
-                          style={{ height: '12%' }}
-                        />
+                    <div className="flex items-center gap-1.5 h-16">
+                      {[1, 2, 3, 4].map(i => (
+                        <div 
+                          key={i} 
+                          ref={(el) => { if (visualizerBarsRef.current) visualizerBarsRef.current[i-1] = el; }}
+                          className="w-1.5 bg-[#d4ff00] rounded-full animate-bounce" 
+                          style={{ height: `${12 + (i * 8)}px`, animationDelay: `${i * 0.1}s` }}
+                        ></div>
                       ))}
                     </div>
                   ) : (
-                    <div className="w-6 h-6 rounded-full bg-slate-300 animate-pulse" />
+                    <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
                   )}
                 </div>
               </div>
               
-              <div className="text-center mt-8">
-                <h2 className={`text-xl font-bold transition-colors duration-500 ${isRecording ? 'text-primary' : 'text-slate-900'}`}>
+              <div className="text-center">
+                <h2 className={`text-xl font-black tracking-tighter uppercase transition-colors duration-500 ${isRecording ? 'text-primary' : 'text-slate-900'}`}>
                   {isRecording ? 'Listening...' : 'Ready to record'}
                 </h2>
-                <p className="mt-2 text-[15px] text-slate-500 leading-relaxed max-w-[280px]">
-                  Mention the address, client name, and job details.
+                <p className="mt-2 text-[13px] font-bold text-slate-400 leading-relaxed uppercase tracking-wide">
+                  Mention details.
                 </p>
               </div>
             </div>
 
             {/* Checklist with smooth transitions */}
             <div className="flex flex-col gap-3 mb-8">
-              <div className="text-[13px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                {isRecording ? 'Detecting items...' : 'Required items:'}
+              <div className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
+                {isRecording ? 'Detecting items' : 'Required items'}
               </div>
               {checklistItems.map((item) => (
                 <div 
                   key={item.id}
-                  className={`flex items-center gap-4 p-4 rounded-2xl border transition-all duration-500 ease-out ${
+                  className={`flex items-center gap-4 p-5 rounded-[24px] border transition-all duration-500 ease-out ${
                     item.status === 'complete' 
-                      ? 'bg-primary/[0.03] border-primary/20 shadow-sm translate-x-1' 
+                      ? 'bg-slate-50 border-slate-100 shadow-sm translate-x-1' 
                       : item.status === 'detecting'
-                        ? 'bg-primary/[0.04] border-primary/10 shadow-sm translate-x-0'
-                        : 'bg-slate-50 border-transparent shadow-none translate-x-0'
+                        ? 'bg-slate-50/50 border-slate-100/50 shadow-sm translate-x-0'
+                        : 'bg-white border-transparent shadow-none translate-x-0'
                   }`}
                 >
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-700 transform ${
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-700 transform ${
                     item.status === 'complete' 
-                      ? 'bg-primary text-white scale-110 rotate-0' 
+                      ? 'bg-primary text-white scale-110 shadow-md' 
                       : item.status === 'detecting'
-                        ? 'bg-primary/10 text-primary scale-105 shadow-sm'
-                        : 'bg-white text-slate-300 scale-100 shadow-sm'
+                        ? 'bg-primary/10 text-primary scale-105'
+                        : 'bg-slate-50 text-slate-200 scale-100'
                   }`}>
                     {item.status === 'complete' ? (
                       <Check size={16} strokeWidth={3} className="animate-in zoom-in duration-300" />
@@ -1874,15 +1957,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className={`block text-[15px] font-semibold transition-colors duration-500 ${
-                      item.status === 'complete' ? 'text-primary' : item.status === 'detecting' ? 'text-slate-900' : 'text-slate-600'
+                    <span className={`block text-[14px] font-black tracking-tight uppercase transition-colors duration-500 ${
+                      item.status === 'complete' ? 'text-primary' : item.status === 'detecting' ? 'text-slate-900' : 'text-slate-400'
                     }`}>
                       {item.label}
                     </span>
 
                     {/* If the user is speaking but we haven't mapped it yet, show a subtle "audio heard" pulse */}
                     {isRecording && item.status === 'waiting' && Date.now() - lastHeardAt < 900 && (
-                      <div className="mt-1 flex items-center gap-2 text-[12px] text-slate-400">
+                      <div className="mt-1 flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-wide">
                         <span className="relative inline-flex h-2 w-2">
                           <span className="absolute inline-flex h-full w-full rounded-full bg-primary/30 animate-ping" />
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60" />
@@ -1893,25 +1976,25 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
                     {/* Safer preview: show counts (less misleading than listing partial items) */}
                     {item.id === 3 && Array.isArray(liveQuotePreview?.scopeOfWork) && liveQuotePreview.scopeOfWork.length > 0 && (
-                      <div className="mt-1 text-[12px] text-slate-500">
-                        {liveQuotePreview.scopeOfWork.length} scope item{liveQuotePreview.scopeOfWork.length === 1 ? '' : 's'} captured
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 uppercase">
+                        {liveQuotePreview.scopeOfWork.length} Captured
                       </div>
                     )}
 
                     {item.id === 4 && Array.isArray(liveQuotePreview?.materials) && liveQuotePreview.materials.length > 0 && (
-                      <div className="mt-1 text-[12px] text-slate-500">
-                        {liveQuotePreview.materials.length} material{liveQuotePreview.materials.length === 1 ? '' : 's'} captured
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 uppercase">
+                        {liveQuotePreview.materials.length} Materials
                       </div>
                     )}
 
                     {item.id === 1 && typeof liveQuotePreview?.jobLocation === 'string' && liveQuotePreview.jobLocation.trim() && (
-                      <div className="mt-1 text-[12px] text-slate-500 truncate">{liveQuotePreview.jobLocation}</div>
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate">{liveQuotePreview.jobLocation}</div>
                     )}
                     {item.id === 2 && typeof liveQuotePreview?.customerName === 'string' && liveQuotePreview.customerName.trim() && (
-                      <div className="mt-1 text-[12px] text-slate-500 truncate">{liveQuotePreview.customerName}</div>
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate">{liveQuotePreview.customerName}</div>
                     )}
                     {item.id === 5 && (typeof liveQuotePreview?.timeline === 'string' || typeof liveQuotePreview?.laborHours === 'number') && (
-                      <div className="mt-1 text-[12px] text-slate-500 truncate">
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate">
                         {typeof liveQuotePreview?.timeline === 'string' && liveQuotePreview.timeline
                           ? liveQuotePreview.timeline
                           : typeof liveQuotePreview?.laborHours === 'number'
@@ -1920,8 +2003,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
                       </div>
                     )}
                     {item.id === 6 && Array.isArray(liveQuotePreview?.fees) && liveQuotePreview.fees.length > 0 && (
-                      <div className="mt-1 text-[12px] text-slate-500 truncate">
-                        {String(liveQuotePreview.fees[0]?.description || 'Additional fees')}
+                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate uppercase">
+                        {String(liveQuotePreview.fees[0]?.description || 'Added')}
                       </div>
                     )}
                   </div>
@@ -1933,34 +2016,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
             <div className="mt-auto py-4">
               {isRecording && (
                 <div className="flex flex-col items-center mb-6 animate-in fade-in slide-in-from-bottom-2">
-                  <div className="text-3xl font-bold text-slate-900 tabular-nums mb-1">
+                  <div className="text-4xl font-black text-slate-900 tracking-tighter tabular-nums mb-1">
                     {formatTime(recordingTime)}
                   </div>
-                  <div className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">
-                    Recording
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
+                    REC ACTIVE
                   </div>
                 </div>
               )}
               
               <button
                 onClick={isRecording ? stopRecording : startRecording}
-                className={`w-full h-18 rounded-3xl flex items-center justify-center gap-4 font-extrabold text-lg shadow-xl transition-all active:scale-95 active:shadow-inner ${
+                className={`w-full h-16 rounded-[24px] flex items-center justify-center gap-4 font-black uppercase tracking-widest text-xs transition-all active:scale-95 shadow-2xl ${
                   isRecording 
-                    ? 'bg-white border-2 border-red-500 text-red-500' 
-                    : 'bg-primary text-white'
+                    ? 'bg-red-500 text-white shadow-red-100' 
+                    : 'bg-[#d4ff00] text-black shadow-accent/20'
                 }`}
               >
-                {isRecording ? (
-                  <>
-                    <div className="w-4 h-4 rounded-[3px] bg-red-500 animate-pulse" />
-                    Finish Recording
-                  </>
-                ) : (
-                  <>
-                    <Mic size={22} strokeWidth={2.5} />
-                    Start Recording
-                  </>
-                )}
+                {isRecording ? 'Stop Session' : 'Start Recording'}
               </button>
             </div>
           </div>

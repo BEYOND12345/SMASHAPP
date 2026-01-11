@@ -16,6 +16,13 @@ interface SendEstimateProps {
 }
 
 export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type = 'estimate', onTabChange, estimateId }) => {
+  const getPublicBaseUrl = () => {
+    const raw =
+      (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.trim() ||
+      window.location.origin;
+    return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+  };
+
   const [copied, setCopied] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [shareUrl, setShareUrl] = useState<string>('');
@@ -103,7 +110,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             setEstimate(estimateObj);
 
             if (invoiceData.short_code) {
-              const url = `${window.location.origin}/i/${invoiceData.short_code}`;
+              const url = `${getPublicBaseUrl()}/i/${invoiceData.short_code}`;
               console.log('[SendEstimate] Invoice share URL generated:', url);
               setShareUrl(url);
             } else {
@@ -172,7 +179,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
             setEstimate(estimateObj);
 
             if (quoteData.short_code) {
-              const url = `${window.location.origin}/q/${quoteData.short_code}`;
+              const url = `${getPublicBaseUrl()}/q/${quoteData.short_code}`;
               console.log('[SendEstimate] Quote share URL generated:', url);
               setShareUrl(url);
             } else {

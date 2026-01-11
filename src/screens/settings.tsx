@@ -4,7 +4,8 @@ import { Layout, Header, Section } from '../components/layout';
 import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { Input, Select } from '../components/inputs';
-import { ChevronLeft, DollarSign, Camera, User, LogOut, RefreshCw, Check, X, CreditCard, Briefcase, ArrowRight, Settings as SettingsIcon } from 'lucide-react';
+import { ChevronLeft, DollarSign, Camera, User, LogOut, RefreshCw, Check, X, CreditCard, Briefcase, ArrowRight, MessageSquare, Settings as SettingsIcon } from 'lucide-react';
+import { FeedbackSheet } from '../components/feedbacksheet';
 
 interface Organization {
   id: string;
@@ -73,6 +74,7 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
   const [saving, setSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickbooksEnabled = import.meta.env.VITE_ENABLE_QUICKBOOKS_INTEGRATION === 'true';
@@ -222,8 +224,11 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
               <Camera size={24} className="text-white" />
             </div>
           </button>
-          <h2 className="text-[24px] font-black text-slate-900 tracking-tight leading-none">{organization?.name || 'Business Name'}</h2>
-          <p className="text-[15px] text-slate-400 font-bold uppercase tracking-wider mt-2">{userEmail}</p>
+          <h2 className="text-[28px] font-black text-slate-900 tracking-tighter uppercase leading-tight">{organization?.name || 'Business Name'}</h2>
+          <div className="flex items-center gap-2 mt-2">
+            <p className="text-[13px] text-slate-400 font-bold uppercase tracking-widest">{userEmail}</p>
+            <span className="px-2 py-0.5 rounded-full bg-accent text-black text-[9px] font-black uppercase tracking-[0.2em] shadow-sm">BETA</span>
+          </div>
         </div>
 
         {/* Business Info Section */}
@@ -242,10 +247,10 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
             ) : (
               <div className="flex flex-col gap-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div><p className="text-[11px] font-black text-slate-300 uppercase tracking-widest mb-1">Trade</p><p className="font-bold text-slate-900">{organization?.trade_type || 'Not set'}</p></div>
-                  <div><p className="text-[11px] font-black text-slate-300 uppercase tracking-widest mb-1">Phone</p><p className="font-bold text-slate-900">{organization?.phone || 'Not set'}</p></div>
+                  <div><p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1.5">Trade Type</p><p className="font-black text-[15px] text-slate-900 uppercase tracking-tight">{organization?.trade_type || 'Not set'}</p></div>
+                  <div><p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1.5">Phone</p><p className="font-black text-[15px] text-slate-900 uppercase tracking-tight">{organization?.phone || 'Not set'}</p></div>
                 </div>
-                <Button variant="secondary" fullWidth onClick={() => setEditingSection('business')}>Edit Profile</Button>
+                <Button variant="secondary" className="h-14 font-black uppercase tracking-widest text-[11px] rounded-xl" onClick={() => setEditingSection('business')}>Edit Profile</Button>
               </div>
             )}
           </Card>
@@ -262,23 +267,23 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
                 </div>
                 <Input label="Materials Markup %" type="number" value={String(profile.materials_markup_percent)} onChange={e => setProfile({ ...profile, materials_markup_percent: parseFloat(e.target.value) })} />
                 <div className="flex gap-3">
-                  <Button variant="secondary" fullWidth onClick={() => setEditingSection(null)}>Cancel</Button>
-                  <Button variant="primary" fullWidth onClick={handleSave} disabled={saving}>Save</Button>
+                  <Button variant="secondary" className="h-14 font-black uppercase tracking-widest text-[11px] rounded-xl" onClick={() => setEditingSection(null)}>Cancel</Button>
+                  <Button variant="primary" className="h-14 font-black uppercase tracking-widest text-[11px] rounded-xl" onClick={handleSave} disabled={saving}>Save</Button>
                 </div>
               </>
             ) : (
               <div className="flex flex-col gap-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-4 rounded-[20px] border border-slate-100">
-                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Hourly Rate</p>
-                    <p className="text-[20px] font-black text-slate-900">${(profile?.hourly_rate_cents || 0) / 100}</p>
+                  <div className="bg-slate-50 p-5 rounded-[24px] border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1.5">Hourly Rate</p>
+                    <p className="text-[24px] font-black text-slate-900 tracking-tighter tabular-nums">${(profile?.hourly_rate_cents || 0) / 100}</p>
                   </div>
-                  <div className="bg-slate-50 p-4 rounded-[20px] border border-slate-100">
-                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Markup</p>
-                    <p className="text-[20px] font-black text-slate-900">{profile?.materials_markup_percent || 0}%</p>
+                  <div className="bg-slate-50 p-5 rounded-[24px] border border-slate-100">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1.5">Markup</p>
+                    <p className="text-[24px] font-black text-slate-900 tracking-tighter tabular-nums">{profile?.materials_markup_percent || 0}%</p>
                   </div>
                 </div>
-                <Button variant="secondary" fullWidth onClick={() => setEditingSection('pricing')}>Edit Rates</Button>
+                <Button variant="secondary" className="h-14 font-black uppercase tracking-widest text-[11px] rounded-xl" onClick={() => setEditingSection('pricing')}>Edit Rates</Button>
               </div>
             )}
           </Card>
@@ -286,26 +291,49 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
 
         {/* Materials Catalog Link */}
         <Section title="Tools">
-          <Card onClick={() => onNavigate?.('MaterialsCatalog')} className="flex items-center gap-4 active:scale-95 transition-transform border-2 border-slate-900">
-            <div className="w-12 h-12 rounded-[16px] bg-slate-900 flex items-center justify-center shrink-0">
-              <Briefcase size={22} className="text-white" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-black text-slate-900 tracking-tight text-[17px]">Materials Catalog</h3>
-              <p className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Manage shortcuts</p>
-            </div>
-            <ArrowRight size={20} className="text-slate-300" />
-          </Card>
+          <div className="flex flex-col gap-3">
+            <Card onClick={() => onNavigate?.('MaterialsCatalog')} className="flex items-center gap-4 active:scale-[0.98] transition-all border-2 border-slate-100 bg-white rounded-[24px] p-6">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+                <Briefcase size={22} className="text-slate-900" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-slate-900 tracking-tighter uppercase text-[15px]">Materials Catalog</h3>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Manage shortcuts</p>
+              </div>
+              <ArrowRight size={20} className="text-slate-200" />
+            </Card>
+
+            <Card onClick={() => setIsFeedbackOpen(true)} className="flex items-center gap-4 active:scale-[0.98] transition-all bg-accent/5 border-2 border-accent/10 rounded-[24px] p-6">
+              <div className="w-12 h-12 rounded-2xl bg-accent flex items-center justify-center shrink-0">
+                <MessageSquare size={22} className="text-black" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-black text-slate-900 tracking-tighter uppercase text-[15px]">Report an Issue</h3>
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Beta feedback</p>
+              </div>
+              <ArrowRight size={20} className="text-accent/30" />
+            </Card>
+          </div>
         </Section>
+
+        <FeedbackSheet 
+          isOpen={isFeedbackOpen} 
+          onClose={() => setIsFeedbackOpen(false)} 
+          metadata={{ 
+            source: 'settings',
+            orgId,
+            userId
+          }} 
+        />
 
         {/* Sign Out */}
         <div className="px-6 mt-10">
           <button
             onClick={onLogout}
-            className="w-full h-[60px] rounded-[24px] bg-red-50 text-red-500 font-black uppercase tracking-[0.2em] text-[13px] flex items-center justify-center gap-3 active:scale-95 transition-all"
+            className="w-full h-16 rounded-[24px] bg-red-50 text-red-500 font-black uppercase tracking-[0.3em] text-[11px] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-sm"
           >
             <LogOut size={18} />
-            Sign Out
+            Sign Out Session
           </button>
         </div>
       </div>

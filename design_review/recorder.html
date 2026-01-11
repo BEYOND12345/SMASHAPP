@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMASH - Voice Recorder Design Review</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+            background-color: #f1f5f9;
+        }
+
+        @keyframes slide-up {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .animate-slide-up {
+            animation: slide-up 0.4s ease-out forwards;
+        }
+
+        .safe-bottom {
+            padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: '#0f172a',
+                        accent: '#d4ff00',
+                        surface: '#ffffff',
+                    },
+                    borderRadius: {
+                        'brand': '24px',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex justify-center items-center min-h-screen">
+
+    <!-- Mobile Frame -->
+    <div class="w-full max-w-[390px] h-[844px] bg-white shadow-2xl relative overflow-hidden flex flex-col rounded-[48px] border-[8px] border-slate-900">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-8 shrink-0">
+            <h1 class="text-2xl font-bold text-slate-900">Voice Quote</h1>
+            <button class="text-[15px] font-medium text-slate-500 hover:text-slate-900 transition-colors">Cancel</button>
+        </div>
+
+        <div class="flex-1 flex flex-col px-6 pb-8 overflow-y-auto">
+            <div class="flex flex-col items-center mb-12 pt-4">
+                <div class="relative mb-12">
+                    <!-- Sonic Waves -->
+                    <div class="absolute inset-0 rounded-full animate-ping opacity-20 bg-[#d4ff00]" style="animation-duration: 2s;"></div>
+                    <div class="absolute -inset-8 rounded-full opacity-10 blur-xl animate-pulse bg-[#d4ff00]" style="animation-duration: 1.5s;"></div>
+                    
+                    <!-- Hub -->
+                    <div class="w-32 h-32 rounded-full flex items-center justify-center z-10 relative transition-all duration-500 bg-[#0f172a] scale-110 shadow-2xl">
+                        <div class="flex items-center gap-1.5 h-16">
+                            <div class="w-1.5 bg-[#d4ff00] rounded-full animate-bounce h-8" style="animation-delay: 0.1s"></div>
+                            <div class="w-1.5 bg-[#d4ff00] rounded-full animate-bounce h-12" style="animation-delay: 0.2s"></div>
+                            <div class="w-1.5 bg-[#d4ff00] rounded-full animate-bounce h-10" style="animation-delay: 0.3s"></div>
+                            <div class="w-1.5 bg-[#d4ff00] rounded-full animate-bounce h-6" style="animation-delay: 0.4s"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <h2 class="text-xl font-bold text-slate-900">Listening...</h2>
+                    <p class="mt-2 text-[15px] text-slate-500 leading-relaxed max-w-[280px]">Mention the address, client name, and job details.</p>
+                </div>
+            </div>
+
+            <!-- Checklist -->
+            <div class="flex flex-col gap-3 mb-8">
+                <div class="text-[13px] font-bold text-slate-400 uppercase tracking-wider mb-1">Detecting items...</div>
+                
+                <!-- Complete Item -->
+                <div class="flex items-center gap-4 p-4 rounded-2xl border bg-slate-50 border-slate-100 shadow-sm translate-x-1">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center bg-slate-900 text-white shadow-sm">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    </div>
+                    <div class="flex-1">
+                        <span class="block text-[15px] font-semibold text-slate-900">Job address</span>
+                        <div class="mt-1 text-[12px] text-slate-500 truncate">123 Example Street, Sydney</div>
+                    </div>
+                </div>
+
+                <!-- Detecting Item -->
+                <div class="flex items-center gap-4 p-4 rounded-2xl border bg-slate-50 border-slate-100 shadow-sm">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center bg-slate-100 text-slate-400 shadow-sm">
+                        <div class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></div>
+                    </div>
+                    <div class="flex-1">
+                        <span class="block text-[15px] font-semibold text-slate-600">Customer name</span>
+                        <div class="mt-1 flex items-center gap-2 text-[12px] text-slate-400">
+                            <span class="relative inline-flex h-2 w-2">
+                                <span class="absolute inline-flex h-full w-full rounded-full bg-slate-400/30 animate-ping"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-slate-400/60"></span>
+                            </span>
+                            Hearing you…
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Waiting Item -->
+                <div class="flex items-center gap-4 p-4 rounded-2xl border bg-slate-50 border-transparent">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center bg-white text-slate-200 shadow-sm">
+                        <div class="w-1.5 h-1.5 rounded-full bg-slate-200"></div>
+                    </div>
+                    <div class="flex-1">
+                        <span class="block text-[15px] font-semibold text-slate-400">Scope of work</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="mt-auto py-4 safe-bottom">
+                <div class="flex flex-col items-center mb-6">
+                    <div class="text-3xl font-bold text-slate-900 tabular-nums mb-1">0:14</div>
+                    <div class="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Recording</div>
+                </div>
+                
+                <button class="w-full h-16 rounded-[20px] flex items-center justify-center gap-4 font-black uppercase tracking-widest bg-red-500 text-white shadow-xl shadow-red-100 active:scale-95 transition-all">
+                    Stop
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

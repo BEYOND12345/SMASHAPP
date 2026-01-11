@@ -210,7 +210,10 @@ export const PublicRouter: React.FC = () => {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-surface">
         <div className="text-center">
-          <h1 className="text-[24px] font-bold text-primary">SMASH</h1>
+          <h1 className="text-[24px] font-bold text-primary flex items-center justify-center gap-1">
+            <span>SMASH</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-accent mt-2 shadow-[0_0_12px_rgba(212,255,0,0.5)]" />
+          </h1>
           <p className="text-[14px] text-secondary mt-2">Loading...</p>
         </div>
       </div>
@@ -221,7 +224,10 @@ export const PublicRouter: React.FC = () => {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-surface">
         <div className="text-center p-6">
-          <h1 className="text-[24px] font-bold text-primary mb-4">SMASH</h1>
+          <h1 className="text-[24px] font-bold text-primary mb-4 flex items-center justify-center gap-1">
+            <span>SMASH</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-accent mt-2 shadow-[0_0_12px_rgba(212,255,0,0.5)]" />
+          </h1>
           <p className="text-[16px] text-secondary">{error || 'Not found'}</p>
         </div>
       </div>

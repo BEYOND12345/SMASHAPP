@@ -44,6 +44,7 @@ export interface Estimate {
   labour: LabourItem;
   additionalFees?: FeeItem[]; // Bunnings run, travel, callout, etc.
   gstRate: number; // 0.10 for 10%
+  currency?: string;
 }
 
 export type ScreenName =

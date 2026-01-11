@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMASH - Public Invoice Design Review</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+            background-color: #f1f5f9;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: '#0f172a',
+                        accent: '#d4ff00',
+                        surface: '#ffffff',
+                    },
+                    borderRadius: {
+                        'brand': '24px',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex justify-center items-center min-h-screen py-10">
+
+    <!-- Mobile Frame -->
+    <div class="w-full max-w-[390px] min-h-[844px] bg-white shadow-2xl relative flex flex-col rounded-[48px] border-[8px] border-slate-900 overflow-hidden">
+        
+        <!-- Header -->
+        <header class="h-16 flex items-center justify-between px-6 bg-white/80 backdrop-blur-md sticky top-0 z-20 border-b border-slate-50">
+            <div class="flex items-center gap-1">
+                <span class="text-[17px] font-black tracking-tighter text-slate-900">SMASH</span>
+                <div class="w-1.5 h-1.5 rounded-full bg-accent mt-1 shadow-[0_0_8px_rgba(212,255,0,0.5)]"></div>
+            </div>
+            <button class="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Download PDF</button>
+        </header>
+
+        <div class="flex-1 p-6 space-y-8">
+            <!-- Business Brand Section -->
+            <div class="bg-slate-50 rounded-brand p-8 flex flex-col items-center text-center">
+                <div class="w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center mb-4 text-white font-black text-2xl">JS</div>
+                <h2 class="text-xl font-bold text-slate-900">John's Services</h2>
+                <p class="text-sm text-slate-500 font-medium mt-1">ABN 12 345 678 910</p>
+            </div>
+
+            <!-- Job Summary -->
+            <div>
+                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-3 block">Tax Invoice #INV-8273</span>
+                <h1 class="text-[28px] font-bold text-slate-900 leading-tight tracking-tight">Installation of custom kitchen shelving</h1>
+            </div>
+
+            <!-- Totals Card -->
+            <div class="bg-white rounded-brand border-2 border-slate-50 overflow-hidden shadow-sm">
+                <div class="p-6 space-y-4">
+                    <div class="flex justify-between items-center text-sm font-medium text-slate-500">
+                        <span>Subtotal</span>
+                        <span>$1,250.00</span>
+                    </div>
+                    <div class="flex justify-between items-center text-sm font-medium text-slate-500">
+                        <span>GST (10%)</span>
+                        <span>$125.00</span>
+                    </div>
+                    <div class="h-px bg-slate-50"></div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-lg font-bold text-slate-900">Total Due</span>
+                        <span class="text-2xl font-black text-slate-900 tracking-tight">$1,375.00</span>
+                    </div>
+                </div>
+                
+                <div class="bg-slate-900 p-6">
+                    <button class="w-full h-14 bg-accent rounded-xl font-black uppercase tracking-widest text-black shadow-lg shadow-accent/10 active:scale-[0.98] transition-all">
+                        Pay Now
+                    </button>
+                </div>
+            </div>
+
+            <!-- Payment Details -->
+            <div class="space-y-4">
+                <h3 class="text-[13px] font-bold text-slate-400 uppercase tracking-widest">How to Pay</h3>
+                <div class="bg-slate-50 rounded-2xl p-5 space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-sm font-medium text-slate-400">Bank</span>
+                        <span class="text-sm font-bold text-slate-900">CommBank</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm font-medium text-slate-400">BSB</span>
+                        <span class="text-sm font-bold text-slate-900">062-123</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-sm font-medium text-slate-400">Account</span>
+                        <span class="text-sm font-bold text-slate-900">1023 4567</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="p-8 text-center border-t border-slate-50">
+            <p class="text-sm text-slate-400 font-medium">Thank you for your business!</p>
+        </footer>
+    </div>
+
+</body>
+</html>

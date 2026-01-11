@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.voicequote.app',
-  appName: 'VoiceQuote',
+  appId: 'com.smash.app',
+  appName: 'SMASH',
   webDir: 'dist',
   server: {
     androidScheme: 'https'

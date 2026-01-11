@@ -76,13 +76,25 @@ export const Header: React.FC<{
   transparent?: boolean;
   variant?: 'light' | 'dark';
 }> = ({ title, left, right, transparent, variant = 'light' }) => {
+  const isBrand = (title || '').trim().toUpperCase() === 'SMASH';
   return (
     <header className={`h-[64px] flex items-center justify-between px-5 shrink-0 z-20 transition-all duration-300
       ${transparent ? 'bg-transparent' : 'bg-[#FAFAFA]/80 backdrop-blur-md sticky top-0'}
     `}>
       <div className="w-10 flex justify-start">{left}</div>
       <div className="flex-1 text-center">
-        {title && <h1 className={`text-[17px] font-bold tracking-tight ${variant === 'dark' ? 'text-white' : 'text-slate-900'}`}>{title}</h1>}
+        {title && (
+          <h1 className={`text-[17px] font-bold tracking-tight ${variant === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+            {isBrand ? (
+              <span className="flex items-center justify-center gap-[2px]">
+                <span>SMASH</span>
+                <span className="w-[5px] h-[5px] rounded-full bg-accent mt-1.5 shadow-[0_0_10px_rgba(212,255,0,0.4)]" />
+              </span>
+            ) : (
+              title
+            )}
+          </h1>
+        )}
       </div>
       <div className="w-10 flex justify-end">{right}</div>
     </header>

@@ -18,7 +18,7 @@ Brand Dark:       #334155 (slate-700) - Active states
 ```
 Secondary:        #475569 (slate-600) - Secondary text
 Tertiary:         #94a3b8 (slate-400) - Muted text, labels
-Surface:          #f8fafc (slate-50)  - Background surfaces
+Surface:          #ffffff (white)     - Background surfaces
 Border:           #e2e8f0 (slate-200) - Dividers, borders
 ```
 
@@ -50,7 +50,7 @@ Info:             #3b82f6 (blue-500)
 
 ### Font Family
 ```css
-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Roboto', sans-serif
+font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif
 ```
 
 ### Font Sizes & Weights
@@ -123,6 +123,7 @@ Bottom padding:   max(1.25rem, env(safe-area-inset-bottom))
 Small:            8px  (rounded-lg)   - Small elements
 Medium:           12px (rounded-xl)   - Inputs, pills
 Large:            16px (rounded-2xl)  - Buttons
+Brand:            24px (rounded-brand) - Brand cards
 Extra Large:      24px (rounded-[24px]) - Cards
 Full:             9999px (rounded-full) - Circles, icons
 ```

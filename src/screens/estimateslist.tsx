@@ -9,8 +9,8 @@ interface EstimatesListProps {
   estimates: Estimate[];
   onNewEstimate: () => void;
   onSelectEstimate: (id: string) => void;
-  activeTab: 'estimates' | 'invoices';
-  onTabChange: (tab: 'estimates' | 'invoices') => void;
+  activeTab: 'estimates' | 'invoices' | 'customers';
+  onTabChange: (tab: 'estimates' | 'invoices' | 'customers') => void;
   onProfileClick?: () => void;
   onQuickRecord?: () => void;
 }
@@ -18,8 +18,8 @@ interface EstimatesListProps {
 // Minimal status indicator
 const StatusDot: React.FC<{ status: JobStatus }> = ({ status }) => {
   return (
-    <div className="bg-gray-50 px-2 py-1 rounded-full">
-      <span className="text-[11px] font-semibold text-secondary">{status}</span>
+    <div className="bg-slate-50 px-2 py-1 rounded-full border border-slate-100">
+      <span className="text-[11px] font-semibold text-slate-600">{status}</span>
     </div>
   );
 }
@@ -106,19 +106,19 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
-              placeholder="Search by name, job, or address..."
+              placeholder="SEARCH JOBS..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-full bg-white shadow-sm border border-gray-100 text-[15px] text-primary placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20"
+              className="w-full pl-11 pr-4 h-12 rounded-xl bg-white shadow-sm border border-slate-100 text-[13px] font-semibold text-slate-700 placeholder:text-slate-300 uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-slate-200 transition-all"
             />
           </div>
           <div className="relative">
             <button
               onClick={() => setShowFilterModal(!showFilterModal)}
-              className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${
+              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all active:scale-95 ${
                 statusFilter !== 'all'
-                  ? 'bg-accent text-white shadow-md'
-                  : 'bg-white text-secondary border border-gray-100'
+                  ? 'bg-accent text-black shadow-md shadow-accent/20'
+                  : 'bg-white text-slate-400 border border-slate-100 shadow-sm'
               }`}
             >
               <Filter size={20} />
@@ -181,16 +181,17 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
             <div
               key={est.id}
               onClick={() => onSelectEstimate(est.id)}
-              className="bg-white rounded-[20px] p-5 shadow-sm border border-slate-100/50 active:scale-[0.98] active:bg-slate-50/50 transition-all duration-200 cursor-pointer flex flex-col gap-3"
+              className="bg-white rounded-[24px] p-6 shadow-sm border-2 border-slate-50 active:scale-[0.98] active:bg-slate-50 transition-all duration-200 cursor-pointer flex flex-col gap-4"
             >
               <div className="flex justify-between items-start">
-                <div className="flex items-center gap-3.5 flex-1 min-w-0 pr-3">
-                   <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-[12px] font-bold text-slate-900 tracking-tight flex-shrink-0 border border-slate-100">
+                <div className="flex items-center gap-4 flex-1 min-w-0 pr-3">
+                   <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-[14px] font-bold text-slate-900 tracking-tight flex-shrink-0">
                       {getInitials(est.clientName)}
                    </div>
                    <div className="flex-1 min-w-0">
-                      <h3 className="text-[15px] font-bold text-slate-900 tracking-tight leading-tight mb-0.5 truncate">{est.jobTitle}</h3>
-                      <p className="text-[13px] text-slate-500 truncate font-medium">{est.clientName}</p>
+                      <h3 className="text-[17px] font-black text-slate-900 tracking-tighter uppercase leading-tight mb-0.5 truncate">{est.jobTitle}</h3>
+                      <p className="text-[12px] text-slate-400 font-bold uppercase tracking-widest truncate">{est.clientName}</p>
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mt-1.5">ID #{est.id.substring(0, 6).toUpperCase()}</p>
                    </div>
                 </div>
                 <div className="flex-shrink-0">
@@ -201,8 +202,8 @@ export const EstimatesList: React.FC<EstimatesListProps> = ({
               <div className="h-px bg-slate-50 w-full" />
 
               <div className="flex justify-between items-center px-0.5">
-                <span className="text-[12px] font-semibold text-slate-400">{est.date}</span>
-                <span className="text-[16px] font-extrabold text-slate-900 tracking-tight">{formatCurrency(calculateEstimateTotals(est).total)}</span>
+                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{est.date}</span>
+                <span className="text-[20px] font-black text-slate-900 tracking-tighter tabular-nums">{formatCurrency(calculateEstimateTotals(est).total)}</span>
               </div>
             </div>
           ))

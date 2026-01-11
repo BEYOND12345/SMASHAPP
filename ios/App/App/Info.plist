@@ -7,7 +7,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>VoiceQuote</string>
+	<string>SMASH</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SMASH needs access to your microphone to record your voice notes and generate quotes from your speech.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

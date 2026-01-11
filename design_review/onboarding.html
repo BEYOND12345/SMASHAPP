@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMASH - Onboarding Design Review</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+            background-color: #f1f5f9;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: '#0f172a',
+                        accent: '#d4ff00',
+                        surface: '#ffffff',
+                    },
+                    borderRadius: {
+                        'brand': '24px',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="flex justify-center items-center min-h-screen">
+
+    <!-- Mobile Frame -->
+    <div class="w-full max-w-[390px] h-[844px] bg-white shadow-2xl relative overflow-hidden flex flex-col rounded-[48px] border-[8px] border-slate-900">
+        
+        <div class="flex-1 px-8 pt-16 pb-8 flex flex-col">
+            <div class="mb-10">
+                <div class="flex items-center gap-1 mb-6">
+                    <span class="text-2xl font-black tracking-tighter text-slate-900">SMASH</span>
+                    <div class="w-2 h-2 rounded-full bg-accent mt-2 shadow-[0_0_12px_rgba(212,255,0,0.5)]"></div>
+                </div>
+                <h1 class="text-[32px] font-bold text-slate-900 mb-3 tracking-tight">Your Rates</h1>
+                <p class="text-[15px] text-slate-500 leading-relaxed font-medium">We'll use these rates to calculate quotes automatically for every job.</p>
+            </div>
+
+            <div class="space-y-6 flex-1">
+                <!-- Custom Input Component Mock -->
+                <div class="space-y-2">
+                    <label class="block text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Country</label>
+                    <div class="relative">
+                        <select class="w-full h-14 bg-white border-2 border-slate-100 rounded-xl px-4 text-[15px] font-semibold text-slate-900 appearance-none focus:border-slate-900 transition-colors">
+                            <option>Australia</option>
+                            <option>United Kingdom</option>
+                            <option>United States</option>
+                        </select>
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <svg class="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Currency</label>
+                    <div class="relative">
+                        <select class="w-full h-14 bg-white border-2 border-slate-100 rounded-xl px-4 text-[15px] font-semibold text-slate-900 appearance-none focus:border-slate-900 transition-colors">
+                            <option>AUD</option>
+                            <option>GBP</option>
+                            <option>USD</option>
+                        </select>
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <svg class="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-[13px] font-bold text-slate-400 uppercase tracking-widest ml-1">Hourly Rate (Labor)</label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                        <input type="number" value="85" class="w-full h-14 bg-white border-2 border-slate-100 rounded-xl pl-8 pr-4 text-[15px] font-semibold text-slate-900 focus:border-slate-900 transition-colors">
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-8">
+                <button class="w-full h-16 rounded-[20px] flex items-center justify-center gap-4 font-black uppercase tracking-widest bg-[#d4ff00] text-black shadow-xl shadow-accent/20 active:scale-95 transition-all">
+                    Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

@@ -17,6 +17,7 @@ import { PublicInvoiceView } from './screens/publicinvoiceview';
 import { Settings } from './screens/settings';
 import { MaterialsCatalog } from './screens/materialscatalog';
 import { VoiceQuotesList } from './screens/voicequoteslist';
+import { VoiceRecorder } from './screens/voicerecorder';
 import { supabase } from './lib/supabase';
 import { parsePublicRoute } from './lib/utils/routeHelpers';
 
@@ -116,6 +117,7 @@ const App: React.FC = () => {
       JobStatus.DRAFT,
     date: new Date(quoteData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
     gstRate: quoteData.default_tax_rate || 0.10,
+    currency: quoteData.default_currency || 'AUD',
   });
 
   // Load quotes from database
@@ -642,7 +644,8 @@ const App: React.FC = () => {
 
   // Actions
   const handleSelectEstimate = (id: string) => {
-    setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }));
+    // Clicking an estimate should open the estimate view (not a legacy/intermediate screen)
+    setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'EstimatePreview' }));
   };
 
   const handleStatusChange = async (newStatus: JobStatus) => {
@@ -1069,6 +1072,38 @@ const App: React.FC = () => {
             case 'MaterialsCatalog':
               return <MaterialsCatalog onBack={() => navigate('Settings')} />;
 
+            case 'VoiceRecorder':
+              // Keep voice recording "contained" inside the app frame (mobile-sized)
+              return (
+                <div className="fixed inset-0 z-[100] bg-slate-900/10 backdrop-blur-sm flex justify-center animate-in fade-in duration-200">
+                  <div className="w-full max-w-[390px] h-[100dvh] bg-white shadow-2xl animate-in slide-in-from-bottom-6 duration-300">
+                    <VoiceRecorder
+                      onBack={() => navigate('EstimatesList')}
+                      onQuoteCreated={async (quoteId) => {
+                        console.log('[App] Quote created from voice, navigating to edit:', quoteId);
+
+                        // Fast-path load this quote so EditEstimate has data immediately
+                        await loadQuoteById(quoteId);
+
+                        // Navigate immediately to the editor
+                        setState(prev => ({
+                          ...prev,
+                          selectedEstimateId: quoteId,
+                          currentScreen: 'EditEstimate',
+                          // Keep undefined so EditEstimate "Back" returns to EstimatesList
+                          editReturnScreen: prev.editReturnScreen
+                        }));
+
+                        // Refresh the database in the background
+                        if (state.user?.id) {
+                          loadQuotesFromDatabase(state.user.id);
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+
             case 'VoiceQuotesList':
               return <VoiceQuotesList
                 onProfileClick={() => navigate('Settings')}
@@ -1123,17 +1158,19 @@ const App: React.FC = () => {
               return state.activeTab === 'estimates' ? (
                 <EstimatesList
                   estimates={state.estimates}
-                  onNewEstimate={() => navigate('VoiceQuotesList')}
+                  onNewEstimate={() => navigate('VoiceRecorder')}
                   onSelectEstimate={handleSelectEstimate}
                   activeTab={state.activeTab}
                   onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
                   onProfileClick={() => navigate('Settings')}
-                  onQuickRecord={() => navigate('VoiceQuotesList')}
+                  onQuickRecord={() => navigate('VoiceRecorder')}
                 />
               ) : state.activeTab === 'invoices' ? (
                 <InvoicesList
                   invoices={state.invoices}
-                  onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
+                  onNewEstimate={() => navigate('VoiceRecorder')}
+                  onQuickRecord={() => navigate('VoiceRecorder')}
+                  onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview', activeTab: 'invoices' }))}
                   activeTab={state.activeTab}
                   onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
                   onProfileClick={() => navigate('Settings')}
@@ -1141,6 +1178,7 @@ const App: React.FC = () => {
               ) : (
                 <CustomersList
                   customers={state.customers}
+                  onNewEstimate={() => navigate('VoiceRecorder')}
                   onSelectCustomer={handleSelectCustomer}
                   activeTab={state.activeTab}
                   onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab }))}
@@ -1156,7 +1194,8 @@ const App: React.FC = () => {
                   quotes={state.estimates}
                   invoices={state.invoices}
                   onBack={() => setState(prev => ({ ...prev, currentScreen: 'EstimatesList', activeTab: 'customers' }))}
-                  onSelectQuote={(id) => setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'JobCard' }))}
+                  onNewQuote={() => navigate('VoiceRecorder')}
+                  onSelectQuote={(id) => setState(prev => ({ ...prev, selectedEstimateId: id, currentScreen: 'EstimatePreview' }))}
                   onSelectInvoice={(id) => setState(prev => ({ ...prev, selectedInvoiceId: id, currentScreen: 'InvoicePreview' }))}
                   onDeleteCustomer={handleDeleteCustomer}
                 />
@@ -1197,7 +1236,7 @@ const App: React.FC = () => {
                 <EstimatePreview
                   estimate={selectedEstimate}
                   userProfile={state.user || undefined}
-                  onBack={() => navigate('JobCard')}
+                  onBack={() => navigate('EstimatesList')}
                   onEdit={() => setState(prev => ({ ...prev, currentScreen: 'EditEstimate', editReturnScreen: 'EstimatePreview' }))}
                   onSend={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'estimate'}))}
                   onStatusChange={handleStatusChange}
@@ -1221,7 +1260,7 @@ const App: React.FC = () => {
 
             case 'SendEstimate':
               return <SendEstimate
-                onBack={() => navigate('JobCard')}
+                onBack={() => navigate(state.sendingType === 'invoice' ? 'InvoicePreview' : 'EstimatePreview')}
                 type={state.sendingType}
                 onTabChange={(tab) => setState(prev => ({ ...prev, activeTab: tab, currentScreen: 'EstimatesList' }))}
                 estimateId={state.sendingType === 'invoice' ? state.selectedInvoiceId || undefined : state.selectedEstimateId || undefined}
@@ -1273,7 +1312,7 @@ const App: React.FC = () => {
                  <InvoicePreview
                    estimate={selectedEstimate}
                    userProfile={state.user || undefined}
-                   onBack={() => navigate('JobCard')}
+                   onBack={() => navigate('EstimatesList')}
                    onEdit={() => setState(prev => ({ ...prev, currentScreen: 'EditEstimate', editReturnScreen: 'InvoicePreview' }))}
                    onSend={() => setState(prev => ({...prev, currentScreen: 'SendEstimate', sendingType: 'invoice'}))}
                    onDelete={() => handleDeleteEstimate(selectedEstimate.id)}
@@ -1292,7 +1331,10 @@ const App: React.FC = () => {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-surface">
         <div className="text-center">
-          <h1 className="text-[24px] font-bold text-primary">SMASH</h1>
+          <h1 className="text-[24px] font-bold text-primary flex items-center justify-center gap-1">
+            <span>SMASH</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-accent mt-2 shadow-[0_0_12px_rgba(212,255,0,0.5)]" />
+          </h1>
           <p className="text-[14px] text-secondary mt-2">Loading...</p>
         </div>
       </div>

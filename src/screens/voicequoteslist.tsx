@@ -38,7 +38,7 @@ const StatusBadge: React.FC<{ status: VoiceQuote['status'] }> = ({ status }) => 
       case 'transcribed': return 'bg-indigo-50 text-indigo-600';
       case 'extracting': return 'bg-purple-50 text-purple-600';
       case 'extracted': return 'bg-green-50 text-green-600';
-      case 'complete': return 'bg-slate-900 text-white';
+      case 'complete': return 'bg-slate-50 text-slate-700 border border-slate-100';
       case 'failed': return 'bg-red-50 text-red-600';
       default: return 'bg-slate-50 text-slate-600';
     }

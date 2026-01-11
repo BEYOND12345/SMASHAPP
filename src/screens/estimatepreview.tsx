@@ -51,7 +51,8 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${type}-${estimate.jobTitle.replace(/\s+/g, '-')}-${estimate.id.substring(0, 8)}.pdf`;
+      const docNumber = estimate.id.substring(0, 6).toUpperCase();
+      link.download = `${isInvoice ? 'Invoice' : 'Estimate'}-${docNumber}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -159,7 +160,10 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
         />
        ) : (
          <div className="h-[70px] flex items-center justify-center bg-white border-b border-slate-100 mb-6 sticky top-0 z-30">
-            <h1 className="font-bold text-xl tracking-tighter text-slate-900 uppercase">SMASH<span className="text-accent">.</span></h1>
+            <h1 className="font-bold text-xl tracking-tighter text-slate-900 uppercase flex items-center justify-center gap-0.5">
+              <span>SMASH</span>
+              <span className="w-1 h-1 rounded-full bg-accent mt-1.5 shadow-[0_0_8px_rgba(212,255,0,0.4)]" />
+            </h1>
          </div>
        )}
 
@@ -167,8 +171,8 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
         <Section title="Summary">
           <Card className="flex flex-col gap-5">
             {userProfile && (
-              <div className="flex items-center gap-3.5 pb-5 border-b border-slate-50">
-                <div className="w-12 h-11 rounded-[14px] bg-slate-900 flex items-center justify-center shrink-0">
+                <div className="flex items-center gap-3.5 pb-5 border-b border-slate-50">
+                <div className="w-12 h-11 rounded-[14px] bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
                   {userProfile.logoUrl ? (
                     <img
                       src={userProfile.logoUrl}
@@ -176,7 +180,7 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
                       className="w-full h-full rounded-[14px] object-cover"
                     />
                   ) : (
-                    <User size={20} className="text-white" />
+                    <User size={20} className="text-slate-900" />
                   )}
                 </div>
                 <div className="flex flex-col">
@@ -187,6 +191,11 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
             )}
             <div className="flex flex-col gap-2">
               <h2 className="text-[24px] font-bold text-slate-900 tracking-tight leading-tight">{estimate.jobTitle}</h2>
+              {!isInvoice && (
+                <p className="text-[11px] text-tertiary font-bold uppercase tracking-wider">
+                  Estimate #{estimate.id.substring(0, 6).toUpperCase()}
+                </p>
+              )}
               <div className="flex flex-col gap-0.5">
                 <p className="text-[15px] font-bold text-slate-600 truncate">{estimate.clientName}</p>
                 {estimate.clientAddress && <p className="text-[13px] text-slate-400 font-medium leading-relaxed">{estimate.clientAddress}</p>}
@@ -219,7 +228,7 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-900 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100">
                     <th className="px-6 py-4">Item</th>
                     <th className="px-6 py-4 text-right">Amount</th>
                   </tr>
@@ -262,21 +271,21 @@ export const EstimatePreview: React.FC<EstimatePreviewProps> = ({
         </Section>
 
         <Section title="Totals">
-          <Card className="!p-0 overflow-hidden border border-slate-900 shadow-xl">
+          <Card className="!p-0 overflow-hidden border border-slate-100 shadow-xl">
             <div className="p-6 bg-white flex flex-col gap-3">
               <div className="flex justify-between text-[14px] font-bold text-slate-400 uppercase tracking-widest">
                 <span>Subtotal</span>
                 <span className="text-slate-900">{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between text-[14px] font-bold text-slate-400 uppercase tracking-widest">
-                <span>GST (10%)</span>
+                <span>{estimate.currency === 'GBP' ? 'VAT' : estimate.currency === 'USD' ? 'Sales Tax' : 'GST'} ({(estimate.gstRate * 100).toFixed(0)}%)</span>
                 <span className="text-slate-900">{formatCurrency(gst)}</span>
               </div>
             </div>
             
-            <div className="bg-slate-900 p-6 flex justify-between items-center">
-                <span className="text-[13px] font-bold text-slate-400 uppercase tracking-widest">Total Amount</span>
-                <span className="text-[28px] font-bold text-white tracking-tight leading-none">{formatCurrency(total)}</span>
+            <div className="bg-slate-50 border-t border-slate-100 p-6 flex justify-between items-center">
+                <span className="text-[13px] font-bold text-slate-500 uppercase tracking-widest">Total Amount</span>
+                <span className="text-[28px] font-bold text-slate-900 tracking-tight leading-none">{formatCurrency(total)}</span>
             </div>
           </Card>
         </Section>

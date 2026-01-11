@@ -4,7 +4,8 @@ import { Card } from '../components/card';
 import { Input } from '../components/inputs';
 import { Button } from '../components/button';
 import { Estimate, MaterialItem, FeeItem } from '../types';
-import { ChevronLeft, Plus, X, DollarSign, Check, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Plus, X, DollarSign, Check, AlertTriangle, MessageSquare } from 'lucide-react';
+import { FeedbackSheet } from '../components/feedbacksheet';
 import { formatCurrency } from '../lib/utils/calculations';
 import { supabase } from '../lib/supabase';
 
@@ -37,6 +38,7 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [savingCatalogFor, setSavingCatalogFor] = useState<string | null>(null);
   const [editedRates, setEditedRates] = useState<Record<string, boolean>>({});
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -311,16 +313,25 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
             <ChevronLeft size={24} />
           </button>
         }
+        right={
+          <button 
+            onClick={() => setIsFeedbackOpen(true)}
+            className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-all"
+            title="Report an Issue"
+          >
+            <MessageSquare size={20} />
+          </button>
+        }
       />
 
       <div className="px-5 pt-1 pb-1">
-        <p className="text-[11px] text-slate-400 font-bold text-center uppercase tracking-[0.15em]">Draft Review</p>
+        <p className="text-[10px] text-slate-300 font-black text-center uppercase tracking-[0.3em]">Draft Review session</p>
       </div>
 
       <div className="flex flex-col mt-4">
         {/* Job Details Section */}
         <Section title="Job Details">
-          <Card className="flex flex-col gap-5">
+          <Card className="flex flex-col gap-6">
             <Input
               label="Job Title"
               value={jobTitle}
@@ -333,7 +344,7 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
               onChange={(e) => setClientName(e.target.value)}
               placeholder="Customer name"
             />
-            <div className="grid grid-cols-1 gap-5">
+            <div className="grid grid-cols-1 gap-6">
               <Input
                 label="Client Email"
                 type="email"
@@ -366,37 +377,37 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
 
         {/* Scope of Work Section */}
         <Section title="Scope of Work">
-          <Card className="flex flex-col gap-4">
+          <Card className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               {scopeOfWork.length === 0 && (
                 <p className="text-sm text-slate-400 italic font-medium ml-1">No scope items yet.</p>
               )}
               {scopeOfWork.map((item, idx) => (
-                <div key={idx} className="flex gap-3 items-center bg-slate-50/50 p-3.5 rounded-[14px] border border-slate-100">
-                  <span className="w-1.5 h-1.5 rounded-full bg-accentDark shrink-0" />
-                  <span className="flex-1 text-[14px] text-slate-900 font-bold leading-tight">{item}</span>
+                <div key={idx} className="flex gap-4 items-center bg-slate-50 p-4 rounded-[20px] border border-slate-100">
+                  <span className="w-2 h-2 rounded-full bg-accent shrink-0 shadow-sm" />
+                  <span className="flex-1 text-[14px] text-slate-900 font-black uppercase tracking-tight">{item}</span>
                   <button
                     onClick={() => removeScopeItem(idx)}
                     className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
                   >
-                    <X size={16} />
+                    <X size={18} />
                   </button>
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 mt-1">
+            <div className="flex gap-3">
               <Input
-                placeholder="Add scope item..."
+                placeholder="ADD SCOPE ITEM..."
                 value={newScope}
                 onChange={(e) => setNewScope(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addScopeItem()}
-                className="!bg-white"
+                className="!bg-white uppercase tracking-widest text-xs"
               />
               <button 
                 onClick={addScopeItem}
-                className="w-12 h-[54px] rounded-[14px] bg-slate-900 text-white flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+                className="w-14 h-14 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0 active:scale-95 transition-transform shadow-lg"
               >
-                <Plus size={20} />
+                <Plus size={24} />
               </button>
             </div>
           </Card>
@@ -404,13 +415,13 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
 
         {/* Materials Section */}
         <Section title="Materials">
-          <Card className="flex flex-col gap-5">
+          <Card className="flex flex-col gap-6">
             {materials.length === 0 && (
               <p className="text-sm text-slate-400 italic font-medium ml-1">No materials added yet.</p>
             )}
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-8">
               {materials.map((material) => (
-                <div key={material.id} className="flex flex-col gap-4 pb-6 border-b border-slate-50 last:border-0 last:pb-0">
+                <div key={material.id} className="flex flex-col gap-5 pb-8 border-b border-slate-50 last:border-0 last:pb-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                       <Input
@@ -422,12 +433,12 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                     </div>
                     <button
                       onClick={() => removeMaterial(material.id)}
-                      className="mt-9 p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                      className="mt-10 p-1.5 text-slate-300 hover:text-red-500 transition-colors"
                     >
-                      <X size={18} />
+                      <X size={20} />
                     </button>
                   </div>
-                  <div className="flex items-center justify-between px-0.5">
+                  <div className="flex items-center justify-between px-1">
                     <div className="flex items-center gap-2">
                       {renderPricingBadge(material)}
                     </div>
@@ -435,13 +446,13 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                       <button
                         disabled={savingCatalogFor === material.id}
                         onClick={() => saveMaterialToCatalog(material)}
-                        className="text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-900 disabled:opacity-50"
+                        className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-900 disabled:opacity-50 transition-colors"
                       >
                         {savingCatalogFor === material.id ? 'Saving…' : 'Save to catalog'}
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-4">
                     <Input
                       label="Qty"
                       type="number"
@@ -461,21 +472,14 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                       onChange={(e) => updateMaterial(material.id, 'rate', parseFloat(e.target.value) || 0)}
                     />
                   </div>
-                  {(material.pricingNotes || (editedRates[material.id] && (material.pricingSource === 'ai' || material.pricingSource === 'fallback'))) && (
-                    <div className="px-1">
-                      <p className="text-[12px] text-slate-500 leading-relaxed">
-                        {material.pricingNotes || 'Price edited. Consider saving this to your catalog for next time.'}
-                      </p>
-                    </div>
-                  )}
-                  <div className="text-right px-1">
-                    <span className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mr-2">Line Total:</span>
-                    <span className="text-[15px] font-bold text-slate-900">{formatCurrency(material.quantity * material.rate)}</span>
+                  <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-100 mx-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Line Total</span>
+                    <span className="text-[16px] font-black text-slate-900 tabular-nums">{formatCurrency(material.quantity * material.rate)}</span>
                   </div>
                 </div>
               ))}
             </div>
-            <Button variant="outline" onClick={addMaterial} className="mt-1 border-dashed h-[50px]">
+            <Button variant="outline" onClick={addMaterial} className="mt-2 border-dashed h-14 rounded-xl font-black uppercase tracking-widest text-[11px]">
               <Plus size={18} className="mr-2" />
               Add Material
             </Button>
@@ -592,7 +596,7 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
                 <span>{formatCurrency(totals.subtotal)}</span>
               </div>
               <div className="flex justify-between text-[15px] font-medium text-slate-500">
-                <span>GST (10%)</span>
+                <span>{estimate.currency === 'GBP' ? 'VAT' : estimate.currency === 'USD' ? 'Sales Tax' : 'GST'} ({(gstRate * 100).toFixed(0)}%)</span>
                 <span>{formatCurrency(totals.gst)}</span>
               </div>
             </div>
@@ -625,6 +629,17 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
           </Button>
         </div>
       </div>
+
+      <FeedbackSheet 
+        isOpen={isFeedbackOpen} 
+        onClose={() => setIsFeedbackOpen(false)} 
+        metadata={{ 
+          source: 'edit_estimate',
+          estimateId: estimate.id,
+          orgId,
+          userId: authUserId
+        }} 
+      />
     </Layout>
   );
 };
