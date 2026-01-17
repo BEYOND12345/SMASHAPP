@@ -11,7 +11,7 @@ interface SendEstimateProps {
   onBack: () => void;
   onSent: () => void;
   type?: 'estimate' | 'invoice';
-  onTabChange?: (tab: 'estimates' | 'invoices') => void;
+  onTabChange?: (tab: 'estimates' | 'invoices' | 'customers') => void;
   estimateId?: string;
 }
 
@@ -96,6 +96,7 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
               clientAddress: '',
               clientEmail: invoiceData.customer?.email || '',
               clientPhone: invoiceData.customer?.phone || '',
+              date: new Date(invoiceData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
               timeline: timeline,
               scopeOfWork: invoiceData.quote?.scope_of_work || (invoiceData.description ? [invoiceData.description] : []),
               materials,
@@ -311,7 +312,11 @@ export const SendEstimate: React.FC<SendEstimateProps> = ({ onBack, onSent, type
       const fileName = `${type === 'invoice' ? 'invoice' : 'estimate'}-${estimate.jobTitle.replace(/\s+/g, '-').toLowerCase()}.pdf`;
       console.log('[SendEstimate.handleSharePDF] Generated filename:', fileName);
 
-      const canShareFiles = navigator.share && navigator.canShare?.({ files: [new File([pdfBlob], fileName)] });
+      const navAny = navigator as any;
+      const canShareFiles =
+        typeof navAny.share === 'function' &&
+        typeof navAny.canShare === 'function' &&
+        navAny.canShare({ files: [new File([pdfBlob], fileName)] });
       console.log('[SendEstimate.handleSharePDF] Can share files:', canShareFiles);
 
       if (canShareFiles) {

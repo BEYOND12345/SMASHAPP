@@ -1,0 +1,11 @@
+## Supabase local project config
+## Docs: https://supabase.com/docs/guides/cli/config
+
+[functions.test-secrets]
+verify_jwt = false
+
+# Local dev: allow the gateway to pass requests through so we can
+# validate the JWT inside the function and return useful JSON errors.
+[functions.openai-proxy]
+verify_jwt = false
+

@@ -2,7 +2,10 @@ export enum JobStatus {
   DRAFT = 'Draft',
   SENT = 'Sent',
   APPROVED = 'Approved',
-  PAID = 'Paid'
+  PAID = 'Paid',
+  DECLINED = 'Declined',
+  EXPIRED = 'Expired',
+  INVOICED = 'Invoiced'
 }
 
 export interface MaterialItem {
@@ -31,12 +34,18 @@ export interface FeeItem {
 
 export interface Estimate {
   id: string;
+  customerId?: string | null;
+  shortCode?: string;
   jobTitle: string;
   clientName: string;
   clientAddress?: string;
   clientEmail?: string;
   clientPhone?: string;
   status: JobStatus;
+  sentIntent?: 'estimate' | 'approval';
+  sentVia?: 'email' | 'sms' | 'copy' | 'share';
+  approvalRequested?: boolean;
+  approvalStatus?: 'awaiting' | 'approved' | 'rejected';
   date: string;
   timeline: string; // e.g., "2 days"
   scopeOfWork: string[];
@@ -62,7 +71,6 @@ export type ScreenName =
   | 'ReviewQuote'
   | 'ReviewDraft'
   | 'EstimatePreview'
-  | 'SendEstimate'
   | 'JobCard'
   | 'InvoicePreview'
   | 'PublicQuoteView'
@@ -73,6 +81,7 @@ export type ScreenName =
 
 export interface Invoice {
   id: string;
+  shortCode?: string;
   invoiceNumber: string;
   jobTitle: string;
   clientName: string;

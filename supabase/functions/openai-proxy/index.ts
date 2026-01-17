@@ -35,22 +35,58 @@ Deno.serve(async (req: Request) => {
       throw new Error("OPENAI_API_KEY not configured");
     }
 
+    // Even when verify_jwt is disabled in local dev config, we still enforce:
+    // - presence of Supabase apikey header, and
+    // - a valid user JWT (checked against Auth using the service role key).
+    const apiKeyHeader = req.headers.get("apikey") ?? req.headers.get("Apikey");
+    if (!apiKeyHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing apikey header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      console.error("[AUTH] Missing authorization header");
-      throw new Error("Missing authorization header");
+      // Return a real 401 (not 500) so the client gets a useful signal.
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!authHeader.toLowerCase().startsWith("bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Invalid authorization header format" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const jwt = authHeader.replace("Bearer ", "");
+    const jwt = authHeader.slice("Bearer ".length);
     const { data: { user }, error: userError } = await supabase.auth.getUser(jwt);
 
     if (userError || !user) {
       console.error("[AUTH] Unauthorized request", { error: userError?.message });
-      throw new Error("Unauthorized");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized", detail: userError?.message ?? null }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     console.log("[AUTH] User authenticated", { user_id: user.id });

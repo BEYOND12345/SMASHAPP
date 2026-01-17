@@ -1,13 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Check } from 'lucide-react';
+import { Mic, Check, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { Layout, Header } from '../components/layout';
 
 interface VoiceRecorderProps {
   onBack: () => void;
-  onQuoteCreated?: (quoteId: string) => void;
+  onQuoteCreated: (quoteId: string) => void;
+  activeTab: 'estimates' | 'invoices' | 'customers';
+  onTabChange: (tab: 'estimates' | 'invoices' | 'customers') => void;
+  onProfileClick: () => void;
 }
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCreated }) => {
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ 
+  onBack, 
+  onQuoteCreated,
+  activeTab,
+  onTabChange,
+  onProfileClick
+}) => {
   /**
    * SAFETY FLAGS
    * - Default OFF to avoid breaking the working pipeline.
@@ -17,6 +27,32 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   const ENABLE_INCREMENTAL_EXTRACTION = import.meta.env.VITE_ENABLE_INCREMENTAL_EXTRACTION !== 'false';
   // Default ON (restores "never empty prices"). Disable by setting VITE_ENABLE_AI_MATERIAL_PRICING="false".
   const ENABLE_AI_MATERIAL_PRICING = import.meta.env.VITE_ENABLE_AI_MATERIAL_PRICING !== 'false';
+
+  useEffect(() => {
+    console.log('[VoiceRecorder] UI shell active: SMASH header + bottom nav');
+  }, []);
+
+  const handleCancel = () => {
+    try {
+      // Make Cancel always work, even mid-recording/processing.
+      if (isRecording) stopRecording();
+      stopPolling();
+    } catch {
+      // ignore
+    } finally {
+      onBack();
+    }
+  };
+
+  const handleTabChange = (tab: 'estimates' | 'invoices' | 'customers') => {
+    // Keep nav visible for orientation, but avoid accidental data loss mid-recording/processing.
+    if (isProcessing) return;
+    if (isRecording) {
+      alert('Stop the session before navigating.');
+      return;
+    }
+    onTabChange(tab);
+  };
 
   // "Never empty prices" safety net (cents). If everything fails, we still price it.
   const DEFAULT_FALLBACK_MATERIAL_UNIT_PRICE_CENTS = (() => {
@@ -63,14 +99,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No session');
+      const accessToken =
+        typeof (session as any)?.access_token === 'string' ? ((session as any).access_token as string) : null;
+      if (!accessToken) throw new Error('No access token (session missing access_token)');
 
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      // Prefer supabase.functions.invoke so apikey/auth headers are correct in local dev.
+      const { data, error } = await supabase.functions.invoke('openai-proxy', {
+        // Some local setups don't auto-attach Authorization for functions. Force it.
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: {
           endpoint: 'chat/completions',
           body: {
             model: 'gpt-4o-mini',
@@ -100,13 +137,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
             ],
             response_format: { type: 'json_object' },
           },
-        }),
+        },
       });
 
-      if (!res.ok) return null;
+      if (error || !data) return null;
 
-      const data = await res.json();
-      const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+      const parsed = JSON.parse((data as any).choices?.[0]?.message?.content || '{}');
       const out = Array.isArray(parsed?.items) ? parsed.items : null;
       if (!out) return null;
 
@@ -131,6 +167,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   const [isExtracting, setIsExtracting] = useState(false);
   const [isCreatingQuote, setIsCreatingQuote] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
+  const [processingError, setProcessingError] = useState<string | null>(null);
 
   const [checklistItems, setChecklistItems] = useState([
     { id: 1, label: 'Job address', status: 'waiting' },
@@ -612,46 +649,46 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
+        const accessToken =
+          typeof (session as any)?.access_token === 'string' ? ((session as any).access_token as string) : null;
+        if (!accessToken) return;
+        const tokenPreview =
+          accessToken ? accessToken.slice(0, 12) : 'none';
+        if (DEBUG_VOICE) {
+          console.log('[VoiceRecorder] Incremental extraction session token preview:', tokenPreview);
+        }
 
         const snippet = liveSpeechTranscriptRef.current.trim().slice(-1200);
 
-        const extractionResponse = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              endpoint: 'chat/completions',
-              body: {
-                model: 'gpt-4o-mini',
-                messages: [
-                  {
-                    role: 'system',
-                    content:
-                      `Extract structured quote details from partial speech text (may include mumbling, slang, abbreviations). Be conservative: only fill fields if clearly mentioned.\n\n` +
-                      `REGION CONTEXT: ${regionContextRef.current.code} (Currency: ${regionContextRef.current.currency}, Units: ${regionContextRef.current.units})\n` +
-                      `- If region is US: Use US trade slang (drywall, faucet, lumber), Imperial units (feet, inches, LF).\n` +
-                      `- If region is UK/AU: Use local slang (plasterboard, tap, timber), Metric units (metres, LM).\n\n` +
-                      `IMPORTANT: scopeOfWork can be very detailed. When you can, split into multiple short deliverables (each <= 90 chars). Prefer 3–8 items for partial snippets.\n\n` +
-                      `For fuzzy quantities: "a couple"=2, "a few"=3, "some"=1, "heaps"=10. Keep vague materials like "fixings/hardware/glue/paint" as material items (never drop them). Return JSON only.`
-                  },
-                  {
-                    role: 'user',
-                    content: `Partial transcript (may be incomplete):\n\n${snippet}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null",\n  "jobLocation": "string or null",\n  "scopeOfWork": ["string"] or null,\n  "timeline": "string or null",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null,\n  "fees": [{"description": "string", "amount": number}] or null\n}`
-                  }
-                ],
-                response_format: { type: 'json_object' }
-              }
-            }),
-          }
-        );
+        const { data: extractionData, error: extractionError } = await supabase.functions.invoke('openai-proxy', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: {
+            endpoint: 'chat/completions',
+            body: {
+              model: 'gpt-4o-mini',
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    `Extract structured quote details from partial speech text (may include mumbling, slang, abbreviations). Be conservative: only fill fields if clearly mentioned.\n\n` +
+                    `REGION CONTEXT: ${regionContextRef.current.code} (Currency: ${regionContextRef.current.currency}, Units: ${regionContextRef.current.units})\n` +
+                    `- If region is US: Use US trade slang (drywall, faucet, lumber), Imperial units (feet, inches, LF).\n` +
+                    `- If region is UK/AU: Use local slang (plasterboard, tap, timber), Metric units (metres, LM).\n\n` +
+                    `IMPORTANT: scopeOfWork can be very detailed. When you can, split into multiple short deliverables (each <= 90 chars). Prefer 3–8 items for partial snippets.\n\n` +
+                    `For fuzzy quantities: "a couple"=2, "a few"=3, "some"=1, "heaps"=10. Keep vague materials like "fixings/hardware/glue/paint" as material items (never drop them). Return JSON only.`
+                },
+                {
+                  role: 'user',
+                  content: `Partial transcript (may be incomplete):\n\n${snippet}\n\nReturn JSON with this exact structure:\n{\n  "customerName": "string or null",\n  "jobTitle": "string or null",\n  "jobLocation": "string or null",\n  "scopeOfWork": ["string"] or null,\n  "timeline": "string or null",\n  "materials": [{"name": "string", "quantity": number, "unit": "string"}],\n  "laborHours": number or null,\n  "fees": [{"description": "string", "amount": number}] or null\n}`
+                }
+              ],
+              response_format: { type: 'json_object' }
+            }
+          },
+        });
 
-        if (!extractionResponse.ok) return;
-        const extractionData = await extractionResponse.json();
-        const partial = JSON.parse(extractionData.choices?.[0]?.message?.content || '{}');
+        if (extractionError || !extractionData) return;
+        const partial = JSON.parse((extractionData as any).choices?.[0]?.message?.content || '{}');
 
         const merged = mergeQuoteData(draftQuoteDataRef.current, partial);
         draftQuoteDataRef.current = merged;
@@ -1074,12 +1111,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
   const uploadAudio = async (audioBlob: Blob) => {
     setIsProcessing(true);
+    setProcessingError(null);
     console.log('[VoiceRecorder] Starting upload, blob size:', audioBlob.size);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // Robust auth: local Supabase restarts can invalidate JWTs while the UI still looks "logged in".
+      // Try to ensure we have a valid session before doing Storage + DB writes.
+      let session = (await supabase.auth.getSession()).data.session;
+      if (!session) {
+        const refreshed = await supabase.auth.refreshSession();
+        session = refreshed.data.session ?? null;
+      }
+      const user = session?.user ?? null;
       if (!user) {
-        throw new Error('User not authenticated');
+        throw new Error('Session expired. Please log out and log back in, then try again.');
       }
       console.log('[VoiceRecorder] User ID:', user.id);
 
@@ -1130,7 +1175,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
     } catch (error: any) {
       console.error('[VoiceRecorder] Upload failed:', error);
-      alert('Failed to upload recording: ' + (error.message || 'Unknown error'));
+      const raw = String(error?.message || 'Unknown error');
+      const msg =
+        raw.toLowerCase().includes('jwt') || raw.toLowerCase().includes('not authenticated')
+          ? 'Failed to upload recording: Session expired. Please log out and log back in, then try again.'
+          : 'Failed to upload recording: ' + raw;
+      setProcessingError(msg);
+      alert(msg);
       setIsProcessing(false);
       setIsRecording(false);
     }
@@ -1211,25 +1262,30 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No session');
+      const accessToken =
+        typeof (session as any)?.access_token === 'string' ? ((session as any).access_token as string) : null;
+      if (!accessToken) throw new Error('No access token (session missing access_token)');
+      if (DEBUG_VOICE) {
+        console.log('[VoiceRecorder] Session token preview:', accessToken.slice(0, 12), 'len=', accessToken.length);
+      }
 
       const openaiProxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`;
       console.log('[VoiceRecorder] Calling OpenAI proxy:', openaiProxyUrl);
 
-      const transcriptionResponse = await fetch(openaiProxyUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+      // Prefer supabase.functions.invoke so auth/apikey are handled consistently.
+      const { data: transcriptionData, error: transcriptionError } = await supabase.functions.invoke('openai-proxy', {
+        headers: { Authorization: `Bearer ${accessToken}` },
         body: formData,
       });
 
-      if (!transcriptionResponse.ok) {
-        const errorText = await transcriptionResponse.text().catch(() => 'Unknown error');
-        throw new Error(`Transcription failed: ${transcriptionResponse.status} ${transcriptionResponse.statusText} - ${errorText}`);
+      if (transcriptionError || !transcriptionData) {
+        const msg = (transcriptionError as any)?.message || 'Unauthorized';
+        const ctx = (transcriptionError as any)?.context;
+        const ctxText = ctx ? ` - ${JSON.stringify(ctx)}` : '';
+        throw new Error(`Transcription failed: ${msg}${ctxText}`);
       }
 
-      const transcriptionData = await transcriptionResponse.json();
-      const transcriptText = transcriptionData.text;
+      const transcriptText = (transcriptionData as any).text;
 
       if (!transcriptText) {
         throw new Error('Transcription returned empty text');
@@ -1272,6 +1328,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       } catch (updateError: any) {
         console.error('[VoiceRecorder] Failed to update status:', updateError);
       }
+
+      // IMPORTANT: Unblock UI on any failure so the user isn't stuck on "Generating Estimate"
+      setProcessingError(errorMessage);
+      setIsExtracting(false);
+      setIsCreatingQuote(false);
+      setIsProcessing(false);
     }
   };
 
@@ -1287,6 +1349,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No session');
+      const accessToken =
+        typeof (session as any)?.access_token === 'string' ? ((session as any).access_token as string) : null;
+      if (!accessToken) throw new Error('No access token (session missing access_token)');
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
@@ -1304,45 +1369,40 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       const units = pricingProfile?.default_unit_preference || 'metric';
       const regionContext = currency === 'USD' ? 'US' : currency === 'GBP' ? 'UK' : 'AU';
 
-      const extractionResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/openai-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            endpoint: 'chat/completions',
-            body: {
-              model: 'gpt-4o-mini',
-              messages: [
-                {
-                  role: 'system',
-                  content: `Extract structured quote information from voice transcripts (mumbling/slang/abbreviations possible). Write professional, high-detail action items for jobTitle and scopeOfWork. Preserve verbs + adjectives exactly. Ensure items are grammatically complete.\n\n` +
-                    `REGION CONTEXT: ${regionContext} (Currency: ${currency}, Units: ${units})\n` +
-                    `- If region is US: Use US trade slang (drywall, faucet, lumber), Imperial units (feet, inches, LF).\n` +
-                    `- If region is UK/AU: Use local slang (plasterboard, tap, timber), Metric units (metres, LM).\n\n` +
-                    `IMPORTANT: Scope of work can be very detailed. Produce a list of deliverables:\n- scopeOfWork MUST be an array of short, clear deliverables (split big sentences into multiple items).\n- Prefer 4–12 items when possible.\n- Each item should be <= 90 characters.\n\n` +
-                    `Be tolerant:\n- Convert fuzzy quantities to reasonable numbers: "a couple"=2, "a few"=3, "some"=1, "heaps"=10.\n- If a material has no explicit quantity, use 1.\n- If a unit is unclear, use "unit".\n- Return JSON only.`
-                },
-                {
-                  role: 'user',
-                  content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON structure: { customerName, jobTitle, jobLocation, scopeOfWork, timeline, materials: [{name, quantity, unit}], laborHours, fees: [{description, amount}] }`
-                }
-              ],
-              response_format: { type: 'json_object' }
-            }
-          }),
-        }
-      );
+      const { data: extractionData, error: extractionError } = await supabase.functions.invoke('openai-proxy', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: {
+          endpoint: 'chat/completions',
+          body: {
+            model: 'gpt-4o-mini',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  `Extract structured quote information from voice transcripts (mumbling/slang/abbreviations possible). Write professional, high-detail action items for jobTitle and scopeOfWork. Preserve verbs + adjectives exactly. Ensure items are grammatically complete.\n\n` +
+                  `REGION CONTEXT: ${regionContext} (Currency: ${currency}, Units: ${units})\n` +
+                  `- If region is US: Use US trade slang (drywall, faucet, lumber), Imperial units (feet, inches, LF).\n` +
+                  `- If region is UK/AU: Use local slang (plasterboard, tap, timber), Metric units (metres, LM).\n\n` +
+                  `IMPORTANT: Scope of work can be very detailed. Produce a list of deliverables:\n- scopeOfWork MUST be an array of short, clear deliverables (split big sentences into multiple items).\n- Prefer 4–12 items when possible.\n- Each item should be <= 90 characters.\n\n` +
+                  `Be tolerant:\n- Convert fuzzy quantities to reasonable numbers: "a couple"=2, "a few"=3, "some"=1, "heaps"=10.\n- If a material has no explicit quantity, use 1.\n- If a unit is unclear, use "unit".\n- Return JSON only.`
+              },
+              {
+                role: 'user',
+                content: `Extract quote information from this transcript:\n\n${transcript}\n\nReturn JSON structure: { customerName, jobTitle, jobLocation, scopeOfWork, timeline, materials: [{name, quantity, unit}], laborHours, fees: [{description, amount}] }`
+              }
+            ],
+            response_format: { type: 'json_object' }
+          }
+        },
+      });
 
-      if (!extractionResponse.ok) {
-        throw new Error('Extraction failed');
+      if (extractionError || !extractionData) {
+        const msg = (extractionError as any)?.message || 'Extraction failed';
+        const ctx = (extractionError as any)?.context;
+        throw new Error(ctx ? `${msg} - ${JSON.stringify(ctx)}` : msg);
       }
 
-      const extractionData = await extractionResponse.json();
-      const quoteData = JSON.parse(extractionData.choices[0].message.content);
+      const quoteData = JSON.parse((extractionData as any).choices[0].message.content);
 
       console.log('[VoiceRecorder] Extracted data:', quoteData);
 
@@ -1374,10 +1434,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
 
     } catch (error) {
       console.error('[VoiceRecorder] Extraction failed:', error);
+      setProcessingError((error as any)?.message || 'Extraction failed');
       await supabase
         .from('voice_quotes')
         .update({ status: 'failed' })
         .eq('id', voiceQuoteId);
+      setIsExtracting(false);
+      setIsCreatingQuote(false);
+      setIsProcessing(false);
     }
   };
 
@@ -1428,6 +1492,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
             .from('customers')
             .select('id')
             .eq('org_id', voiceQuote.org_id)
+            .is('deleted_at', null)
             .ilike('name', quoteData.customerName)
             .maybeSingle();
 
@@ -1576,8 +1641,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
         }> = materials.map((m: { description: string; quantity: number; unit: string }, idx: number) => {
           let unitPriceCents = 0;
           let catalogItemId: string | null = null;
-          let notes: string | null = null;
-          let needsReview = false;
+          const notes: string | null = null;
+          const needsReview = false;
 
           if (matchedCatalog) {
             const match = matchedCatalog[idx];
@@ -1786,14 +1851,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
       console.log('[VoiceRecorder] Quote creation complete');
 
       // Only now that the quote + line items are created, trigger navigation
+      setIsCreatingQuote(false);
+      setIsProcessing(false);
       setCreatedQuoteId(newQuote.id);
 
     } catch (error) {
       console.error('[VoiceRecorder] Quote creation failed:', error);
+      setProcessingError((error as any)?.message || 'Quote creation failed');
       await supabase
         .from('voice_quotes')
         .update({ status: 'failed' })
         .eq('id', voiceQuoteId);
+      setIsExtracting(false);
+      setIsCreatingQuote(false);
+      setIsProcessing(false);
     }
   };
 
@@ -1867,37 +1938,89 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
   // The new useEffect polling (lines 63-120) handles checklist updates directly
 
   return (
-    <div className="h-full w-full bg-white flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-8 shrink-0">
-        <h1 className="text-2xl font-black tracking-tighter uppercase text-slate-900">Voice Quote</h1>
-        <button
-          onClick={onBack}
-          disabled={isProcessing}
-          className="text-[13px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-900 transition-colors disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </div>
+    <Layout 
+      showNav={true} 
+      activeTab={activeTab} 
+      onTabChange={handleTabChange}
+      className="bg-[#FAFAFA] flex flex-col overflow-hidden"
+    >
+      <Header
+        title="SMASH"
+        left={
+          <button 
+            onClick={handleCancel}
+            className="h-10 px-3 -ml-2 rounded-full flex items-center text-[12px] font-black text-slate-900 uppercase tracking-widest hover:bg-slate-100 active:scale-[0.98] transition-all"
+          >
+            Cancel
+          </button>
+        }
+        right={
+          <button onClick={onProfileClick} className="w-10 h-10 flex items-center justify-center text-slate-900 hover:bg-slate-100 rounded-full transition-colors">
+            <User size={22} />
+          </button>
+        }
+      />
 
-      <div className="flex-1 flex flex-col px-6 pb-8 overflow-y-auto custom-scrollbar">
+      {/* Single-screen layout: no scroll needed to start/stop */}
+      <div className="relative flex-1 flex flex-col px-6 pt-8 pb-[calc(88px+env(safe-area-inset-bottom)+12px)] overflow-hidden">
         {!isProcessing ? (
           <div className="flex-1 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col items-center mb-12 pt-4">
-              <div className="relative mb-14">
-                {/* Sonic Waves */}
-                {isRecording && (
+            {processingError && (
+              <div className="mb-6 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3">
+                <div className="text-[12px] font-black text-rose-900 uppercase tracking-widest">
+                  Couldn’t generate estimate
+                </div>
+                <div className="mt-1 text-[12px] font-semibold text-rose-700">
+                  {processingError}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setProcessingError(null)}
+                    className="h-9 px-4 rounded-full bg-white text-rose-900 text-[11px] font-black uppercase tracking-widest border border-rose-200 hover:bg-rose-50"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    className="h-9 px-4 rounded-full bg-rose-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-rose-700"
+                  >
+                    Go back
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="flex flex-col items-center mb-10">
+              <div className="relative mb-10 mt-4 group">
+                {/* Magnetic Pulse - to draw user's eye */}
+                {!isRecording && (
                   <>
-                    <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-[#d4ff00]" style={{ animationDuration: '2s' }}></div>
-                    <div className="absolute -inset-8 rounded-full opacity-10 blur-xl animate-pulse bg-[#d4ff00]" style={{ animationDuration: '1.5s' }}></div>
+                    <div className="absolute inset-0 rounded-full bg-accent/20 animate-ping opacity-20" style={{ animationDuration: '3s' }} />
+                    <div className="absolute inset-0 rounded-full bg-accent/10 animate-pulse scale-125 opacity-10" />
                   </>
                 )}
                 
-                {/* Hub */}
-                <div 
-                  className={`w-32 h-32 rounded-full flex items-center justify-center z-10 relative transition-all duration-500 bg-[#0f172a] ${isRecording ? 'scale-110 shadow-2xl' : 'scale-100 shadow-lg'}`}
+                {/* Sonic Waves (Active) */}
+                {isRecording && (
+                  <>
+                    <div className="absolute inset-0 rounded-full animate-ping opacity-30 scale-150 bg-[#d4ff00]" style={{ animationDuration: '2s' }} />
+                    <div className="absolute -inset-8 rounded-full opacity-15 blur-2xl animate-pulse bg-[#d4ff00]" style={{ animationDuration: '1.5s' }} />
+                  </>
+                )}
+                
+                {/* Hub = Primary CTA (tap to start/stop) */}
+                <button
+                  type="button"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={isProcessing}
+                  className={`w-24 h-24 rounded-full bg-[#0f172a] flex items-center justify-center z-10 relative transition-all duration-500 shadow-2xl active:scale-95 disabled:opacity-60 ${
+                    isRecording ? 'scale-110 ring-8 ring-[#d4ff00]/10' : 'scale-100 hover:shadow-[0_20px_50px_rgba(0,0,0,0.2)]'
+                  }`}
+                  aria-label={isRecording ? 'Stop recording' : 'Start recording'}
                 >
                   {isRecording ? (
-                    <div className="flex items-center gap-1.5 h-16">
+                    <div className="flex items-center gap-1.5 h-12">
                       {[1, 2, 3, 4].map(i => (
                         <div 
                           key={i} 
@@ -1908,133 +2031,129 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
                       ))}
                     </div>
                   ) : (
-                    <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
+                    <div className="relative">
+                      <Mic size={36} className="text-[#d4ff00] relative z-10" />
+                      <div className="absolute inset-0 blur-lg bg-[#d4ff00]/20 scale-150" />
+                    </div>
                   )}
-                </div>
+                </button>
               </div>
               
-              <div className="text-center">
-                <h2 className={`text-xl font-black tracking-tighter uppercase transition-colors duration-500 ${isRecording ? 'text-primary' : 'text-slate-900'}`}>
-                  {isRecording ? 'Listening...' : 'Ready to record'}
+              <div className="text-center space-y-1.5">
+                <h2 className={`text-2xl font-black tracking-tighter uppercase transition-colors duration-500 ${isRecording ? 'text-primary' : 'text-slate-900'}`}>
+                  {isRecording ? 'Listening…' : 'Ready to record'}
                 </h2>
-                <p className="mt-2 text-[13px] font-bold text-slate-400 leading-relaxed uppercase tracking-wide">
-                  Mention details.
+                <p className="text-[10px] font-black text-slate-400 leading-relaxed uppercase tracking-[0.25em]">
+                  Tap the circle to <span className="text-accent-dark">{isRecording ? 'stop' : 'start'}</span> session
                 </p>
+
+                {isRecording && (
+                  <div className="pt-2 flex items-baseline justify-center gap-2">
+                    <div className="text-[32px] font-black text-slate-900 tracking-tighter tabular-nums leading-none">
+                      {formatTime(recordingTime)}
+                    </div>
+                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">
+                      REC
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Checklist with smooth transitions */}
-            <div className="flex flex-col gap-3 mb-8">
-              <div className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">
-                {isRecording ? 'Detecting items' : 'Required items'}
+            {/* Checklist Header */}
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center justify-between mb-3 px-1">
+                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">
+                  Required Items
+                </p>
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-full shadow-sm">
+                  <span className="text-[10px] font-black text-slate-900">
+                    {checklistItems.filter(i => i.status === 'complete').length}/{checklistItems.length}
+                  </span>
+                </div>
               </div>
-              {checklistItems.map((item) => (
-                <div 
-                  key={item.id}
-                  className={`flex items-center gap-4 p-5 rounded-[24px] border transition-all duration-500 ease-out ${
-                    item.status === 'complete' 
-                      ? 'bg-slate-50 border-slate-100 shadow-sm translate-x-1' 
-                      : item.status === 'detecting'
-                        ? 'bg-slate-50/50 border-slate-100/50 shadow-sm translate-x-0'
-                        : 'bg-white border-transparent shadow-none translate-x-0'
-                  }`}
-                >
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-700 transform ${
-                    item.status === 'complete' 
-                      ? 'bg-primary text-white scale-110 shadow-md' 
-                      : item.status === 'detecting'
-                        ? 'bg-primary/10 text-primary scale-105'
-                        : 'bg-slate-50 text-slate-200 scale-100'
-                  }`}>
-                    {item.status === 'complete' ? (
-                      <Check size={16} strokeWidth={3} className="animate-in zoom-in duration-300" />
-                    ) : item.status === 'detecting' ? (
-                      <Check size={16} strokeWidth={3} className="opacity-80 animate-pulse" />
-                    ) : (
-                      <div className="w-1.5 h-1.5 rounded-full bg-current" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className={`block text-[14px] font-black tracking-tight uppercase transition-colors duration-500 ${
-                      item.status === 'complete' ? 'text-primary' : item.status === 'detecting' ? 'text-slate-900' : 'text-slate-400'
-                    }`}>
-                      {item.label}
-                    </span>
-
-                    {/* If the user is speaking but we haven't mapped it yet, show a subtle "audio heard" pulse */}
-                    {isRecording && item.status === 'waiting' && Date.now() - lastHeardAt < 900 && (
-                      <div className="mt-1 flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-wide">
-                        <span className="relative inline-flex h-2 w-2">
-                          <span className="absolute inline-flex h-full w-full rounded-full bg-primary/30 animate-ping" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60" />
-                        </span>
-                        Hearing you…
-                      </div>
-                    )}
-
-                    {/* Safer preview: show counts (less misleading than listing partial items) */}
-                    {item.id === 3 && Array.isArray(liveQuotePreview?.scopeOfWork) && liveQuotePreview.scopeOfWork.length > 0 && (
-                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 uppercase">
-                        {liveQuotePreview.scopeOfWork.length} Captured
-                      </div>
-                    )}
-
-                    {item.id === 4 && Array.isArray(liveQuotePreview?.materials) && liveQuotePreview.materials.length > 0 && (
-                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 uppercase">
-                        {liveQuotePreview.materials.length} Materials
-                      </div>
-                    )}
-
-                    {item.id === 1 && typeof liveQuotePreview?.jobLocation === 'string' && liveQuotePreview.jobLocation.trim() && (
-                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate">{liveQuotePreview.jobLocation}</div>
-                    )}
-                    {item.id === 2 && typeof liveQuotePreview?.customerName === 'string' && liveQuotePreview.customerName.trim() && (
-                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate">{liveQuotePreview.customerName}</div>
-                    )}
-                    {item.id === 5 && (typeof liveQuotePreview?.timeline === 'string' || typeof liveQuotePreview?.laborHours === 'number') && (
-                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate">
-                        {typeof liveQuotePreview?.timeline === 'string' && liveQuotePreview.timeline
-                          ? liveQuotePreview.timeline
-                          : typeof liveQuotePreview?.laborHours === 'number'
-                            ? `${liveQuotePreview.laborHours} hours`
-                            : ''}
-                      </div>
-                    )}
-                    {item.id === 6 && Array.isArray(liveQuotePreview?.fees) && liveQuotePreview.fees.length > 0 && (
-                      <div className="mt-0.5 text-[11px] font-bold text-slate-400 truncate uppercase">
-                        {String(liveQuotePreview.fees[0]?.description || 'Added')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Sticky Action Bar */}
-            <div className="mt-auto py-4">
-              {isRecording && (
-                <div className="flex flex-col items-center mb-6 animate-in fade-in slide-in-from-bottom-2">
-                  <div className="text-4xl font-black text-slate-900 tracking-tighter tabular-nums mb-1">
-                    {formatTime(recordingTime)}
-                  </div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">
-                    REC ACTIVE
-                  </div>
-                </div>
-              )}
               
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`w-full h-16 rounded-[24px] flex items-center justify-center gap-4 font-black uppercase tracking-widest text-xs transition-all active:scale-95 shadow-2xl ${
-                  isRecording 
-                    ? 'bg-red-500 text-white shadow-red-100' 
-                    : 'bg-[#d4ff00] text-black shadow-accent/20'
-                }`}
-              >
-                {isRecording ? 'Stop Session' : 'Start Recording'}
-              </button>
+              <div className="flex flex-col gap-1.5 overflow-hidden">
+                {checklistItems.map((item) => {
+                  const detail =
+                    item.id === 1 && typeof liveQuotePreview?.jobLocation === 'string' && liveQuotePreview.jobLocation.trim()
+                      ? liveQuotePreview.jobLocation
+                      : item.id === 2 && typeof liveQuotePreview?.customerName === 'string' && liveQuotePreview.customerName.trim()
+                        ? liveQuotePreview.customerName
+                        : item.id === 3 && Array.isArray(liveQuotePreview?.scopeOfWork) && liveQuotePreview.scopeOfWork.length > 0
+                          ? `${liveQuotePreview.scopeOfWork.length} captured`
+                          : item.id === 4 && Array.isArray(liveQuotePreview?.materials) && liveQuotePreview.materials.length > 0
+                            ? `${liveQuotePreview.materials.length} materials`
+                            : item.id === 5 && typeof liveQuotePreview?.timeline === 'string' && liveQuotePreview.timeline
+                              ? liveQuotePreview.timeline
+                              : item.id === 6 && Array.isArray(liveQuotePreview?.fees) && liveQuotePreview.fees.length > 0
+                                ? String(liveQuotePreview.fees[0]?.description || 'Added')
+                                : null;
+
+                  const hearing = isRecording && item.status === 'waiting' && Date.now() - lastHeardAt < 900;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`rounded-[24px] border px-4 py-2.5 transition-all duration-500 ease-out ${
+                        item.status === 'complete'
+                          ? 'bg-slate-50 border-slate-100 shadow-sm'
+                          : item.status === 'detecting'
+                            ? 'bg-slate-50 border-slate-100 shadow-sm'
+                            : 'bg-slate-50 border-slate-100 shadow-none'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center transition-all duration-700 transform shrink-0 ${
+                            item.status === 'complete'
+                              ? 'bg-primary border-2 border-primary text-white scale-110 shadow-md'
+                              : item.status === 'detecting'
+                                ? 'bg-white border-2 border-primary/20 text-primary scale-105'
+                                : 'bg-white border-2 border-slate-200 text-slate-200 scale-100'
+                          }`}
+                        >
+                          {item.status === 'complete' ? (
+                            <Check size={12} strokeWidth={3} className="animate-in zoom-in duration-300" />
+                          ) : item.status === 'detecting' ? (
+                            <Check size={12} strokeWidth={3} className="opacity-80 animate-pulse" />
+                          ) : (
+                            <div className="w-1 h-1 rounded-full bg-current" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className={`block text-[12px] font-black tracking-tight uppercase transition-colors duration-500 ${
+                                item.status === 'complete'
+                                  ? 'text-primary'
+                                  : item.status === 'detecting'
+                                    ? 'text-slate-900'
+                                    : 'text-slate-400'
+                              }`}
+                            >
+                              {item.label}
+                            </span>
+                            {hearing && (
+                              <span className="relative inline-flex h-2 w-2 mt-1 shrink-0">
+                                <span className="absolute inline-flex h-full w-full rounded-full bg-primary/25 animate-ping" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/60" />
+                              </span>
+                            )}
+                          </div>
+
+                          {detail && (
+                            <div className="mt-0.5 text-[10px] font-bold text-slate-400 truncate uppercase">
+                              {detail}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         ) : (
@@ -2078,6 +2197,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onBack, onQuoteCre
           </div>
         )}
       </div>
-    </div>
+    </Layout>
   );
 };

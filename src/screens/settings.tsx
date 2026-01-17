@@ -4,8 +4,9 @@ import { Layout, Header, Section } from '../components/layout';
 import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { Input, Select } from '../components/inputs';
-import { ChevronLeft, DollarSign, Camera, User, LogOut, RefreshCw, Check, X, CreditCard, Briefcase, ArrowRight, MessageSquare, Settings as SettingsIcon } from 'lucide-react';
+import { ChevronLeft, Camera, User, LogOut, Briefcase, ArrowRight, MessageSquare } from 'lucide-react';
 import { FeedbackSheet } from '../components/feedbacksheet';
+import { ScreenName } from '../types';
 
 interface Organization {
   id: string;
@@ -55,29 +56,27 @@ const TRADE_TYPES = [
   'Carpenter', 'Painter', 'Electrician', 'Plumber', 'Gardener', 'Cleaner', 'Handyman', 'Builder', 'Tiler', 'Roofer', 'Other'
 ];
 
-const CURRENCIES = ['AUD', 'USD', 'GBP', 'EUR', 'NZD'];
-
-const PAYMENT_TERMS = [
-  'Due on receipt', 'Net 7', 'Net 14', 'Net 30', 'Net 60', 'Net 90'
-];
-
-export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void; onNavigate?: (screen: string) => void; onLogout?: () => void }) {
+export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void; onNavigate?: (screen: ScreenName) => void; onLogout?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [profile, setProfile] = useState<PricingProfile | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
-  const [connection, setConnection] = useState<QBConnection | null>(null);
+  const [, setConnection] = useState<QBConnection | null>(null);
 
   const [editingSection, setEditingSection] = useState<'business' | 'invoice' | 'pricing' | 'payment' | null>(null);
   const [saving, setSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  // syncing state reserved for future QuickBooks UI
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickbooksEnabled = import.meta.env.VITE_ENABLE_QUICKBOOKS_INTEGRATION === 'true';
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const isLocalSupabase =
+    typeof supabaseUrl === 'string' &&
+    (supabaseUrl.includes('127.0.0.1:54321') || supabaseUrl.includes('localhost:54321'));
 
   useEffect(() => {
     loadAllData();
@@ -86,7 +85,8 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
   async function loadAllData() {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) return;
 
       setUserId(user.id);
@@ -326,10 +326,36 @@ export function Settings({ onBack, onNavigate, onLogout }: { onBack: () => void;
           }} 
         />
 
+        {/* Debug (dev only): helps confirm which Supabase backend is in use */}
+        {import.meta.env.DEV && (
+          <div className="px-6 mt-10">
+            <Section title="Debug">
+              <Card className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1.5">Supabase URL</p>
+                    <p className="text-[13px] font-bold text-slate-900 break-all">{supabaseUrl || '(missing)'}</p>
+                  </div>
+                  <span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.2em] ${isLocalSupabase ? 'bg-accent text-black' : 'bg-slate-100 text-slate-600'}`}>
+                    {isLocalSupabase ? 'LOCAL' : 'REMOTE'}
+                  </span>
+                </div>
+                {!isLocalSupabase && (
+                  <p className="text-[12px] text-slate-500 font-semibold leading-relaxed">
+                    Your app is not pointing at local Supabase. For local dev, set <span className="font-black">VITE_SUPABASE_URL</span> to <span className="font-black">http://127.0.0.1:54321</span>.
+                  </p>
+                )}
+              </Card>
+            </Section>
+          </div>
+        )}
+
         {/* Sign Out */}
         <div className="px-6 mt-10">
           <button
-            onClick={onLogout}
+            onClick={() => {
+              onLogout?.();
+            }}
             className="w-full h-16 rounded-[24px] bg-red-50 text-red-500 font-black uppercase tracking-[0.3em] text-[11px] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-sm"
           >
             <LogOut size={18} />

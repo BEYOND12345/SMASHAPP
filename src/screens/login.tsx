@@ -22,8 +22,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onSignupClick }) => {
     setLoading(true);
     setError('');
     try {
-      await supabase.auth.signOut({ scope: 'global' });
-      await new Promise(resolve => setTimeout(resolve, 100));
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,

@@ -7,20 +7,33 @@ interface InvoicePreviewProps {
   userProfile?: UserProfile;
   onBack: () => void;
   onEdit: () => void;
+  onChangeCustomer?: () => void;
   onSend: () => void;
   onDelete?: () => void;
+  invoiceStatus?: 'draft' | 'issued' | 'sent' | 'paid' | 'overdue';
 }
 
-export const InvoicePreview: React.FC<InvoicePreviewProps> = ({ estimate, userProfile, onBack, onEdit, onSend, onDelete }) => {
+export const InvoicePreview: React.FC<InvoicePreviewProps> = ({
+  estimate,
+  userProfile,
+  onBack,
+  onEdit,
+  onChangeCustomer,
+  onSend,
+  onDelete,
+  invoiceStatus
+}) => {
   return (
     <EstimatePreview
       estimate={{...estimate, jobTitle: `Invoice #${estimate.id.substring(0,4)}`}}
       userProfile={userProfile}
       onBack={onBack}
       onEdit={onEdit}
+      onChangeCustomer={onChangeCustomer}
       onSend={onSend}
       onDelete={onDelete}
       type="invoice"
+      invoiceStatus={invoiceStatus}
     />
   );
 };

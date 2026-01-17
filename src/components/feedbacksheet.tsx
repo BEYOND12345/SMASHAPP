@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Button } from './button';
-import { Input } from './inputs';
 import { X, MessageSquare, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface FeedbackSheetProps {

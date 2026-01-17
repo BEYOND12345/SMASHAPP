@@ -58,16 +58,50 @@ END $$;
 
 -- Step B: Backfill org_id and clear region_code for unowned catalog items
 -- This converts global guide items to org-specific items
-UPDATE material_catalog_items
-SET 
-  org_id = '19c5198a-3066-4aa7-8062-5daf602e615b',
-  region_code = NULL
-WHERE org_id IS NULL;
+DO $$
+BEGIN
+  -- NOTE:
+  -- This migration was a production hotfix that converts global guide items
+  -- (org_id NULL, region_code 'AU') into org-scoped items for a single org.
+  --
+  -- In local/dev environments, that hardcoded org may not exist and this will
+  -- fail with FK violations. Additionally, newer RLS/matching logic supports
+  -- dual-mode catalogs (global + org), so this conversion is optional.
+  --
+  -- Only run the conversion if the target org exists.
+  IF EXISTS (
+    SELECT 1 FROM organizations
+    WHERE id = '19c5198a-3066-4aa7-8062-5daf602e615b'
+  ) THEN
+    UPDATE material_catalog_items
+    SET
+      org_id = '19c5198a-3066-4aa7-8062-5daf602e615b',
+      region_code = NULL
+    WHERE org_id IS NULL;
+  ELSE
+    RAISE NOTICE '[CATALOG_BACKFILL] SKIP: org % not found; leaving global guide items unchanged', '19c5198a-3066-4aa7-8062-5daf602e615b';
+  END IF;
+END $$;
 
 -- Step C: Backfill created_by_user_id for items without creator
-UPDATE material_catalog_items
-SET created_by_user_id = '6d0be049-5fa8-4b30-98fa-44631ec0c9be'
-WHERE created_by_user_id IS NULL;
+DO $$
+BEGIN
+  -- Prefer the original production user id if it exists locally; otherwise,
+  -- fall back to any existing user; otherwise, skip (column is nullable).
+  IF EXISTS (
+    SELECT 1 FROM users WHERE id = '6d0be049-5fa8-4b30-98fa-44631ec0c9be'
+  ) THEN
+    UPDATE material_catalog_items
+    SET created_by_user_id = '6d0be049-5fa8-4b30-98fa-44631ec0c9be'
+    WHERE created_by_user_id IS NULL;
+  ELSIF EXISTS (SELECT 1 FROM users LIMIT 1) THEN
+    UPDATE material_catalog_items
+    SET created_by_user_id = (SELECT id FROM users LIMIT 1)
+    WHERE created_by_user_id IS NULL;
+  ELSE
+    RAISE NOTICE '[CATALOG_BACKFILL] SKIP: no users found; leaving created_by_user_id NULL';
+  END IF;
+END $$;
 
 -- Step D: Post-check counts (for verification)
 DO $$

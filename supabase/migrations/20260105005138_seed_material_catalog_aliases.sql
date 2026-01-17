@@ -33,9 +33,41 @@
   - Particleboard is used as a proxy for plywood until a proper plywood item is added
 */
 
--- Seed decking aliases
--- All point to "Merbau decking 90x19" (id: 3c0c8a47-4ec0-4cea-bda0-c034a59814cb)
-INSERT INTO material_catalog_aliases (
+-- NOTE:
+-- This seed file was authored against a production dataset with fixed UUIDs for:
+-- - org_id = 19c5198a-3066-4aa7-8062-5daf602e615b
+-- - canonical_catalog_item_id values
+--
+-- In local/dev environments, those rows may not exist, and inserting would fail
+-- due to foreign key constraints. So we only insert if BOTH the org and the
+-- referenced catalog items exist.
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM organizations WHERE id = '19c5198a-3066-4aa7-8062-5daf602e615b'
+  ) THEN
+    RAISE NOTICE '[CATALOG_ALIASES] SKIP: org % not found', '19c5198a-3066-4aa7-8062-5daf602e615b';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM material_catalog_items WHERE id = '3c0c8a47-4ec0-4cea-bda0-c034a59814cb'
+  ) THEN
+    RAISE NOTICE '[CATALOG_ALIASES] SKIP: decking canonical item not found';
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM material_catalog_items WHERE id = '386e268b-1b84-42a8-86a0-17081b7e4c72'
+  ) THEN
+    RAISE NOTICE '[CATALOG_ALIASES] SKIP: plywood canonical item not found';
+    RETURN;
+  END IF;
+
+  -- Seed decking aliases
+  -- All point to "Merbau decking 90x19" (id: 3c0c8a47-4ec0-4cea-bda0-c034a59814cb)
+  INSERT INTO material_catalog_aliases (
   org_id,
   canonical_catalog_item_id,
   alias_text,
@@ -110,10 +142,10 @@ INSERT INTO material_catalog_aliases (
   )
 ON CONFLICT (org_id, normalized_alias) DO NOTHING;
 
--- Seed plywood aliases
--- Point to "Particleboard chipboard 16mm" (id: 386e268b-1b84-42a8-86a0-17081b7e4c72)
--- Note: This is a temporary mapping until a proper plywood item is added
-INSERT INTO material_catalog_aliases (
+  -- Seed plywood aliases
+  -- Point to "Particleboard chipboard 16mm" (id: 386e268b-1b84-42a8-86a0-17081b7e4c72)
+  -- Note: This is a temporary mapping until a proper plywood item is added
+  INSERT INTO material_catalog_aliases (
   org_id,
   canonical_catalog_item_id,
   alias_text,
@@ -149,3 +181,4 @@ INSERT INTO material_catalog_aliases (
     50
   )
 ON CONFLICT (org_id, normalized_alias) DO NOTHING;
+END $$;

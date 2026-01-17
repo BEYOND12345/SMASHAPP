@@ -2,15 +2,15 @@ import React, { useState } from 'react';
 import { Invoice } from '../types';
 import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
-import { User, Search, Filter, X, Check } from 'lucide-react';
+import { User, Search, Filter, Check } from 'lucide-react';
 import { calculateInvoiceTotals, formatCurrency, getInitials } from '../lib/utils/calculations';
 
 interface InvoicesListProps {
   invoices: Invoice[];
   onNewEstimate: () => void;
   onSelectInvoice: (id: string) => void;
-  activeTab: 'estimates' | 'invoices';
-  onTabChange: (tab: 'estimates' | 'invoices') => void;
+  activeTab: 'estimates' | 'invoices' | 'customers';
+  onTabChange: (tab: 'estimates' | 'invoices' | 'customers') => void;
   onProfileClick?: () => void;
   onQuickRecord?: () => void;
 }

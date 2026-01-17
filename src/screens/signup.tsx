@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Layout, Header } from '../components/layout';
 import { Input } from '../components/inputs';
 import { Button } from '../components/button';
@@ -8,37 +8,107 @@ import { supabase } from '../lib/supabase';
 interface SignupProps {
   onSignup: (userId: string, email: string) => void;
   onBack: () => void;
+  onAlreadySignedIn: (target: 'Onboarding' | 'EstimatesList') => void;
 }
 
-export const Signup: React.FC<SignupProps> = ({ onSignup, onBack }) => {
+export const Signup: React.FC<SignupProps> = ({ onSignup, onBack, onAlreadySignedIn }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const didRedirectRef = useRef(false);
 
   const passwordsMatch = password === confirmPassword && password.length > 0;
   const canSignup = email.length > 0 && password.length >= 6 && passwordsMatch;
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkSession = async () => {
+      try {
+        const result = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<{ data: { session: any } }>((_, reject) =>
+            window.setTimeout(() => reject(new Error('timeout')), 2000)
+          )
+        ]);
+        if (cancelled) return;
+        const sessionUser = result?.data?.session?.user;
+        if (!didRedirectRef.current && sessionUser) {
+          const signupPending =
+            typeof window !== 'undefined' &&
+            window.localStorage.getItem('smash.signupPending') === '1';
+          didRedirectRef.current = true;
+          onAlreadySignedIn(signupPending ? 'Onboarding' : 'EstimatesList');
+        }
+      } catch {
+        // Ignore session check failures/timeouts in dev.
+      }
+    };
+    checkSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async () => {
     if (!canSignup) return;
     setLoading(true);
     setError('');
+    let timeoutId: number | undefined;
     try {
-      await supabase.auth.signOut({ scope: 'global' });
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      // Avoid creating accounts while an active session exists.
+      try {
+        const result = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<{ data: { session: any } }>((_, reject) =>
+            window.setTimeout(() => reject(new Error('timeout')), 1500)
+          )
+        ]);
+        if (result?.data?.session?.user) {
+          setError('You are already signed in. Please sign out to create a new account.');
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // If session check fails, proceed; signUp will error appropriately.
+      }
+
+      timeoutId = window.setTimeout(() => {
+        setError('Signup is taking longer than expected. Please try again.');
+        setLoading(false);
+      }, 8000);
+      const signUpPromise = supabase.auth.signUp({
         email,
         password,
       });
+      window.setTimeout(() => {
+      }, 3000);
+      const { data, error: signUpError } = await signUpPromise;
       if (signUpError) throw signUpError;
+      // If email confirmations are enabled, Supabase returns a user but no session.
+      // In that case, don't proceed into the app (it will "bounce" due to no JWT/session).
+      if (!data.session) {
+        setError('Check your email to confirm your account, then come back and sign in.');
+        return;
+      }
       if (data.user) {
+        window.localStorage.setItem('smash.signupPending', '1');
         onSignup(data.user.id, data.user.email || email);
       }
     } catch (err) {
       console.error('Signup error:', err);
-      setError(err instanceof Error ? err.message : 'Signup failed');
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Signup failed';
+      setError(message.toLowerCase().includes('already registered')
+        ? 'Account already exists. Please sign in instead.'
+        : message);
     } finally {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
       setLoading(false);
     }
   };

@@ -29,7 +29,9 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
-  const customerQuotes = quotes.filter(q => q.clientName === customer.name);
+  const customerQuotes = quotes.filter(q =>
+    (q.customerId && q.customerId === customer.id) || q.clientName === customer.name
+  );
   const customerInvoices = invoices.filter(inv => inv.clientName === customer.name);
 
   const totalJobs = customerQuotes.length;
@@ -45,10 +47,6 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
 
   const handleDelete = () => {
     setShowMenu(false);
-    if (totalJobs > 0) {
-      alert('Cannot delete customer with existing quotes or invoices');
-      return;
-    }
     setShowDeleteConfirm(true);
   };
 

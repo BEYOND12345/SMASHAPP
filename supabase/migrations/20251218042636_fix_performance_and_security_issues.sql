@@ -60,23 +60,6 @@ DROP INDEX IF EXISTS idx_quotes_approval_token;
 -- PART 3: Optimize RLS Policies
 -- ========================================
 
--- user_profiles policies
-DROP POLICY IF EXISTS "Users can read own profile" ON user_profiles;
-CREATE POLICY "Users can read own profile" ON user_profiles
-  FOR SELECT TO authenticated
-  USING (id = (select auth.uid()));
-
-DROP POLICY IF EXISTS "Users can insert own profile" ON user_profiles;
-CREATE POLICY "Users can insert own profile" ON user_profiles
-  FOR INSERT TO authenticated
-  WITH CHECK (id = (select auth.uid()));
-
-DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
-CREATE POLICY "Users can update own profile" ON user_profiles
-  FOR UPDATE TO authenticated
-  USING (id = (select auth.uid()))
-  WITH CHECK (id = (select auth.uid()));
-
 -- jobs policies (also fix multiple permissive policies issue)
 DROP POLICY IF EXISTS "Users can view their own jobs" ON jobs;
 DROP POLICY IF EXISTS "Public can view shared jobs" ON jobs;

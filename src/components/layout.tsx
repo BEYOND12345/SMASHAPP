@@ -21,6 +21,12 @@ export const Layout: React.FC<LayoutProps> = ({
   return (
     <div className="min-h-screen w-full flex justify-center bg-slate-100 font-sans text-slate-900 antialiased">
       <div className="w-full max-w-[390px] h-[100dvh] bg-[#FAFAFA] flex flex-col shadow-2xl relative isolate overflow-hidden">
+        {/* Overlay root so modals/sheets stay within app frame.
+            IMPORTANT: Must not block clicks when empty. */}
+        <div
+          id="app-overlay-root"
+          className="absolute inset-0 z-[110] pointer-events-none [&:not(:empty)]:pointer-events-auto"
+        />
         <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col">
           <main className={`flex-1 ${className}`}>
             {children}
@@ -81,7 +87,8 @@ export const Header: React.FC<{
     <header className={`h-[64px] flex items-center justify-between px-5 shrink-0 z-20 transition-all duration-300
       ${transparent ? 'bg-transparent' : 'bg-[#FAFAFA]/80 backdrop-blur-md sticky top-0'}
     `}>
-      <div className="w-10 flex justify-start">{left}</div>
+      {/* Give room for text actions like "Cancel" */}
+      <div className="min-w-[96px] flex justify-start">{left}</div>
       <div className="flex-1 text-center">
         {title && (
           <h1 className={`text-[17px] font-bold tracking-tight ${variant === 'dark' ? 'text-white' : 'text-slate-900'}`}>
@@ -96,7 +103,7 @@ export const Header: React.FC<{
           </h1>
         )}
       </div>
-      <div className="w-10 flex justify-end">{right}</div>
+      <div className="min-w-[96px] flex justify-end">{right}</div>
     </header>
   );
 };

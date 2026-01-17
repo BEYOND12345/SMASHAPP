@@ -1,0 +1,5 @@
+## Allow unauthenticated calls for local debugging only.
+## This lets you open http://127.0.0.1:54321/functions/v1/test-secrets in a browser
+## without needing an Authorization header.
+verify_jwt = false
+

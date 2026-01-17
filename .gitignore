@@ -21,3 +21,11 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Supabase Edge Functions local secrets (never commit)
+supabase/functions/.env
+
+# Local-only Supabase artifacts / secrets (never commit)
+LOCAL_SUPABASE_ENV.txt
+supabase/.branches/
+supabase/.temp/

@@ -60,17 +60,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [currency, setCurrency] = useState('AUD');
   const [unitPreference, setUnitPreference] = useState('metric');
   const [hourlyRate, setHourlyRate] = useState('85');
-  const [calloutFee, setCalloutFee] = useState('');
+  const [calloutFee] = useState('');
   const [taxRate, setTaxRate] = useState('10');
   const [materialsMarkup, setMaterialsMarkup] = useState('0');
 
   // Step 3: Invoice & Payment
   const [businessAddress, setBusinessAddress] = useState('');
   const [abn, setAbn] = useState('');
-  const [website, setWebsite] = useState('');
+  const [website] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('Net 30');
   const [bankName, setBankName] = useState('');
-  const [accountName, setAccountName] = useState('');
+  const [accountName] = useState('');
   const [bsbRouting, setBsbRouting] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
 
@@ -98,7 +98,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
     try {
       setIsUploadingLogo(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) return;
 
       const url = await uploadLogo(user.id, file);
@@ -125,7 +126,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     try {
       setSaving(true);
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user ?? null;
       if (!user) return;
 
       const { data: userData } = await supabase

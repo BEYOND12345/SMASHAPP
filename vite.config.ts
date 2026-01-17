@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     // Keep a stable port so we don't accidentally load a stale server
-    port: 5180,
-    // Fail loudly if another process is already on 5180
+    port: 5181,
+    // Fail loudly if another process is already on 5181
     strictPort: true,
   },
   optimizeDeps: {

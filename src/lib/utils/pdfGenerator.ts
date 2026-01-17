@@ -101,7 +101,6 @@ export async function generateEstimatePDF(
     }
 
     // Bill To & Meta (Right)
-    const midY = yPos - (userProfile?.logoUrl ? 15 : 10);
     let rightY = 40;
 
     // Meta Box on the right
@@ -267,6 +266,7 @@ export async function generateEstimatePDF(
     const totalsX = rightMargin - 70;
     pdf.setFontSize(10);
     pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+    pdf.setFont('helvetica', 'normal');
     
     pdf.text('Subtotal:', totalsX, yPos);
     pdf.text(formatCurrency(totals.subtotal), rightMargin - 5, yPos, { align: 'right' });
@@ -286,39 +286,51 @@ export async function generateEstimatePDF(
     yPos += 20;
 
     // 6. PAYMENT DETAILS
-    if (isInvoice && userProfile && (userProfile.bankName || userProfile.accountNumber)) {
-      if (yPos > pageHeight - 50) {
+    if (isInvoice && userProfile && (userProfile.bankName || userProfile.accountNumber || userProfile.bsbRouting)) {
+      if (yPos > pageHeight - 60) {
         pdf.addPage();
         yPos = 20;
       }
 
+      pdf.setDrawColor(borderGrey[0], borderGrey[1], borderGrey[2]);
+      pdf.line(leftMargin, yPos, rightMargin, yPos);
+      yPos += 10;
+
       pdf.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-      pdf.setFontSize(10);
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
       pdf.text('HOW TO PAY', leftMargin, yPos);
-      yPos += 6;
+      yPos += 8;
       
-      pdf.setFontSize(9);
+      pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
       
-      const payInfo = [
-        userProfile.bankName ? `Bank: ${userProfile.bankName}` : '',
-        userProfile.accountName ? `Account Name: ${userProfile.accountName}` : '',
-        userProfile.bsbRouting ? `BSB: ${userProfile.bsbRouting}` : '',
-        userProfile.accountNumber ? `Account Number: ${userProfile.accountNumber}` : '',
+      const paymentInfo = [
+        userProfile.bankName ? `Bank: ${userProfile.bankName}` : null,
+        userProfile.accountName ? `Account Name: ${userProfile.accountName}` : null,
+        userProfile.bsbRouting ? `BSB: ${userProfile.bsbRouting}` : null,
+        userProfile.accountNumber ? `Account Number: ${userProfile.accountNumber}` : null,
       ].filter(Boolean);
 
-      payInfo.forEach(line => {
-        pdf.text(line, leftMargin, yPos);
-        yPos += 4;
+      // Render in two columns for payment info
+      paymentInfo.forEach((line, index) => {
+        const xOffset = (index % 2 === 0) ? leftMargin : leftMargin + 80;
+        pdf.text(line!, xOffset, yPos);
+        if (index % 2 !== 0 || index === paymentInfo.length - 1) {
+          yPos += 6;
+        }
       });
 
       if (userProfile.paymentInstructions) {
-        yPos += 2;
-        const instLines = pdf.splitTextToSize(userProfile.paymentInstructions, pageWidth - 100);
+        yPos += 4;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Notes:', leftMargin, yPos);
+        yPos += 5;
+        pdf.setFont('helvetica', 'italic');
+        const instLines = pdf.splitTextToSize(userProfile.paymentInstructions, pageWidth - 30);
         pdf.text(instLines, leftMargin, yPos);
-        yPos += (instLines.length * 4);
+        yPos += (instLines.length * 5);
       }
     }
 

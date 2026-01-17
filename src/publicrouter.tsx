@@ -84,6 +84,13 @@ export const PublicRouter: React.FC = () => {
 
       const labourItem = lineItems.find((item: any) => item.item_type === 'labour');
 
+      const mappedStatus =
+        quoteData.status === 'accepted' ? JobStatus.APPROVED :
+        quoteData.status === 'invoiced' ? JobStatus.INVOICED :
+        quoteData.status === 'declined' ? JobStatus.DECLINED :
+        quoteData.status === 'expired' ? JobStatus.EXPIRED :
+        JobStatus.SENT;
+
       const estimateObj: Estimate = {
         id: quoteData.id,
         jobTitle: quoteData.scope_of_work || 'Quote',
@@ -96,7 +103,7 @@ export const PublicRouter: React.FC = () => {
           hours: labourItem?.quantity || 0,
           rate: (labourItem?.unit_price || 0) / 100,
         },
-        status: quoteData.status === 'accepted' ? JobStatus.APPROVED : JobStatus.SENT,
+        status: mappedStatus,
         date: new Date(quoteData.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
         gstRate: 0.10,
       };
@@ -108,6 +115,7 @@ export const PublicRouter: React.FC = () => {
         email: quoteData.organization.email,
         abn: quoteData.organization.business_number,
         website: quoteData.organization.website,
+        logoUrl: quoteData.organization.logo_url,
         businessAddress: [
           quoteData.organization.address_line1,
           quoteData.organization.address_line2,
@@ -284,6 +292,21 @@ export const PublicRouter: React.FC = () => {
       const quoteId = quoteData.id;
       const lineItems = quoteData.line_items || [];
 
+      // If the quote is already invoiced, redirect to the existing invoice instead of failing.
+      if (quoteData.status === 'invoiced') {
+        const { data: existingInvoiceId, error: invoiceLookupError } = await supabase
+          .rpc('get_invoice_id_for_quote', { p_quote_id: quoteId });
+
+        if (invoiceLookupError || !existingInvoiceId) {
+          console.error('[PublicRouter] Invoice lookup failed for invoiced quote:', invoiceLookupError);
+          alert('This quote has already been invoiced, but we could not find the invoice link. Please contact the business owner.');
+          return;
+        }
+
+        window.location.assign(`/invoice/${existingInvoiceId}`);
+        return;
+      }
+
       const acceptedSnapshot = {
         quote_id: quoteId,
         quote_number: quoteData.quote_number,
@@ -297,6 +320,23 @@ export const PublicRouter: React.FC = () => {
         accepted_at: new Date().toISOString()
       };
 
+      // If already accepted, skip the state update and just create (or fetch) the invoice.
+      if (quoteData.status === 'accepted') {
+        const { data: invoiceId, error: invoiceError } = await supabase
+          .rpc('create_invoice_from_accepted_quote', { p_quote_id: quoteId });
+
+        if (invoiceError || !invoiceId) {
+          console.error('[PublicRouter] Failed to create/fetch invoice for accepted quote:', invoiceError);
+          alert('This quote is already approved, but we could not open the invoice. Please contact the business owner.');
+          return;
+        }
+
+        window.location.assign(`/invoice/${invoiceId}`);
+        return;
+      }
+
+      // Attempt to mark the quote accepted (anon update is allowed only when quote is_public and status='sent').
+      // If this fails due to RLS/state mismatch, we still attempt invoice creation and show a useful error.
       const { error: updateError } = await supabase
         .from('quotes')
         .update({
@@ -309,8 +349,8 @@ export const PublicRouter: React.FC = () => {
         .eq('id', quoteId);
 
       if (updateError) {
-        console.error('[PublicRouter] Failed to approve quote:', updateError);
-        alert('Failed to approve quote. Please try again.');
+        console.error('[PublicRouter] Failed to mark quote accepted:', updateError);
+        alert(`We couldn't complete approval.\n\n${updateError.message || 'Please contact the business owner.'}`);
         return;
       }
 
@@ -321,12 +361,14 @@ export const PublicRouter: React.FC = () => {
         console.error('[PublicRouter] Failed to create invoice:', invoiceError);
         console.error('[PublicRouter] Full error object:', JSON.stringify(invoiceError, null, 2));
         const errorMsg = invoiceError.message || invoiceError.hint || invoiceError.details || 'Unknown error';
-        alert(`Quote approved successfully!\n\nHowever, invoice creation encountered an issue:\n${errorMsg}\n\nThe invoice can be created later from the job card.`);
+        const approveMsg = updateError ? `\n\nApproval update error: ${updateError.message || 'Unknown'}` : '';
+        alert(`We couldn't complete approval.\n\nInvoice creation encountered an issue:\n${errorMsg}${approveMsg}\n\nPlease contact the business owner.`);
         return;
       }
 
       console.log('[PublicRouter] Quote approved and invoice created:', invoiceId);
-      alert('Quote approved successfully! An invoice has been created and the business owner will be in touch shortly.');
+      // Redirect customer directly to the new invoice
+      window.location.assign(`/invoice/${invoiceId}`);
 
     } catch (err) {
       console.error('[PublicRouter] Exception during approval:', err);
@@ -339,6 +381,18 @@ export const PublicRouter: React.FC = () => {
       estimate={estimate}
       businessName={businessInfo.name}
       onApprove={handleApproveQuote}
+      onViewInvoice={handleApproveQuote}
+      userProfile={businessInfo ? ({
+        id: '',
+        email: businessInfo.email || '',
+        businessName: businessInfo.name,
+        tradeType: '',
+        phone: businessInfo.phone || '',
+        businessAddress: businessInfo.businessAddress,
+        abn: businessInfo.abn,
+        website: businessInfo.website,
+        logoUrl: businessInfo.logoUrl,
+      } as any) : undefined}
     />
   );
 };

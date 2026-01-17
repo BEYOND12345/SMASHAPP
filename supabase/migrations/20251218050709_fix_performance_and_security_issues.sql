@@ -171,27 +171,6 @@ CREATE POLICY "Users cannot delete themselves"
   USING (false);
 
 
--- user_profiles table
-DROP POLICY IF EXISTS "Users can read own profile" ON user_profiles;
-CREATE POLICY "Users can read own profile"
-  ON user_profiles FOR SELECT
-  TO authenticated
-  USING (id = (SELECT auth.uid()));
-
-DROP POLICY IF EXISTS "Users can insert own profile" ON user_profiles;
-CREATE POLICY "Users can insert own profile"
-  ON user_profiles FOR INSERT
-  TO authenticated
-  WITH CHECK (id = (SELECT auth.uid()));
-
-DROP POLICY IF EXISTS "Users can update own profile" ON user_profiles;
-CREATE POLICY "Users can update own profile"
-  ON user_profiles FOR UPDATE
-  TO authenticated
-  USING (id = (SELECT auth.uid()))
-  WITH CHECK (id = (SELECT auth.uid()));
-
-
 -- user_pricing_profiles table
 DROP POLICY IF EXISTS "Users can view own pricing profile" ON user_pricing_profiles;
 CREATE POLICY "Users can view own pricing profile"

@@ -3,7 +3,6 @@ import { Layout, Header } from '../components/layout';
 import { FAB } from '../components/fab';
 import { User, Loader2, Mic, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { VoiceRecorder } from './voicerecorder';
 
 interface VoiceQuote {
   id: string;
@@ -27,7 +26,7 @@ interface VoiceQuotesListProps {
   onProfileClick?: () => void;
   activeTab: 'estimates' | 'invoices' | 'customers';
   onTabChange: (tab: 'estimates' | 'invoices' | 'customers') => void;
-  onQuoteCreated?: (quoteId: string) => void;
+  onNewRecord?: () => void;
 }
 
 const StatusBadge: React.FC<{ status: VoiceQuote['status'] }> = ({ status }) => {
@@ -71,11 +70,10 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
   onProfileClick,
   activeTab,
   onTabChange,
-  onQuoteCreated
+  onNewRecord
 }) => {
   const [voiceQuotes, setVoiceQuotes] = useState<VoiceQuote[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showRecorder, setShowRecorder] = useState(false);
 
   useEffect(() => {
     loadVoiceQuotes();
@@ -130,12 +128,11 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
   };
 
   return (
-    <>
     <Layout
       activeTab={activeTab}
       onTabChange={onTabChange}
       className="bg-[#FAFAFA] pb-32"
-      fab={<FAB onClick={() => setShowRecorder(true)} />}
+      fab={<FAB onClick={() => onNewRecord?.()} />}
     >
         <Header
           title="VOICE QUOTES"
@@ -216,26 +213,5 @@ export const VoiceQuotesList: React.FC<VoiceQuotesListProps> = ({
           )}
         </div>
     </Layout>
-
-    {showRecorder && (
-      <div className="fixed inset-0 z-[100] bg-slate-900/10 backdrop-blur-sm flex justify-center animate-in fade-in duration-300">
-        <div className="w-full max-w-[390px] h-[100dvh] bg-white shadow-2xl animate-in slide-in-from-bottom-8 duration-500">
-          <VoiceRecorder 
-            onBack={() => {
-              setShowRecorder(false);
-              loadVoiceQuotes();
-            }}
-            onQuoteCreated={(quoteId) => {
-              console.log('[VoiceQuotesList] Quote created, closing recorder and navigating:', quoteId);
-              setShowRecorder(false);
-              if (onQuoteCreated) {
-                onQuoteCreated(quoteId);
-              }
-            }}
-          />
-        </div>
-      </div>
-    )}
-    </>
   );
 };

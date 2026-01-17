@@ -3,8 +3,9 @@ import { supabase } from '../lib/supabase';
 import { Button } from '../components/button';
 import { Card } from '../components/card';
 import { Input } from '../components/inputs';
-import { Layout, Header, Section } from '../components/layout';
-import { ChevronLeft, Plus, Edit2, Trash2, Save, X, Package } from 'lucide-react';
+import { Layout, Header } from '../components/layout';
+import { ConfirmDialog } from '../components/confirmdialog';
+import { ChevronLeft, Plus, Edit2, Trash2, Save, Package } from 'lucide-react';
 
 interface MaterialItem {
   id: string;
@@ -34,6 +35,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addingNew, setAddingNew] = useState(false);
   const [formData, setFormData] = useState({
@@ -46,8 +49,23 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
     notes: ''
   });
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; materialId: string | null }>({
+    isOpen: false,
+    materialId: null
+  });
 
   useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        setUserId(user.id);
+        const { data: userData } = await supabase.from('users').select('org_id').eq('id', user.id).maybeSingle();
+        if (userData?.org_id) setOrgId(userData.org_id);
+      } catch (e) {
+        console.error('Failed to load org context:', e);
+      }
+    })();
     loadMaterials();
   }, []);
 
@@ -73,7 +91,14 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
 
   async function handleSave() {
     try {
+      if (!orgId || !userId) {
+        alert('Missing org/user context. Please reopen Settings and try again.');
+        return;
+      }
+
       const dataToSave = {
+        org_id: orgId,
+        created_by_user_id: userId,
         name: formData.name.trim(),
         category: formData.category,
         unit: formData.unit,
@@ -114,7 +139,12 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this material? This will not affect existing quotes.')) return;
+    setDeleteConfirmation({ isOpen: true, materialId: id });
+  }
+
+  async function confirmDelete() {
+    const id = deleteConfirmation.materialId;
+    if (!id) return;
 
     try {
       const { error } = await supabase
@@ -123,6 +153,7 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
         .eq('id', id);
 
       if (error) throw error;
+      setDeleteConfirmation({ isOpen: false, materialId: null });
       loadMaterials();
     } catch (error) {
       console.error('Failed to delete material:', error);
@@ -257,7 +288,7 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
                 />
 
                 <div className="flex gap-2 pt-2">
-                  <Button onClick={cancelEdit} variant="ghost" className="flex-1">
+                  <Button onClick={cancelEdit} variant="secondary" className="flex-1">
                     Cancel
                   </Button>
                   <Button onClick={handleSave} className="flex-1">
@@ -366,6 +397,16 @@ export function MaterialsCatalog({ onBack }: { onBack: () => void }) {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Material"
+        message="Are you sure you want to delete this material? This will not affect existing quotes."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirmation({ isOpen: false, materialId: null })}
+      />
     </Layout>
   );
 }

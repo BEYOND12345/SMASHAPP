@@ -4,7 +4,7 @@ import { Card } from '../components/card';
 import { Input } from '../components/inputs';
 import { Button } from '../components/button';
 import { Estimate, MaterialItem, FeeItem } from '../types';
-import { ChevronLeft, Plus, X, DollarSign, Check, AlertTriangle, MessageSquare } from 'lucide-react';
+import { ChevronLeft, Plus, X, Check, AlertTriangle, MessageSquare } from 'lucide-react';
 import { FeedbackSheet } from '../components/feedbacksheet';
 import { formatCurrency } from '../lib/utils/calculations';
 import { supabase } from '../lib/supabase';
@@ -15,9 +15,10 @@ interface EditEstimateProps {
   onBack: () => void;
   onSave: (estimate: Estimate) => void;
   onSend?: (estimate: Estimate) => void;
+  onChangeCustomer?: () => void;
 }
 
-export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, onSave, onSend }) => {
+export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, onSave, onSend, onChangeCustomer }) => {
   // Job details
   const [jobTitle, setJobTitle] = useState(estimate.jobTitle);
   const [clientName, setClientName] = useState(estimate.clientName);
@@ -37,8 +38,21 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
   const [orgId, setOrgId] = useState<string | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [savingCatalogFor, setSavingCatalogFor] = useState<string | null>(null);
-  const [editedRates, setEditedRates] = useState<Record<string, boolean>>({});
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+
+  useEffect(() => {
+    setJobTitle(estimate.jobTitle);
+    setClientName(estimate.clientName);
+    setClientAddress(estimate.clientAddress || '');
+    setClientEmail(estimate.clientEmail || '');
+    setClientPhone(estimate.clientPhone || '');
+    setTimeline(estimate.timeline);
+    setScopeOfWork(estimate.scopeOfWork);
+    setMaterials(estimate.materials);
+    setLabourHours(estimate.labour.hours.toString());
+    setLabourRate(estimate.labour.rate.toString());
+    setAdditionalFees(estimate.additionalFees || []);
+  }, [estimate]);
 
   useEffect(() => {
     (async () => {
@@ -123,9 +137,6 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
 
   const updateMaterial = (id: string, field: keyof MaterialItem, value: string | number) => {
     setMaterials(materials.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
-    if (field === 'rate') {
-      setEditedRates((prev) => ({ ...prev, [id]: true }));
-    }
   };
 
   const removeMaterial = (id: string) => {
@@ -184,7 +195,6 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
             : m
         )
       );
-      setEditedRates((prev) => ({ ...prev, [material.id]: false }));
     } catch (e) {
       console.error('[EditEstimate] Exception saving to catalog:', e);
       alert('Failed to save to catalog. Please try again.');
@@ -332,6 +342,14 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
         {/* Job Details Section */}
         <Section title="Job Details">
           <Card className="flex flex-col gap-6">
+            {onChangeCustomer && (
+              <button
+                onClick={onChangeCustomer}
+                className="self-start px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] hover:bg-slate-800 transition-colors"
+              >
+                Change customer
+              </button>
+            )}
             <Input
               label="Job Title"
               value={jobTitle}
@@ -601,9 +619,9 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
               </div>
             </div>
             
-            <div className="bg-slate-900 p-6 flex justify-between items-center">
-                <span className="text-[13px] font-bold text-slate-400 uppercase tracking-[0.2em]">Total</span>
-                <span className="text-[28px] font-bold text-white tracking-tight">{formatCurrency(totals.total)}</span>
+            <div className="bg-slate-50 border-t border-slate-200 p-6 flex justify-between items-center">
+                <span className="text-[13px] font-bold text-slate-500 uppercase tracking-[0.2em]">Total</span>
+                <span className="text-[28px] font-bold text-slate-900 tracking-tight">{formatCurrency(totals.total)}</span>
             </div>
           </Card>
         </Section>
@@ -624,8 +642,7 @@ export const EditEstimate: React.FC<EditEstimateProps> = ({ estimate, onBack, on
             className="flex-[2] font-bold uppercase tracking-widest text-[12px]"
             onClick={handleSend}
           >
-            <DollarSign size={16} className="mr-1.5" />
-            Send Quote
+            Preview
           </Button>
         </div>
       </div>

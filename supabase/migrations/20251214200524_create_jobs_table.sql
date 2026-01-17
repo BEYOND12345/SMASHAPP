@@ -74,7 +74,8 @@
 -- Create jobs table
 CREATE TABLE IF NOT EXISTS jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  -- Use auth.users so this migration can run before app tables are created.
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   
   -- Job identification
   job_number text NOT NULL,
